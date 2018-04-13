@@ -1,0 +1,161 @@
+#lang racket/load
+
+(struct message
+  (;; a possible randomly generated identifier for this message.
+   ;; Only used across vats?
+   ;; @@: Do we even need this?  Maybe the vat is responsible for handling
+   ;;   a mapping of these when they move across boundaries?  Hm... nah...
+   ;;   that would be expensive because figuring out when to GC ids
+   ;;   would be hard.
+   id
+   ;; Address we're sending this to
+   to
+   ;; The arguments to the procedure we'll be calling
+   body
+   ;; If we're responding to another message
+   in-reply-to
+   ;; A request to reply to this actor address
+   please-reply-to))
+
+(define (send-message to body
+                      #:please-reply? [please-reply? #f]
+                      #:in-reply-to [in-reply-to #f]
+                      )
+  "Send a message to TO address (through the vat), with BODY.
+If PLEASE-REPLY? is true, ask for the recipient to eventually respond
+to us."
+  (define msg
+    (message #f  ;; I guess we'll set! these later if need be?
+             to body
+             in-reply-to
+             (if please-reply?
+                 (self) #f)))
+  (async-channel-put (current-vat)
+                     msg)
+  msg)
+
+(define (<- to . body)
+  (send-message to body)
+  (void))
+
+(define (<-wait to . body)
+  (call-with-composable-continuation
+   (lambda (k)
+     (abort-current-continuation actor-prompt-tag k to body))
+   actor-prompt-tag))
+
+(define actor-prompt-tag
+  (make-continuation-prompt-tag))
+
+(define current-vat
+  (parameter #f))
+
+;; Or actor-address?
+(define self
+  (parameter #f))
+
+(define current-vat
+  (make-parameter #f))
+
+(define (message-loop handler actor-address vat-channel)
+  (parameterize ([current-vat vat-channel]
+                 [self actor-address])
+    ;; This is a mapping of message => continuation where messages are
+    ;; messages that are "waiting on a reply"
+    ;; The Vat takes care of a (weak) mapping of random ids to messages
+    ;; so we don't have to here.
+    (define waiting-on-messages
+      (make-hasheq))
+    (define (with-message-capture-prompt thunk)
+      (call-with-continuation-prompt
+       thunk
+       actor-prompt-tag
+       (lambda (k to body)
+         (define msg
+           (send-message to body))
+         ;; Set waiting-on-messages continuation to be this msg
+         (hash-set! waiting-on-messages msg k))))
+    (let lp ()
+      (match (thread-receive)
+        ;; TODO: Add error handling here
+        [(? message? msg)
+         (cond
+          ;; This message is in reply to another... so handle it!
+          [(message-in-reply-to msg) =>
+           (lambda (in-reply-to)
+             (when (not (hash-has-key? waiting-on-messages in-reply-to))
+               (error "Message in reply to object that doesn't exist"
+                      msg in-reply-to))
+             ;; Pull the waiting continuation out
+             (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
+             (hash-remove! waiting-on-messages in-reply-to)
+             ;; Let's call it...
+             (with-message-capture-prompt
+              (lambda ()
+                (apply waiting-kont (message-body msg))))
+             ;; Loop again
+             (lp))]
+          [else
+           ;; Set up initial escape and capture prompts, along with error handler
+           (with-message-capture-prompt
+            (lambda ()
+              (call-with-values
+                  (lambda ()
+                    (with-handlers ([exn:fail?
+                                     (lambda (v)
+                                       ;; Error handling goes here!
+                                       'TODO)])
+                      (apply handler (message-body msg))))
+                (lambda vals
+                  (when (message-please-reply-to msg)
+                    (send-message (message-please-reply-to msg)
+                                  vals
+                                  #:in-reply-to msg))))))
+           (lp)])]
+        ;; Got the shut down command...
+        ['shutdown (void)]))))
+
+;; So we need flexible vats.
+;; But do we really need flexible actors? :\
+(define vat%
+  (class object%
+    (define actor-registry
+      (make-weak-hasheq))))
+
+;; TODO: This needs to be callable...
+(struct local-address
+  (id vat)) ; We might not even need vat...
+
+(define (fresh-local-address))
+
+(struct remote-address
+  (id vat ))
+
+
+;; An address to ourselves which we can hand out
+(define current-vat
+  (make-parameter #f))
+
+
+#;(define spawn
+  (make-keyword-procedure
+   (lambda (kws kw-args actor-constructor . rest)
+     (thread
+      ;; Not quite complete but getting there...
+      (lambda ()
+        (define actor
+          (keyword-apply actor-constructor kws kw-args rest))
+        ;; TODO: Start listening loop
+        
+
+        ;; TODO: Register with vat
+        ;; TODO: Return actor address, which is callable for <-wait style behavior
+        
+
+        )))))
+
+
+
+
+
+(provide self <-)
