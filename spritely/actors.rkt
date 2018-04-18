@@ -62,7 +62,7 @@ to us."
 (define self
   (make-parameter #f))
 
-(define (message-loop handler actor-address vat-channel)
+(define (message-loop handler vat-channel)
   "The actor main loop"
   (parameterize ([current-vat vat-channel])
     ;; This is a mapping of message => continuation where messages are
