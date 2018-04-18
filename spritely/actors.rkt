@@ -1,9 +1,13 @@
 #lang racket
 
-(require racket/generic
+(require racket/exn
+         racket/generic
          racket/promise
          racket/random
          racket/async-channel)
+
+(module+ test
+  (require rackunit))
 
 (struct message
   (;; a possible randomly generated identifier for this message.
@@ -21,6 +25,26 @@
    in-reply-to
    ;; A request to reply to this actor address
    please-reply-to))
+
+(define-generics address
+  [address-id address])
+
+;; TODO: This needs to be callable...
+;; TODO: Maybe we merge these with remote-address
+(struct local-address
+  (id vat)
+  #:methods gen:address
+  [(define (address-id address)
+     (force (local-address-id address)))])
+
+(define (fresh-local-address)
+  (local-address #f))
+
+(struct remote-address
+  (id vat-ref)
+  #:methods gen:address
+  [(define (address-id address)
+     (remote-address-id address))])
 
 (define (send-message to body
                       #:please-reply? [please-reply? #f]
@@ -65,70 +89,90 @@ to us."
 (struct handle-message
   [msg actor-address])
 
-(define (start-message-loop handler vat-channel)
+(define (start-message-loop handler)
   "The actor main loop"
   (thread
    (lambda ()
-     (parameterize ([current-vat vat-channel])
-       ;; This is a mapping of message => continuation where messages are
-       ;; messages that are "waiting on a reply"
-       ;; The Vat takes care of a (weak) mapping of random ids to messages
-       ;; so we don't have to here.
-       (define waiting-on-messages
-         (make-hasheq))
-       (define (with-message-capture-prompt thunk)
-         (call-with-continuation-prompt
-          thunk
-          actor-prompt-tag
-          (lambda (k to body)
-            (define msg
-              (send-message to body))
-            ;; Set waiting-on-messages continuation to be this msg
-            (hash-set! waiting-on-messages msg k))))
-       (let lp ()
-         (match (thread-receive)
-           [(handle-message msg actor-address)
-            (cond
-             ;; This message is in reply to another... so handle it!
-             [(message-in-reply-to msg) =>
-              (lambda (in-reply-to)
-                (when (not (hash-has-key? waiting-on-messages in-reply-to))
-                  (error "Message in reply to object that doesn't exist"
-                         msg in-reply-to))
-                ;; Pull the waiting continuation out
-                (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
-                (hash-remove! waiting-on-messages in-reply-to)
-                ;; Let's call it...
-                (with-message-capture-prompt
-                 (lambda ()
-                   (apply waiting-kont (message-body msg))))
-                ;; Loop again
-                (lp))]
-             [else
-              ;; Set up initial escape and capture prompts, along with error handler
+     ;; This is a mapping of message => continuation where messages are
+     ;; messages that are "waiting on a reply"
+     ;; The Vat takes care of a (weak) mapping of random ids to messages
+     ;; so we don't have to here.
+     (define waiting-on-messages
+       (make-hasheq))
+     (define (with-message-capture-prompt thunk)
+       (call-with-continuation-prompt
+        thunk
+        actor-prompt-tag
+        (lambda (k to body)
+          (define msg
+            (send-message to body))
+          ;; Set waiting-on-messages continuation to be this msg
+          (hash-set! waiting-on-messages msg k))))
+     (let lp ()
+       (match (thread-receive)
+         [(handle-message msg actor-address)
+          (cond
+           ;; This message is in reply to another... so handle it!
+           [(message-in-reply-to msg) =>
+            (lambda (in-reply-to)
+              (when (not (hash-has-key? waiting-on-messages in-reply-to))
+                (error "Message in reply to object that doesn't exist"
+                       msg in-reply-to))
+              ;; Pull the waiting continuation out
+              (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
+              (hash-remove! waiting-on-messages in-reply-to)
+              ;; Let's call it...
               (with-message-capture-prompt
                (lambda ()
-                 ;; Why put self parameterization here?  Why not at the top?
-                 ;; If we put it here, we can ensure that while processing a message
-                 ;; that we keep self from being gc'ed, but we allow the possibility
-                 ;; of the message handler being GC'ed from the main root, allowing
-                 ;; for shutdown when no references are left
-                 (parameterize ([self actor-address])
-                   (with-handlers ([exn:fail?
-                                    (lambda (v)
-                                      ;; Error handling goes here!
-                                      (display (exn->string v)))])
-                     (call-with-values
-                         (lambda ()
-                           (apply handler (message-body msg)))
-                       (lambda vals
-                         (when (message-please-reply-to msg)
-                           (send-message (message-please-reply-to msg)
-                                         vals
-                                         #:in-reply-to msg))))))))
-              (lp)])]
-           ;; Got the shut down command...
-           ['shutdown (void)]))))))
+                 (apply waiting-kont (message-body msg))))
+              ;; Loop again
+              (lp))]
+           [else
+            ;; Set up initial escape and capture prompts, along with error handler
+            (with-message-capture-prompt
+             (lambda ()
+               ;; Why put self parameterization here?  Why not at the top?
+               ;; If we put it here, we can ensure that while processing a message
+               ;; that we keep self from being gc'ed, but we allow the possibility
+               ;; of the message handler being GC'ed from the main root, allowing
+               ;; for shutdown when no references are left
+               (parameterize ([self actor-address])
+                 (with-handlers ([exn:fail?
+                                  (lambda (v)
+                                    ;; Error handling goes here!
+                                    (display (exn->string v)))])
+                   (call-with-values
+                       (lambda ()
+                         (apply handler (message-body msg)))
+                     (lambda vals
+                       (when (message-please-reply-to msg)
+                         (send-message (message-please-reply-to msg)
+                                       vals
+                                       #:in-reply-to msg))))))))
+            (lp)])]
+         ;; Got the shut down command...
+         ['shutdown (void)])))))
+
+
+;;; Check if the basic message loop stuff works
+(module+ test
+  (define set-this-box
+    (box #f))
+  (define wait-on
+    (make-semaphore))
+  (define actor-a
+    (start-message-loop
+     (lambda (wait-on foo)
+       (set-box! set-this-box foo)
+       (semaphore-post wait-on))
+     ;; shouldn't come up but I guess we'll hand over a channel anyhow
+     (make-channel)))
+  (thread-send actor-a
+               (handle-message (message #f actor-a (list wait-on 'beep) #f #f)
+                               actor-a))
+  (sync/timeout 1 wait-on)
+  (check-eq? (unbox set-this-box) 'beep))
+
 
 ;; So we need flexible vats.
 ;; But do we really need flexible actors? :\
@@ -138,38 +182,21 @@ to us."
     (define actor-registry
       (make-weak-hasheq))))
 
-(define-generics address
-  [address-id address])
-
-;; TODO: This needs to be callable...
-;; TODO: Maybe we merge these with remote-address
-(struct local-address
-  (id vat)
-  #:methods gen:address
-  [(define (address-id address)
-     (force (local-address-id address)))])
-
-(define (fresh-local-address)
-  (local-address #f))
-
-(struct remote-address
-  (id vat-ref)
-  #:methods gen:address
-  [(define (address-id address)
-     (remote-address-id address))])
-
 #;(define spawn
   (make-keyword-procedure
    (lambda (kws kw-args actor-constructor . rest)
      (thread
       ;; Not quite complete but getting there...
       (lambda ()
+        ;; TODO: Set up vat if necessary
+        
+
         (define actor-thread
           (thread
            (lambda ()
              (message-loop
               (keyword-apply actor-constructor kws kw-args rest)
-              ))))
+              ()))))
         ;; TODO: Register with vat
 
         ;; TODO: Start listening loop
