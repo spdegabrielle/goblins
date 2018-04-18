@@ -1,4 +1,9 @@
-#lang racket/load
+#lang racket
+
+(require racket/generic
+         racket/promise
+         racket/random
+         racket/async-channel)
 
 (struct message
   (;; a possible randomly generated identifier for this message.
@@ -44,17 +49,17 @@ to us."
      (abort-current-continuation actor-prompt-tag k to body))
    actor-prompt-tag))
 
+(define (<-block to . body)
+  'TODO)
+
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
 
 (define current-vat
-  (parameter #f))
+  (make-parameter #f))
 
-;; Or actor-address?
+;; Or actor-address?  Anyway maybe this should be a weak box?
 (define self
-  (parameter #f))
-
-(define current-vat
   (make-parameter #f))
 
 (define (message-loop handler actor-address vat-channel)
@@ -119,23 +124,29 @@ to us."
 ;; But do we really need flexible actors? :\
 (define vat%
   (class object%
+    (super-new)
     (define actor-registry
       (make-weak-hasheq))))
 
-;; TODO: This needs to be callable...
-(struct local-address
-  (id vat)) ; We might not even need vat...
+(define-generics address
+  [address-id address])
 
-(define (fresh-local-address))
+;; TODO: This needs to be callable...
+;; TODO: Maybe we merge these with remote-address
+(struct local-address
+  (id vat)
+  #:methods gen:address
+  [(define (address-id address)
+     (force (local-address-id address)))])
+
+(define (fresh-local-address)
+  (local-address #f))
 
 (struct remote-address
-  (id vat ))
-
-
-;; An address to ourselves which we can hand out
-(define current-vat
-  (make-parameter #f))
-
+  (id vat-ref)
+  #:methods gen:address
+  [(define (address-id address)
+     (remote-address-id address))])
 
 #;(define spawn
   (make-keyword-procedure
@@ -143,12 +154,16 @@ to us."
      (thread
       ;; Not quite complete but getting there...
       (lambda ()
-        (define actor
-          (keyword-apply actor-constructor kws kw-args rest))
-        ;; TODO: Start listening loop
-        
-
+        (define actor-thread
+          (thread
+           (lambda ()
+             (message-loop
+              (keyword-apply actor-constructor kws kw-args rest)
+              ))))
         ;; TODO: Register with vat
+
+        ;; TODO: Start listening loop
+
         ;; TODO: Return actor address, which is callable for <-wait style behavior
         
 
