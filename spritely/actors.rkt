@@ -63,8 +63,7 @@ to us."
   (make-parameter #f))
 
 (define (message-loop handler actor-address vat-channel)
-  (parameterize ([current-vat vat-channel]
-                 [self actor-address])
+  (parameterize ([current-vat vat-channel])
     ;; This is a mapping of message => continuation where messages are
     ;; messages that are "waiting on a reply"
     ;; The Vat takes care of a (weak) mapping of random ids to messages
@@ -83,7 +82,7 @@ to us."
     (let lp ()
       (match (thread-receive)
         ;; TODO: Add error handling here
-        [(? message? msg)
+        [#('handle-message msg self)
          (cond
           ;; This message is in reply to another... so handle it!
           [(message-in-reply-to msg) =>
@@ -104,18 +103,24 @@ to us."
            ;; Set up initial escape and capture prompts, along with error handler
            (with-message-capture-prompt
             (lambda ()
-              (call-with-values
-                  (lambda ()
-                    (with-handlers ([exn:fail?
-                                     (lambda (v)
-                                       ;; Error handling goes here!
-                                       'TODO)])
-                      (apply handler (message-body msg))))
-                (lambda vals
-                  (when (message-please-reply-to msg)
-                    (send-message (message-please-reply-to msg)
-                                  vals
-                                  #:in-reply-to msg))))))
+              ;; Why put self parameterization here?  Why not at the top?
+              ;; If we put it here, we can ensure that while processing a message
+              ;; that we keep self from being gc'ed, but we allow the possibility
+              ;; of the message handler being GC'ed from the main root, allowing
+              ;; for shutdown when no references are left
+              (parameterize ([self self])
+                (call-with-values
+                    (lambda ()
+                      (with-handlers ([exn:fail?
+                                       (lambda (v)
+                                         ;; Error handling goes here!
+                                         'TODO)])
+                        (apply handler (message-body msg))))
+                  (lambda vals
+                    (when (message-please-reply-to msg)
+                      (send-message (message-please-reply-to msg)
+                                    vals
+                                    #:in-reply-to msg)))))))
            (lp)])]
         ;; Got the shut down command...
         ['shutdown (void)]))))
@@ -148,7 +153,7 @@ to us."
   [(define (address-id address)
      (remote-address-id address))])
 
-#;(define spawn
+(define spawn
   (make-keyword-procedure
    (lambda (kws kw-args actor-constructor . rest)
      (thread
