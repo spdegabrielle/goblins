@@ -31,14 +31,14 @@
 
 ;; TODO: This needs to be callable...
 ;; TODO: Maybe we merge these with remote-address
+;; TODO: This needs a will for when there are no more references
+;;   to it where we ask the vat to shut us down
+;;   ... or should we use a custodian, actually?
 (struct local-address
-  (id vat)
+  (id vat-channel)
   #:methods gen:address
   [(define (address-id address)
      (force (local-address-id address)))])
-
-(define (fresh-local-address)
-  (local-address #f))
 
 (struct remote-address
   (id vat-ref)
@@ -59,8 +59,7 @@ to us."
              in-reply-to
              (if please-reply?
                  (self) #f)))
-  (channel-put (current-vat)
-               msg)
+  (channel-put (current-vat-channel) (vector 'send-message msg))
   msg)
 
 (define (<- to . body)
@@ -76,15 +75,19 @@ to us."
 (define (<-block to . body)
   'TODO)
 
+(provide <- <-wait <-block)
+
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
 
-(define current-vat
+(define current-vat-channel
   (make-parameter #f))
 
 ;; Or actor-address?  Anyway maybe this should be a weak box?
 (define self
   (make-parameter #f))
+
+(provide current-vat-channel self)
 
 (struct handle-message
   [msg actor-address])
@@ -153,7 +156,6 @@ to us."
          ;; Got the shut down command...
          ['shutdown (void)])))))
 
-
 ;;; Check if the basic message loop stuff works
 (module+ test
   (define set-this-box
@@ -174,40 +176,87 @@ to us."
   (check-eq? (unbox set-this-box) 'beep))
 
 
-;; So we need flexible vats.
+(struct registered-actor
+  (thread custodian))
+
+;; So we need flexible vats eventually.
 ;; But do we really need flexible actors? :\
 (define vat%
   (class object%
     (super-new)
     (define actor-registry
-      (make-weak-hasheq))))
+      (make-weak-hasheq))
+    (define vat-channel
+      (make-channel))
+    (define/public (get-vat-channel)
+      vat-channel)
 
-#;(define spawn
-  (make-keyword-procedure
-   (lambda (kws kw-args actor-constructor . rest)
-     (thread
-      ;; Not quite complete but getting there...
-      (lambda ()
-        ;; TODO: Set up vat if necessary
-        
+    (define vat-custodian
+      (make-custodian))
 
-        (define actor-thread
-          (thread
-           (lambda ()
-             (message-loop
-              (keyword-apply actor-constructor kws kw-args rest)
-              ()))))
-        ;; TODO: Register with vat
+    (define/public (main-loop)
+      (parameterize ([current-custodian vat-custodian])
+        (thread
+         (lambda ()
+           (let lp ()
+             (match (channel-get vat-channel)
+               ;; Send a message to an actor at a particular address
+               [(vector 'send-message msg)
+                (define msg-to
+                  (message-to msg))
+                ;; TODO: Remote vat support goes here
+                (when (not (hash-has-key? actor-registry msg-to))
+                  (error "No actor with id" msg-to))
 
-        ;; TODO: Start listening loop
+                (define actor-reg
+                  (hash-ref actor-registry msg-to))
+                (thread-send (registered-actor-thread actor-reg)
+                             (handle-message msg msg-to))
+                (lp)]
+               ;; Register an actor as part of this vat
+               ;; TODO: Perhaps we should be the ones generating the address
+               [(vector 'spawn-actor handler send-actor-address-ch)
+                (define actor-custodian
+                  (make-custodian))
+                (define actor-thread
+                  (parameterize ([current-custodian actor-custodian])
+                    (start-message-loop
+                     handler)))
+                (define actor-address
+                  (local-address #f vat-channel))
+                (hash-set! actor-registry
+                           actor-address (registered-actor actor-thread
+                                                           actor-custodian))
+                (channel-put send-actor-address-ch
+                             actor-address)
+                (lp)]
+               ['shutdown
+                (custodian-shutdown-all vat-custodian)
+                (void)])))))
+      (void))))
 
-        ;; TODO: Return actor address, which is callable for <-wait style behavior
-        
+(provide vat%)
 
-        )))))
+(define (spawn handler #:will [will #f])  ; TODO: Add will support
+  (define (spawn-default-vat)
+    (define new-vat
+      (new vat%))
+    (define vat-channel
+      (send new-vat get-vat-channel))
+    (send new-vat main-loop)
+    (current-vat-channel vat-channel)
+    vat-channel)
+  (define vat-channel
+    (or (current-vat-channel)
+        (spawn-default-vat)))
+  (define get-address-ch
+    (make-channel))
+  (channel-put vat-channel (vector 'spawn-actor handler get-address-ch))
+  (define actor-address
+    (channel-get get-address-ch))
+  actor-address)
 
 
 
 
 
-(provide self <-)
