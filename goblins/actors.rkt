@@ -89,19 +89,12 @@ to us."
 
 (provide current-vat-channel self)
 
-(struct handle-message
-  [msg actor-address])
+(struct registered-actor
+  [handler custodian waiting-on-messages])
 
-(define (start-message-loop handler)
-  "The actor main loop"
-  (thread
-   (lambda ()
-     ;; This is a mapping of message => continuation where messages are
-     ;; messages that are "waiting on a reply"
-     ;; The Vat takes care of a (weak) mapping of random ids to messages
-     ;; so we don't have to here.
-     (define waiting-on-messages
-       (make-hasheq))
+(define (handle-message actor-reg actor-address msg)
+  (match actor-reg
+    [(registered-actor handler custodian waiting-on-messages)
      (define (with-message-capture-prompt thunk)
        (call-with-continuation-prompt
         thunk
@@ -111,79 +104,55 @@ to us."
             (send-message to body))
           ;; Set waiting-on-messages continuation to be this msg
           (hash-set! waiting-on-messages msg k))))
-     (let lp ()
-       (match (thread-receive)
-         [(handle-message msg actor-address)
-          (cond
-           ;; This message is in reply to another... so handle it!
-           [(message-in-reply-to msg) =>
-            (lambda (in-reply-to)
-              (when (not (hash-has-key? waiting-on-messages in-reply-to))
-                (error "Message in reply to object that doesn't exist"
-                       msg in-reply-to))
-              ;; Pull the waiting continuation out
-              (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
-              (hash-remove! waiting-on-messages in-reply-to)
-              ;; Let's call it...
-              (with-message-capture-prompt
-               (lambda ()
-                 (apply waiting-kont (message-body msg))))
-              ;; Loop again
-              (lp))]
-           [else
-            ;; Set up initial escape and capture prompts, along with error handler
-            (with-message-capture-prompt
-             (lambda ()
-               ;; Why put self parameterization here?  Why not at the top?
-               ;; If we put it here, we can ensure that while processing a message
-               ;; that we keep self from being gc'ed, but we allow the possibility
-               ;; of the message handler being GC'ed from the main root, allowing
-               ;; for shutdown when no references are left
-               (parameterize ([self actor-address])
-                 (with-handlers ([exn:fail?
-                                  (lambda (v)
-                                    ;; Error handling goes here!
-                                    (display (exn->string v)))])
-                   (call-with-values
-                       (lambda ()
-                         (apply handler (message-body msg)))
-                     (lambda vals
-                       (when (message-please-reply-to msg)
-                         (send-message (message-please-reply-to msg)
-                                       vals
-                                       #:in-reply-to msg))))))))
-            (lp)])]
-         ;; Got the shut down command...
-         ['shutdown (void)])))))
 
-;;; Check if the basic message loop stuff works
-(module+ test
-  (define set-this-box
-    (box #f))
-  (define wait-on
-    (make-semaphore))
-  (define actor-a
-    (start-message-loop
-     (lambda (wait-on foo)
-       (set-box! set-this-box foo)
-       (semaphore-post wait-on))
-     ;; shouldn't come up but I guess we'll hand over a channel anyhow
-     (make-channel)))
-  (thread-send actor-a
-               (handle-message (message #f actor-a (list wait-on 'beep) #f #f)
-                               actor-a))
-  (sync/timeout 1 wait-on)
-  (check-eq? (unbox set-this-box) 'beep))
+     (parameterize ([current-custodian custodian])
+       (cond
+        ;; This message is in reply to another... so handle it!
+        [(message-in-reply-to msg) =>
+         (lambda (in-reply-to)
+           (when (not (hash-has-key? waiting-on-messages in-reply-to))
+             (error "Message in reply to object that doesn't exist"
+                    msg in-reply-to))
+           ;; Pull the waiting continuation out
+           (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
+           (hash-remove! waiting-on-messages in-reply-to)
+           ;; Let's call it...
+           (with-message-capture-prompt
+            (lambda ()
+              (apply waiting-kont (message-body msg)))))]
+        [else
+         ;; Set up initial escape and capture prompts, along with error handler
+         (with-message-capture-prompt
+          (lambda ()
+            ;; Why put self parameterization here?  Why not at the top?
+            ;; If we put it here, we can ensure that while processing a message
+            ;; that we keep self from being gc'ed, but we allow the possibility
+            ;; of the message handler being GC'ed from the main root, allowing
+            ;; for shutdown when no references are left
+            (parameterize ([self actor-address])
+              (with-handlers ([exn:fail?
+                               (lambda (v)
+                                 ;; Error handling goes here!
+                                 (display (exn->string v)))])
+                (call-with-values
+                    (lambda ()
+                      (apply handler (message-body msg)))
+                  (lambda vals
+                    (when (message-please-reply-to msg)
+                      (send-message (message-please-reply-to msg)
+                                    vals
+                                    #:in-reply-to msg))))))))]))])
+  (void))
 
-
-(struct registered-actor
-  (thread custodian))
+(struct available-work
+  [registered-actor actor-address message])
 
 ;; So we need flexible vats eventually.
 ;; But do we really need flexible actors? :\
 (define vat%
   (class object%
     (super-new)
+
     (define actor-registry
       (make-weak-hasheq))
     (define vat-channel
@@ -194,10 +163,27 @@ to us."
     (define vat-custodian
       (make-custodian))
 
+    (define thread-pool-size
+      1000)
+    ;; Where we put available work 
+    (define work-channel
+      (make-async-channel))
+
     (define/public (main-loop)
       (parameterize ([current-custodian vat-custodian])
         (thread
          (lambda ()
+           (define (listen-for-work)
+             (let lp ()
+               (match (async-channel-get work-channel)
+                 [(available-work registered-actor actor-address message)
+                  (handle-message registered-actor actor-address message)
+                  (lp)])))
+
+           (define thread-pool
+             (for/list ([i (in-range thread-pool-size)])
+               (thread listen-for-work)))
+
            (let lp ()
              (match (channel-get vat-channel)
                ;; Send a message to an actor at a particular address
@@ -210,23 +196,20 @@ to us."
 
                 (define actor-reg
                   (hash-ref actor-registry msg-to))
-                (thread-send (registered-actor-thread actor-reg)
-                             (handle-message msg msg-to))
+                (async-channel-put work-channel
+                                   (available-work actor-reg msg-to msg))
                 (lp)]
                ;; Register an actor as part of this vat
                ;; TODO: Perhaps we should be the ones generating the address
                [(vector 'spawn-actor handler send-actor-address-ch)
                 (define actor-custodian
                   (make-custodian))
-                (define actor-thread
-                  (parameterize ([current-custodian actor-custodian])
-                    (start-message-loop
-                     handler)))
                 (define actor-address
                   (local-address #f vat-channel))
                 (hash-set! actor-registry
-                           actor-address (registered-actor actor-thread
-                                                           actor-custodian))
+                           actor-address (registered-actor handler
+                                                           actor-custodian
+                                                           (make-hasheq)))
                 (channel-put send-actor-address-ch
                              actor-address)
                 (lp)]
