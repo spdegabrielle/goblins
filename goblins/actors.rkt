@@ -169,10 +169,21 @@ to us."
     (define work-channel
       (make-async-channel))
 
+    (define address-will-executor
+      (make-will-executor))
+
     (define/public (main-loop)
       (parameterize ([current-custodian vat-custodian])
         (thread
          (lambda ()
+           ;; executes wills for the actor addresses going out of scope
+           (define executor-thread
+             (thread
+              (lambda ()
+                (let loop ()
+                  (will-execute address-will-executor)
+                  (loop)))))
+
            (define (listen-for-work)
              (let lp ()
                (match (async-channel-get work-channel)
@@ -206,10 +217,19 @@ to us."
                   (make-custodian))
                 (define actor-address
                   (local-address #f vat-channel))
+                ;; Set this custodian up to shut down this actor's custodian
+                ;; once the actor address is gone
+                (will-register address-will-executor
+                               actor-address
+                               (lambda (v)
+                                 (display "So long, pal!\n")
+                                 (custodian-shutdown-all actor-custodian)))
                 (hash-set! actor-registry
-                           actor-address (registered-actor handler
-                                                           actor-custodian
-                                                           (make-hasheq)))
+                           actor-address
+                           (parameterize ([current-custodian actor-custodian])
+                             (registered-actor handler
+                                               actor-custodian
+                                               (make-hasheq))))
                 (channel-put send-actor-address-ch
                              actor-address)
                 (lp)]
