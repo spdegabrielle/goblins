@@ -153,6 +153,9 @@ to us."
   (class object%
     (super-new)
 
+    ;; TODO: This registry doesn't "relinquish" its memory, unfortunately.
+    ;;   Every now and then we should stop and copy over the registry
+    ;;   to a new registry
     (define actor-registry
       (make-weak-hasheq))
     (define vat-channel
