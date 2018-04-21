@@ -239,7 +239,4 @@ to us."
     (channel-get get-address-ch))
   actor-address)
 
-
-
-
-
+(provide spawn)
