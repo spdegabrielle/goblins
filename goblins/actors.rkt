@@ -59,7 +59,8 @@ to us."
              in-reply-to
              (if please-reply?
                  (self) #f)))
-  (channel-put (current-vat-channel) (vector 'send-message msg))
+  (channel-put (send (current-vat) get-vat-channel)
+               (vector 'send-message msg))
   msg)
 
 (define (<- to . body)
@@ -80,14 +81,14 @@ to us."
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
 
-(define current-vat-channel
+(define current-vat
   (make-parameter #f))
 
 ;; Or actor-address?  Anyway maybe this should be a weak box?
 (define self
   (make-parameter #f))
 
-(provide current-vat-channel self)
+(provide current-vat self)
 
 (struct registered-actor
   [handler custodian waiting-on-messages])
@@ -244,17 +245,15 @@ to us."
   (define (spawn-default-vat)
     (define new-vat
       (new vat%))
-    (define vat-channel
-      (send new-vat get-vat-channel))
     (send new-vat main-loop)
-    (current-vat-channel vat-channel)
-    vat-channel)
-  (define vat-channel
-    (or (current-vat-channel)
+    (current-vat new-vat)
+    new-vat)
+  (define vat
+    (or (current-vat)
         (spawn-default-vat)))
   (define get-address-ch
     (make-channel))
-  (channel-put vat-channel (vector 'spawn-actor handler get-address-ch))
+  (channel-put (send vat get-vat-channel) (vector 'spawn-actor handler get-address-ch))
   (define actor-address
     (channel-get get-address-ch))
   actor-address)
