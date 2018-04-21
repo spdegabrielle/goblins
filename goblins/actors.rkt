@@ -91,11 +91,11 @@ to us."
 (provide current-vat self)
 
 (struct registered-actor
-  [handler custodian waiting-on-messages])
+  [handler waiting-on-messages])
 
 (define (handle-message actor-reg actor-address msg)
   (match actor-reg
-    [(registered-actor handler custodian waiting-on-messages)
+    [(registered-actor handler waiting-on-messages)
      (define (with-message-capture-prompt thunk)
        (call-with-continuation-prompt
         thunk
@@ -106,43 +106,42 @@ to us."
           ;; Set waiting-on-messages continuation to be this msg
           (hash-set! waiting-on-messages msg k))))
 
-     (parameterize ([current-custodian custodian])
-       (cond
-        ;; This message is in reply to another... so handle it!
-        [(message-in-reply-to msg) =>
-         (lambda (in-reply-to)
-           (when (not (hash-has-key? waiting-on-messages in-reply-to))
-             (error "Message in reply to object that doesn't exist"
-                    msg in-reply-to))
-           ;; Pull the waiting continuation out
-           (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
-           (hash-remove! waiting-on-messages in-reply-to)
-           ;; Let's call it...
-           (with-message-capture-prompt
-            (lambda ()
-              (apply waiting-kont (message-body msg)))))]
-        [else
-         ;; Set up initial escape and capture prompts, along with error handler
+     (cond
+      ;; This message is in reply to another... so handle it!
+      [(message-in-reply-to msg) =>
+       (lambda (in-reply-to)
+         (when (not (hash-has-key? waiting-on-messages in-reply-to))
+           (error "Message in reply to object that doesn't exist"
+                  msg in-reply-to))
+         ;; Pull the waiting continuation out
+         (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
+         (hash-remove! waiting-on-messages in-reply-to)
+         ;; Let's call it...
          (with-message-capture-prompt
           (lambda ()
-            ;; Why put self parameterization here?  Why not at the top?
-            ;; If we put it here, we can ensure that while processing a message
-            ;; that we keep self from being gc'ed, but we allow the possibility
-            ;; of the message handler being GC'ed from the main root, allowing
-            ;; for shutdown when no references are left
-            (parameterize ([self actor-address])
-              (with-handlers ([exn:fail?
-                               (lambda (v)
-                                 ;; Error handling goes here!
-                                 (display (exn->string v)))])
-                (call-with-values
-                    (lambda ()
-                      (apply handler (message-body msg)))
-                  (lambda vals
-                    (when (message-please-reply-to msg)
-                      (send-message (message-please-reply-to msg)
-                                    vals
-                                    #:in-reply-to msg))))))))]))])
+            (apply waiting-kont (message-body msg)))))]
+      [else
+       ;; Set up initial escape and capture prompts, along with error handler
+       (with-message-capture-prompt
+        (lambda ()
+          ;; Why put self parameterization here?  Why not at the top?
+          ;; If we put it here, we can ensure that while processing a message
+          ;; that we keep self from being gc'ed, but we allow the possibility
+          ;; of the message handler being GC'ed from the main root, allowing
+          ;; for shutdown when no references are left
+          (parameterize ([self actor-address])
+            (with-handlers ([exn:fail?
+                             (lambda (v)
+                               ;; Error handling goes here!
+                               (display (exn->string v)))])
+              (call-with-values
+                  (lambda ()
+                    (apply handler (message-body msg)))
+                (lambda vals
+                  (when (message-please-reply-to msg)
+                    (send-message (message-please-reply-to msg)
+                                  vals
+                                  #:in-reply-to msg))))))))])])
   (void))
 
 (struct available-work
@@ -172,6 +171,9 @@ to us."
 
     (define address-will-executor
       (make-will-executor))
+
+    (define/public (get-actor-registry)
+      actor-registry)
 
     (define/public (main-loop)
       (parameterize ([current-custodian vat-custodian])
@@ -213,24 +215,19 @@ to us."
                 (lp)]
                ;; Register an actor as part of this vat
                ;; TODO: Perhaps we should be the ones generating the address
-               [(vector 'spawn-actor handler send-actor-address-ch)
-                (define actor-custodian
-                  (make-custodian))
+               [(vector 'spawn-actor handler send-actor-address-ch will)
                 (define actor-address
                   (local-address #f vat-channel))
-                ;; Set this custodian up to shut down this actor's custodian
-                ;; once the actor address is gone
-                (will-register address-will-executor
-                               actor-address
-                               (lambda (v)
-                                 (display "So long, pal!\n")
-                                 (custodian-shutdown-all actor-custodian)))
+                ;; If the user gave us a will to execute, run that
+                (when will
+                  (will-register address-will-executor
+                                 actor-address
+                                 (lambda (v) (will))))
                 (hash-set! actor-registry
                            actor-address
-                           (parameterize ([current-custodian actor-custodian])
-                             (registered-actor handler
-                                               actor-custodian
-                                               (make-hasheq))))
+                           (registered-actor handler
+                                             ;; actor-custodian
+                                             (make-hasheq)))
                 (channel-put send-actor-address-ch
                              actor-address)
                 (lp)]
@@ -241,7 +238,7 @@ to us."
 
 (provide vat%)
 
-(define (spawn handler #:will [will #f])  ; TODO: Add will support
+(define (spawn handler #:will [will #f])
   (define (spawn-default-vat)
     (define new-vat
       (new vat%))
@@ -253,7 +250,9 @@ to us."
         (spawn-default-vat)))
   (define get-address-ch
     (make-channel))
-  (channel-put (send vat get-vat-channel) (vector 'spawn-actor handler get-address-ch))
+  (channel-put (send vat get-vat-channel) (vector 'spawn-actor
+                                                  handler get-address-ch
+                                                  will))
   (define actor-address
     (channel-get get-address-ch))
   actor-address)
