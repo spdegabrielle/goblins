@@ -38,7 +38,11 @@
   (id vat-channel)
   #:methods gen:address
   [(define (address-id address)
-     (force (local-address-id address)))])
+     (force (local-address-id address)))]
+  #:property prop:procedure
+  (make-keyword-procedure
+   (lambda (kws kw-args this . args)
+     (apply <- this args))))
 
 (struct remote-address
   (id vat-ref)
