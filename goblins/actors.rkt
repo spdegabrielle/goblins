@@ -195,11 +195,12 @@ to us."
                   (loop)))))
 
            (define (listen-for-work)
-             (let lp ()
-               (match (async-channel-get work-channel)
-                 [(available-work registered-actor actor-address message)
-                  (handle-message registered-actor actor-address message)
-                  (lp)])))
+             (parameterize ([current-vat this])
+               (let lp ()
+                 (match (async-channel-get work-channel)
+                   [(available-work registered-actor actor-address message)
+                    (handle-message registered-actor actor-address message)
+                    (lp)]))))
 
            (define thread-pool
              (for/list ([i (in-range thread-pool-size)])
