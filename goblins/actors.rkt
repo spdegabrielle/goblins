@@ -19,8 +19,12 @@
    id
    ;; Address we're sending this to
    to
-   ;; The arguments to the procedure we'll be calling
-   body
+   ;; Keywords we'll be applying
+   kws
+   ;; Values for keywords we'll be applying
+   kw-args
+   ;; The positional arguments to the procedure we'll be calling
+   args
    ;; If we're responding to another message
    in-reply-to
    ;; A request to reply to this actor address
@@ -42,7 +46,7 @@
   #:property prop:procedure
   (make-keyword-procedure
    (lambda (kws kw-args this . args)
-     (apply <- this args))))
+     (keyword-apply <- kws kw-args this args))))
 
 (struct remote-address
   (id vat-ref)
@@ -50,16 +54,15 @@
   [(define (address-id address)
      (remote-address-id address))])
 
-(define (send-message to body
+(define (send-message to kws kw-args args
                       #:please-reply? [please-reply? #f]
-                      #:in-reply-to [in-reply-to #f]
-                      )
+                      #:in-reply-to [in-reply-to #f])
   "Send a message to TO address (through the vat), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
   (define msg
     (message #f  ;; I guess we'll set! these later if need be?
-             to body
+             to kws kw-args args
              in-reply-to
              (if please-reply?
                  (self) #f)))
@@ -67,15 +70,19 @@ to us."
                (vector 'send-message msg))
   msg)
 
-(define (<- to . body)
-  (send-message to body)
-  (void))
+(define <-
+  (make-keyword-procedure
+   (lambda (kws kw-args to . args)
+     (send-message to kws kw-args args)
+     (void))))
 
-(define (<-wait to . body)
-  (call-with-composable-continuation
-   (lambda (k)
-     (abort-current-continuation actor-prompt-tag k to body))
-   actor-prompt-tag))
+(define <-wait
+  (make-keyword-procedure
+   (lambda (kws kw-args to . args)
+     (call-with-composable-continuation
+      (lambda (k)
+        (abort-current-continuation actor-prompt-tag k to kws kw-args args))
+      actor-prompt-tag))))
 
 (define (<-block to . body)
   'TODO)
@@ -104,9 +111,9 @@ to us."
        (call-with-continuation-prompt
         thunk
         actor-prompt-tag
-        (lambda (k to body)
+        (lambda (k to kws kw-args args)
           (define msg
-            (send-message to body))
+            (send-message to kws kw-args args))
           ;; Set waiting-on-messages continuation to be this msg
           (hash-set! waiting-on-messages msg k))))
 
@@ -123,7 +130,10 @@ to us."
          ;; Let's call it...
          (with-message-capture-prompt
           (lambda ()
-            (apply waiting-kont (message-body msg)))))]
+            (keyword-apply waiting-kont
+                           (message-kws msg)
+                           (message-kw-args msg)
+                           (message-args msg)))))]
       [else
        ;; Set up initial escape and capture prompts, along with error handler
        (with-message-capture-prompt
@@ -140,7 +150,10 @@ to us."
                                (display (exn->string v)))])
               (call-with-values
                   (lambda ()
-                    (apply handler (message-body msg)))
+                    (keyword-apply handler
+                                   (message-kws msg)
+                                   (message-kw-args msg)
+                                   (message-args msg)))
                 (lambda vals
                   (when (message-please-reply-to msg)
                     (send-message (message-please-reply-to msg)
