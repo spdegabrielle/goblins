@@ -1,6 +1,7 @@
 #lang racket
 
-(require racket/exn
+(require data/queue
+         racket/exn
          racket/generic
          racket/promise
          racket/random
@@ -102,11 +103,19 @@ to us."
 (provide current-vat self)
 
 (struct registered-actor
-  [handler waiting-on-messages])
+  [handler
+   waiting-on-replies
+   ;;;; The following two properties are *only* ever managed by the vat's main
+   ;;;; thread!
+   ;; If we're busy we stuff things to do in our backlog until we can get to them.
+   backlog
+   ;; Are we busy?  This means we're currently managing a message or have queued
+   ;; up some work to do so.
+   [busy? #:mutable]])
 
 (define (handle-message actor-reg actor-address msg)
   (match actor-reg
-    [(registered-actor handler waiting-on-messages)
+    [(registered-actor handler waiting-on-replies backlog busy?)
      (define (with-message-capture-prompt thunk)
        (call-with-continuation-prompt
         thunk
@@ -114,19 +123,19 @@ to us."
         (lambda (k to kws kw-args args)
           (define msg
             (send-message to kws kw-args args))
-          ;; Set waiting-on-messages continuation to be this msg
-          (hash-set! waiting-on-messages msg k))))
+          ;; Set waiting-on-replies continuation to be this msg
+          (hash-set! waiting-on-replies msg k))))
 
      (cond
       ;; This message is in reply to another... so handle it!
       [(message-in-reply-to msg) =>
        (lambda (in-reply-to)
-         (when (not (hash-has-key? waiting-on-messages in-reply-to))
+         (when (not (hash-has-key? waiting-on-replies in-reply-to))
            (error "Message in reply to object that doesn't exist"
                   msg in-reply-to))
          ;; Pull the waiting continuation out
-         (define waiting-kont (hash-ref waiting-on-messages in-reply-to))
-         (hash-remove! waiting-on-messages in-reply-to)
+         (define waiting-kont (hash-ref waiting-on-replies in-reply-to))
+         (hash-remove! waiting-on-replies in-reply-to)
          ;; Let's call it...
          (with-message-capture-prompt
           (lambda ()
@@ -158,7 +167,8 @@ to us."
                   (when (message-please-reply-to msg)
                     (send-message (message-please-reply-to msg)
                                   vals
-                                  #:in-reply-to msg))))))))])])
+                                  #:in-reply-to msg))))))))])
+     (send (current-vat) work-finished actor-reg)])
   (void))
 
 (struct available-work
@@ -194,6 +204,10 @@ to us."
 
     (define/public (get-actor-registry)
       actor-registry)
+
+    (define/public (work-finished actor-reg)
+      (channel-put vat-channel
+                   (vector 'work-finished actor-reg)))
 
     (define/public (main-loop)
       (parameterize ([current-custodian vat-custodian])
@@ -231,9 +245,28 @@ to us."
 
                 (define actor-reg
                   (hash-ref actor-registry msg-to))
-                (async-channel-put work-channel
-                                   (available-work actor-reg msg-to msg))
+                (if (registered-actor-busy? actor-reg)
+                    ;; If the actor is busy, we actually queue this to their
+                    ;; backlog...
+                    (enqueue! (registered-actor-backlog actor-reg)
+                              (available-work actor-reg msg-to msg))
+                    ;; Otherwise, work away!
+                    (begin
+                      ;; set ourselves as busy
+                      (set-registered-actor-busy?! actor-reg #t)
+                      ;; and off to work we go!
+                      (async-channel-put work-channel
+                                         (available-work actor-reg msg-to msg))))
                 (lp)]
+               [(vector 'work-finished actor-reg)
+                (define backlog
+                  (registered-actor-backlog actor-reg))
+                (if (queue-empty? backlog)
+                    ;; Nothing left to do?  Let's mark ourselves as idle
+                    (set-registered-actor-busy?! actor-reg #f)
+                    ;; Otherwise, let's send another task to the workers
+                    (async-channel-put work-channel
+                                       (dequeue! backlog)))]
                ;; Register an actor as part of this vat
                ;; TODO: Perhaps we should be the ones generating the address
                [(vector 'spawn-actor handler send-actor-address-ch will)
@@ -247,8 +280,9 @@ to us."
                 (hash-set! actor-registry
                            actor-address
                            (registered-actor handler
-                                             ;; actor-custodian
-                                             (make-hasheq)))
+                                             (make-hasheq)
+                                             (make-queue)
+                                             #f))
                 (channel-put send-actor-address-ch
                              actor-address)
                 (lp)]
