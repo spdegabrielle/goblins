@@ -34,7 +34,6 @@
 (define-generics address
   [address-id address])
 
-;; TODO: This needs to be callable...
 ;; TODO: Maybe we merge these with remote-address
 ;; TODO: This needs a will for when there are no more references
 ;;   to it where we ask the vat to shut us down
