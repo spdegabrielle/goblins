@@ -265,7 +265,8 @@ to us."
                     (set-registered-actor-busy?! actor-reg #f)
                     ;; Otherwise, let's send another task to the workers
                     (async-channel-put work-channel
-                                       (dequeue! backlog)))]
+                                       (dequeue! backlog)))
+                (lp)]
                ;; Register an actor as part of this vat
                ;; TODO: Perhaps we should be the ones generating the address
                [(vector 'spawn-actor handler send-actor-address-ch will)
