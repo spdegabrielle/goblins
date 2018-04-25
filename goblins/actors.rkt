@@ -55,7 +55,7 @@
      (remote-address-id address))])
 
 (define (send-message to kws kw-args args
-                      #:please-reply? [please-reply? #f]
+                      #:please-reply-to [please-reply-to #f]
                       #:in-reply-to [in-reply-to #f])
   "Send a message to TO address (through the vat), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
@@ -64,8 +64,7 @@ to us."
     (message #f  ;; I guess we'll set! these later if need be?
              to kws kw-args args
              in-reply-to
-             (if please-reply?
-                 (self) #f)))
+             please-reply-to))
   (channel-put (send (current-vat) get-vat-channel)
                (vector 'send-message msg))
   msg)
@@ -121,7 +120,8 @@ to us."
         actor-prompt-tag
         (lambda (k to kws kw-args args)
           (define msg
-            (send-message to kws kw-args args))
+            (send-message to kws kw-args args
+                          #:please-reply-to actor-address))
           ;; Set waiting-on-replies continuation to be this msg
           (hash-set! waiting-on-replies msg k))))
 
@@ -162,11 +162,12 @@ to us."
                                    (message-kws msg)
                                    (message-kw-args msg)
                                    (message-args msg)))
-                (lambda vals
-                  (when (message-please-reply-to msg)
-                    (send-message (message-please-reply-to msg)
-                                  vals
-                                  #:in-reply-to msg))))))))])
+                (make-keyword-procedure
+                 (lambda (kws kw-args . args)
+                   (when (message-please-reply-to msg)
+                     (send-message (message-please-reply-to msg)
+                                   kws kw-args args
+                                   #:in-reply-to msg)))))))))])
      (send (current-vat) work-finished actor-reg)])
   (void))
 
