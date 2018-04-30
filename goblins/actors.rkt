@@ -203,9 +203,9 @@ to us."
   (class object%
     (super-new)
 
-    ;; TODO: This registry doesn't "relinquish" its memory, unfortunately.
-    ;;   Every now and then we should stop and copy over the registry
-    ;;   to a new registry
+    ;; This registry doesn't "relinquish" its memory, unfortunately.
+    ;; Every now and then we stop and copy over the registry
+    ;; to a new registry, see 'gc-registry handler below.
     (define actor-registry
       (make-weak-hasheq))
     (define vat-channel
@@ -242,9 +242,19 @@ to us."
            (define executor-thread
              (thread
               (lambda ()
-                (let loop ()
+                (define steps-till-gc 25000)
+                (let loop (;; Whats a good number for this?  I dunno.
+                           [countdown-till-gc-registry steps-till-gc])
                   (will-execute address-will-executor)
-                  (loop)))))
+                  (if (= countdown-till-gc-registry 0)
+                      ;; we need to manually clear out the registry every
+                      ;; now and then because weak maps are imperfect about
+                      ;; freeing up all their information in racket
+                      ;; (or so it appears to me from tests...)
+                      (begin
+                        (channel-put vat-channel 'gc-registry)
+                        (loop steps-till-gc))
+                      (loop (- countdown-till-gc-registry 1)))))))
 
            (define (listen-for-work)
              (parameterize ([current-vat this])
@@ -299,10 +309,12 @@ to us."
                 (define actor-address
                   (local-address #f vat-channel))
                 ;; If the user gave us a will to execute, run that
-                (when will
-                  (will-register address-will-executor
-                                 actor-address
-                                 (lambda (v) (will))))
+                ;; (when will)
+                (will-register address-will-executor
+                               actor-address
+                               (lambda (v)
+                                 (when will
+                                   (will))))
                 (hash-set! actor-registry
                            actor-address
                            (registered-actor handler
@@ -311,6 +323,14 @@ to us."
                                              #f))
                 (channel-put send-actor-address-ch
                              actor-address)
+                (lp)]
+               ;; "Garbage collect" the registry via stop-and-copy
+               ['gc-registry
+                (define new-registry
+                  (make-weak-hasheq))
+                (for (([key val] actor-registry))
+                  (hash-set! new-registry key val))
+                (set! actor-registry new-registry)
                 (lp)]
                ['shutdown
                 (custodian-shutdown-all vat-custodian)
