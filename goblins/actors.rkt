@@ -96,7 +96,7 @@ to us."
                         (lambda ()
                           (keyword-apply <-wait kws kw-args to args))
                       (make-keyword-procedure
-                       (lambda (kws kw-args args)
+                       (lambda (kws kw-args . args)
                          (channel-put ch (vector kws kw-args args)))))))])
            ;; call the actor once to get it to run
            (<- tmp-actor)
