@@ -46,7 +46,7 @@
   #:property prop:procedure
   (make-keyword-procedure
    (lambda (kws kw-args this . args)
-     (keyword-apply <- kws kw-args this args))))
+     (keyword-apply <-wait kws kw-args this args))))
 
 (struct remote-address
   (id vat-ref)
@@ -78,10 +78,33 @@ to us."
 (define <-wait
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
-     (call-with-composable-continuation
-      (lambda (k)
-        (abort-current-continuation actor-prompt-tag k to kws kw-args args))
-      actor-prompt-tag))))
+     (if (self)
+         ;; This is being called from an actor, great we can reply to it
+         (call-with-composable-continuation
+          (lambda (k)
+            (abort-current-continuation actor-prompt-tag k to kws kw-args args))
+          actor-prompt-tag)
+         ;; It's not being called from an actor?
+         ;; Well let's make an actor that can reply to it
+         ;; FIXME: Propagate errors
+         (let* ([ch (make-channel)]
+                [tmp-actor
+                 (spawn
+                  ;; a one-time-use actor...
+                  (lambda ()
+                    (call-with-values
+                        (lambda ()
+                          (keyword-apply <-wait kws kw-args to args))
+                      (make-keyword-procedure
+                       (lambda (kws kw-args args)
+                         (channel-put ch (vector kws kw-args args)))))))])
+           ;; call the actor once to get it to run
+           (<- tmp-actor)
+           ;; now retrieve the value
+           (match (channel-get ch)
+             ([vector kws kw-args args]
+              ;; Re-raise values to this continuation
+              (keyword-apply values kws kw-args args))))))))
 
 (define (<-block to . body)
   'TODO)
