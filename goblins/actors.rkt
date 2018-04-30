@@ -202,6 +202,8 @@ to us."
     (define address-will-executor
       (make-will-executor))
 
+    ;; FIXME: this is really only for debugging, and thus should not be
+    ;;   exposed on the default vat.
     (define/public (get-actor-registry)
       actor-registry)
 
