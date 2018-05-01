@@ -35,9 +35,6 @@
   [address-id address])
 
 ;; TODO: Maybe we merge these with remote-address
-;; TODO: This needs a will for when there are no more references
-;;   to it where we ask the vat to shut us down
-;;   ... or should we use a custodian, actually?
 (struct local-address
   (id vat-channel)
   #:methods gen:address
@@ -304,7 +301,6 @@ to us."
                                        (dequeue! backlog)))
                 (lp)]
                ;; Register an actor as part of this vat
-               ;; TODO: Perhaps we should be the ones generating the address
                [(vector 'spawn-actor handler send-actor-address-ch will)
                 (define actor-address
                   (local-address #f vat-channel))
