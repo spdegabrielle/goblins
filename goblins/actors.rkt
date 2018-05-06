@@ -40,10 +40,11 @@
   #:methods gen:address
   [(define (address-id address)
      (force (local-address-id address)))]
-  #:property prop:procedure
-  (make-keyword-procedure
-   (lambda (kws kw-args this . args)
-     (keyword-apply <-wait kws kw-args this args))))
+  ;; #:property prop:procedure
+  ;; (make-keyword-procedure
+  ;;  (lambda (kws kw-args this . args)
+  ;;    (keyword-apply <-wait kws kw-args this args)))
+  )
 
 (struct remote-address
   (id vat-ref)
@@ -382,10 +383,11 @@ to us."
    "Basic <-wait works"
    (<-wait actor-a 1 #:bop 66)
    (list 1 33 66))
-  (test-equal?
+  #;(test-equal?
    "Calling actor-a just as a procedure should behave the same"
    (actor-a 1 #:bop 66)
-   (list 1 33 66)))
+   (list 1 33 66))
+  )
 
 ;;; Classes and objects
 (define (spawn-object obj)
@@ -428,9 +430,9 @@ to us."
                     [annoyed-by "your hair"])])
     (test-equal?
      "Basic actor class-objects work"
-     (ernie 'greet "Bert")
+     (<-wait ernie 'greet "Bert")
      "Hello, Bert!")
     (test-equal?
      "Inherited actor class-objects work"
-     (oscar 'greet "Bert")
+     (<-wait oscar 'greet "Bert")
      "Grumble grumble... Hello, Bert!... your hair is irritating me...")))

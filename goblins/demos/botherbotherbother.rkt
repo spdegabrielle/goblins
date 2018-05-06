@@ -73,7 +73,7 @@
       (spawn-new student%
                  [name (namegen)])))
   (for ([student students])
-    (student 'bother-professor professor))
+    (<- student 'bother-professor professor))
   ;; in other words, this program doesn't really halt
   (semaphore-wait (make-semaphore)))
 

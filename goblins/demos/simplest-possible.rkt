@@ -13,8 +13,6 @@
     (spawn
      (lambda (target)
        (display "emo> What's next, Proog?\n")
-       ;; alternately could do without a continuation:
-       ;; (<- target 'greet-emo)
-       (target))))
-  (emo proog)
+       (<- target))))
+  (<- emo proog)
   (semaphore-wait done?))
