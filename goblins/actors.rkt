@@ -1,6 +1,7 @@
 #lang racket
 
 (require data/queue
+         net/base64
          racket/exn
          racket/generic
          racket/promise
@@ -9,6 +10,9 @@
 
 (module+ test
   (require rackunit))
+
+(define (make-swiss-num)
+  (crypto-random-bytes 56))
 
 (struct message
   (;; a possible randomly generated identifier for this message.
@@ -40,6 +44,14 @@
   #:methods gen:address
   [(define (address-id address)
      (force (local-address-id address)))]
+  #:methods gen:custom-write
+  [(define (write-proc local-address port mode)
+     (display (string-append "#<local-address "
+                             (bytes->string/latin-1
+                              (base64-encode
+                               (address-id local-address) #""))
+                             ">")
+              port))]
   ;; #:property prop:procedure
   ;; (make-keyword-procedure
   ;;  (lambda (kws kw-args this . args)
@@ -59,7 +71,7 @@
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
   (define msg
-    (message #f  ;; I guess we'll set! these later if need be?
+    (message (delay (make-swiss-num))
              to kws kw-args args
              in-reply-to
              please-reply-to))
@@ -304,7 +316,7 @@ to us."
                ;; Register an actor as part of this vat
                [(vector 'spawn-actor handler send-actor-address-ch will)
                 (define actor-address
-                  (local-address #f vat-channel))
+                  (local-address (delay (make-swiss-num)) vat-channel))
                 ;; If the user gave us a will to execute, run that
                 ;; (when will)
                 (will-register address-will-executor
