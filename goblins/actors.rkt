@@ -355,3 +355,35 @@ to us."
   actor-address)
 
 (provide spawn)
+
+(module+ test
+  (define put-stuff-in-me
+    (box #f))
+  (define wait-for-put
+    (make-semaphore))
+  (define putter
+    (spawn
+     (lambda (thing)
+       (set-box! put-stuff-in-me thing)
+       (semaphore-post wait-for-put))))
+  ;; TODO: have a time delay on this
+  (<- putter "cat")
+  (semaphore-wait wait-for-put)
+  (test-equal?
+   "<- works"
+   (unbox put-stuff-in-me)
+   "cat")
+
+  (define actor-a
+    (spawn
+     (lambda (beep [boop 33] #:bop bop)
+       (list beep boop bop))))
+  (test-equal?
+   "Basic <-wait works"
+   (<-wait actor-a 1 #:bop 66)
+   (list 1 33 66))
+  (test-equal?
+   "Calling actor-a just as a procedure should behave the same"
+   (actor-a 1 #:bop 66)
+   (list 1 33 66)))
+
