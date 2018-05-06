@@ -387,3 +387,50 @@ to us."
    (actor-a 1 #:bop 66)
    (list 1 33 66)))
 
+;;; Classes and objects
+(define (spawn-object obj)
+  "Spawn class derived object OBJ as an actor"
+  (spawn
+   (make-keyword-procedure
+    (lambda (kws kw-args method . args)
+      (keyword-apply dynamic-send
+                     kws kw-args obj method args)))))
+
+;;; Shortcut for (spawn-object (new args ...))
+(define-syntax-rule (spawn-new args ...)
+  (spawn-object
+   (new args ...)))
+
+(provide spawn-object spawn-new)
+
+(module+ test
+  (define greeter%
+    (class object%
+      (super-new)
+      (define/public (greet name)
+        (string-append "Hello, " name "!"))))
+
+  (define groucher%
+    (class greeter%
+      (super-new)
+      (init [annoyed-by "my back"])
+      (define am-annoyed-by annoyed-by)
+      (define/override (greet name)
+        (string-append "Grumble grumble... "
+                       (super greet name)
+                       "... "
+                       am-annoyed-by " is irritating me..."))))
+
+  (let ([ernie
+         (spawn-new greeter%)]
+        [oscar
+         (spawn-new groucher%
+                    [annoyed-by "your hair"])])
+    (test-equal?
+     "Basic actor class-objects work"
+     (ernie 'greet "Bert")
+     "Hello, Bert!")
+    (test-equal?
+     "Inherited actor class-objects work"
+     (oscar 'greet "Bert")
+     "Grumble grumble... Hello, Bert!... your hair is irritating me...")))
