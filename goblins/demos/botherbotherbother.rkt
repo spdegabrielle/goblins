@@ -46,9 +46,7 @@
     (super-new)
     (define whos-bothering
       (make-hasheq))
-    (define/public (be-bothered botherer
-                                ;; ignored...
-                                #:noise noise)
+    (define/public (be-bothered botherer #:noise noise)
       (hash-set! whos-bothering botherer #t)
 
       ;; Oof!  Those kids!
