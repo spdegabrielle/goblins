@@ -55,7 +55,7 @@
   ;; #:property prop:procedure
   ;; (make-keyword-procedure
   ;;  (lambda (kws kw-args this . args)
-  ;;    (keyword-apply <-wait kws kw-args this args)))
+  ;;    (keyword-apply <<- kws kw-args this args)))
   )
 
 (struct remote-address
@@ -85,7 +85,7 @@ to us."
      (send-message to kws kw-args args)
      (void))))
 
-(define <-wait
+(define <<-
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
      (if (self)
@@ -104,7 +104,7 @@ to us."
                   (lambda ()
                     (call-with-values
                         (lambda ()
-                          (keyword-apply <-wait kws kw-args to args))
+                          (keyword-apply <<- kws kw-args to args))
                       (make-keyword-procedure
                        (lambda (kws kw-args . args)
                          (channel-put ch (vector kws kw-args args)))))))])
@@ -119,7 +119,7 @@ to us."
 (define (<-block to . body)
   'TODO)
 
-(provide <- <-wait <-block)
+(provide <- <<- <-block)
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
@@ -392,8 +392,8 @@ to us."
      (lambda (beep [boop 33] #:bop bop)
        (list beep boop bop))))
   (test-equal?
-   "Basic <-wait works"
-   (<-wait actor-a 1 #:bop 66)
+   "Basic <<- works"
+   (<<- actor-a 1 #:bop 66)
    (list 1 33 66))
   #;(test-equal?
    "Calling actor-a just as a procedure should behave the same"
@@ -442,9 +442,9 @@ to us."
                     [annoyed-by "your hair"])])
     (test-equal?
      "Basic actor class-objects work"
-     (<-wait ernie 'greet "Bert")
+     (<<- ernie 'greet "Bert")
      "Hello, Bert!")
     (test-equal?
      "Inherited actor class-objects work"
-     (<-wait oscar 'greet "Bert")
+     (<<- oscar 'greet "Bert")
      "Grumble grumble... Hello, Bert!... your hair is irritating me...")))

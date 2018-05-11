@@ -67,14 +67,14 @@
                (spawn-new droid%
                           [infected infected]
                           [room room]))
-             (<-wait droid 'register-with-room))
+             (<<- droid 'register-with-room))
 
            ;; Link rooms.
            ;; Couldn't this just be folded into the warehouse room init?
            (when previous-room
-             (<-wait previous-room 'set-next-room
+             (<<- previous-room 'set-next-room
                      #:id room)
-             (<-wait room 'set-previous-room
+             (<<- room 'set-previous-room
                      #:id previous-room))
 
            ;; Set up clean droids in the room
@@ -146,7 +146,7 @@
 
     (define/public (register-with-room)
       "Register ourselves as being in a room"
-      (<-wait room 'register-droid
+      (<<- room 'register-droid
               #:droid-id (self))
       (display
        (format "Droid ~a registered with room ~a\n"
@@ -203,12 +203,12 @@
                        room))
 
     ;; Find all droids in this room and exterminate the infected ones.
-    (let ((droid-ids (<-wait room 'list-droids)))
+    (let ((droid-ids (<<- room 'list-droids)))
       (for-each
        (lambda (droid-id)
          (cond
           ;; Looks like it's infected
-          ((<-wait droid-id 'infection-expose)
+          ((<<- droid-id 'infection-expose)
            ;; Inform that it's infected
            (<- overseer 'transmission
                #:text (format "~a found to be infected... taking out"
@@ -217,7 +217,7 @@
            ;; Keep firing till it's dead.
            (let fire-lp ()
              (call-with-values
-                 (lambda () (<-wait droid-id 'get-shot))
+                 (lambda () (<<- droid-id 'get-shot))
                (lambda (hp-left damage-taken alive)
                  (<- overseer 'transmission
                      #:text (droid-status-format droid-id alive damage-taken hp-left))
@@ -234,12 +234,12 @@
        droid-ids))
 
     ;; Switch to next room, if there is one.
-    (set! room (<-wait room 'get-next-room))
+    (set! room (<<- room 'get-next-room))
     (when room
       (lp)))
 
   ;; Good job everyone!  Shut down the operation.
-  (<-wait overseer 'transmission
+  (<<- overseer 'transmission
           #:text "Mission accomplished.")
   (<- overseer 'done!))
 
