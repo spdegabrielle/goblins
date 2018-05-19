@@ -1,5 +1,13 @@
 #lang racket
 
+;; Goblins --- An actor model implementation for Racket
+;; Copyright © 2018 Christopher Lemmer Webber <cwebber@dustycloud.org>
+;;
+;; Dual licensed under LGPLv3 or later (as released by the Free Software
+;; Foundation) or Apache v2.
+;; 
+;; See LICENSE, LICENSE-lgpl.txt and LICENSE-apache.txt for details.
+
 (require data/queue
          net/base64
          racket/exn
