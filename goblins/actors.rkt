@@ -41,6 +41,7 @@
    ;; If we're responding to another message
    in-reply-to
    ;; A request to reply to this actor address
+   ;; TODO: this is going to be a promise soon
    please-reply-to))
 
 (define-generics address
@@ -60,6 +61,7 @@
                                (address-id local-address) #""))
                              ">")
               port))]
+  ;; TODO: Restore this, but only for localrefs
   ;; #:property prop:procedure
   ;; (make-keyword-procedure
   ;;  (lambda (kws kw-args this . args)
