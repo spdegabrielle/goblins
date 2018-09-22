@@ -142,7 +142,7 @@ to us."
 (provide current-vat self)
 
 (struct registered-actor
-  [handler
+  [actor
    waiting-on-replies
    ;;;; The following two properties are *only* ever managed by the vat's main
    ;;;; thread!
@@ -154,7 +154,7 @@ to us."
 
 (define (handle-message actor-reg actor-address msg)
   (match actor-reg
-    [(registered-actor handler waiting-on-replies backlog busy?)
+    [(registered-actor actor waiting-on-replies backlog busy?)
      (define (with-message-capture-prompt thunk)
        (call-with-continuation-prompt
         thunk
@@ -190,7 +190,7 @@ to us."
           ;; Why put self parameterization here?  Why not at the top?
           ;; If we put it here, we can ensure that while processing a message
           ;; that we keep self from being gc'ed, but we allow the possibility
-          ;; of the message handler being GC'ed from the main root, allowing
+          ;; of the actor being GC'ed from the main root, allowing
           ;; for shutdown when no references are left
           (parameterize ([self actor-address])
             (with-handlers ([exn:fail?
@@ -199,7 +199,7 @@ to us."
                                (display (exn->string v)))])
               (call-with-values
                   (lambda ()
-                    (keyword-apply handler
+                    (keyword-apply (actor-handler actor)
                                    (message-kws msg)
                                    (message-kw-args msg)
                                    (message-args msg)))
@@ -322,7 +322,7 @@ to us."
                                        (dequeue! backlog)))
                 (lp)]
                ;; Register an actor as part of this vat
-               [(vector 'spawn-actor handler send-actor-address-ch will)
+               [(vector 'spawn-actor actor send-actor-address-ch will)
                 (define actor-address
                   (local-address (delay (make-swiss-num)) vat-channel))
                 ;; If the user gave us a will to execute, run that
@@ -334,7 +334,7 @@ to us."
                                    (will))))
                 (hash-set! actor-registry
                            actor-address
-                           (registered-actor handler
+                           (registered-actor actor
                                              (make-hasheq)
                                              (make-queue)
                                              #f))
@@ -356,7 +356,31 @@ to us."
 
 (provide vat%)
 
-(define (spawn handler #:will [will #f])
+;; Defines core actor behaviors.  Some of E's "miranda" methods
+;; go here.
+(define-generics actor
+  ;; (-> actor? string?)
+  (actor-printed-repr actor)
+  ;; (-> actor? procedure?)
+  (actor-handler actor)
+  #:fallbacks
+  [(define (actor-printed-repr actor)
+     (~a actor))]
+  #:fast-defaults
+  ([procedure?
+    (define (actor-handler actor)
+      actor)]
+   [object?
+    (define (actor-handler actor)
+      (object-actor-handler actor))]))
+
+(define (object-actor-handler obj)
+  (make-keyword-procedure
+   (lambda (kws kw-args method . args)
+     (keyword-apply dynamic-send
+                    kws kw-args obj method args))))
+
+(define (spawn actor #:will [will #f])
   (define (spawn-default-vat)
     (define new-vat
       (new vat%))
@@ -369,7 +393,7 @@ to us."
   (define get-address-ch
     (make-channel))
   (channel-put (send vat get-vat-channel) (vector 'spawn-actor
-                                                  handler get-address-ch
+                                                  actor get-address-ch
                                                   will))
   (define actor-address
     (channel-get get-address-ch))
@@ -410,20 +434,12 @@ to us."
   )
 
 ;;; Classes and objects
-(define (spawn-object obj)
-  "Spawn class derived object OBJ as an actor"
-  (spawn
-   (make-keyword-procedure
-    (lambda (kws kw-args method . args)
-      (keyword-apply dynamic-send
-                     kws kw-args obj method args)))))
-
 ;;; Shortcut for (spawn-object (new args ...))
 (define-syntax-rule (spawn-new args ...)
-  (spawn-object
+  (spawn
    (new args ...)))
 
-(provide spawn-object spawn-new)
+(provide spawn-new)
 
 (module+ test
   (define greeter%
