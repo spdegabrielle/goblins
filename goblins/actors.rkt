@@ -31,11 +31,8 @@
    kw-args
    ;; The positional arguments to the procedure we'll be calling
    args
-   ;; If we're responding to another message
-   in-reply-to
-   ;; A request to reply to this actor address
-   ;; TODO: this is going to be a promise soon
-   please-reply-to))
+   ;; A request to resolve to this resolver
+   please-resolve))
 
 (define-generics address
   [address-id address])
@@ -68,24 +65,30 @@
      (remote-address-id address))])
 
 (define (send-message to kws kw-args args
-                      #:please-reply-to [please-reply-to #f]
-                      #:in-reply-to [in-reply-to #f])
+                      #:please-resolve [please-resolve #f])
   "Send a message to TO address (through the hive), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
   (define msg
-    (message to kws kw-args args
-             in-reply-to
-             please-reply-to))
+    (message to kws kw-args args please-resolve))
   (channel-put (send (current-hive) get-hive-channel)
                (vector 'send-message msg))
   msg)
 
-(define <-
+(define <-no-promise
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
      (send-message to kws kw-args args)
      (void))))
+
+(define <-
+  (make-keyword-procedure
+   (lambda (kws kw-args to . args)
+     (define-values (new-promise new-resolver)
+       (spawn-promise-pair))
+     (send-message to kws kw-args args
+                   #:please-resolve new-resolver)
+     new-promise)))
 
 (define <<-
   (make-keyword-procedure
@@ -118,7 +121,55 @@ to us."
               ;; Re-raise values to this continuation
               (keyword-apply values kws kw-args args))))))))
 
-(provide <- <<-)
+(define listener%
+  (class object%
+    (super-new)
+    (init-field new-promise
+                new-resolver
+                on-fulfilled
+                on-catch
+                on-finally)
+    (define/public (fulfilled val)
+      (if on-fulfilled
+          (with-handlers ([exn:fail?
+                           (lambda (err)
+                             (new-resolver 'broken err))])
+            (define result
+              (on-fulfilled val))
+            (new-resolver 'fulfilled val))
+          (new-resolver 'fulfilled #f))  ; or void...?
+      (when on-finally
+        (on-finally)))
+    (define/public (broken err)
+      (when on-catch
+        (with-handlers ([exn:fail?
+                         (lambda (err)
+                           ;; if you break on on-catch, then um...
+                           ;; I guess that's the new error
+                           (new-resolver 'broken err))])
+          (on-catch err)
+          (new-resolver 'broken err)))
+      (new-resolver 'broken err)
+      (when on-finally
+        (on-finally)))))
+
+;; Or maybe "listen" ?
+(define (on promise [on-fulfilled #f]
+            #:catch [on-catch #f]
+            #:finally [on-finally #f])
+  (define-values (new-promise new-resolver)
+    (spawn-promise-pair))
+  (define listener
+    (spawn-new listener%
+               [new-promise new-promise]
+               [new-resolver new-resolver]
+               [on-fulfilled on-fulfilled]
+               [on-catch on-catch]
+               [on-finally on-finally]))
+  (send (current-hive) listen-to-promise promise listener)
+  new-promise)
+
+(provide <- <<- on)
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
@@ -186,7 +237,9 @@ to us."
                             (message-args msg)))
            (make-keyword-procedure
             (lambda (kws kw-args . args)
-              (when (message-please-reply-to msg)
+              ;; Redo this!
+              'TODO
+              #;(when (message-please-reply-to msg)
                 (send-message (message-please-reply-to msg)
                               kws kw-args args
                               #:in-reply-to msg))))))))))
@@ -230,6 +283,15 @@ to us."
                          (will))))
       (hash-set! actor-registry actor-address actor)
       actor-address)
+
+    (define/public (listen-to-promise promise listener)
+      ;; TODO: Add support for remote hives here
+      (define promise-object
+        (hash-ref actor-registry promise))
+      (unless (promise? promise-object)
+        (error "Not a promise so we can't listen to it"))
+      (promise-add-listener! promise listener)
+      (void))
 
     (define/public (main-loop)
       (parameterize ([current-custodian hive-custodian])
@@ -404,3 +466,69 @@ to us."
      "Inherited actor class-objects work"
      (<<- oscar 'greet "Bert")
      "Grumble grumble... Hello, Bert!... your hair is irritating me...")))
+
+;; TODO: I really ought to separate out this into modules, this is
+;; getting unwieldy
+(define (spawn-promise-pair)
+  (define promise
+    (make-promise))
+  (define promise-actor
+    (spawn promise))
+  (define resolver-actor
+    (spawn
+     (match-lambda
+       [(list 'fulfill val)
+        (fulfill-promise! promise val)]
+       [(list 'break err)
+        (break-promise! promise err)]
+       [_ (error "Unsupported method")])))
+  (values promise-actor resolver-actor))
+
+(struct promise ([state #:mutable]
+                 [resolution-or-error #:mutable]
+                 [listeners #:mutable])
+  #:methods gen:actor
+  [(define (actor-handler actor)
+     (make-keyword-procedure
+      (lambda (kws kw-args . args)
+        (on (self)
+            (lambda (val)
+              (keyword-apply <-no-promise kws kw-args val args))))))])
+
+(define (make-promise)
+  (promise 'waiting #f '() '()))
+
+(define (promise-maybe-run-listeners! promise)
+  (match (promise-state promise)
+    [(and (or 'fulfilled 'broken) state)
+     (for ([listener (promise-listeners promise)])
+       (<- listener state
+           (promise-resolution-or-error promise)))
+     (set-promise-listeners! promise '())
+     (void)]
+    ['waiting (void)]))
+
+(define (promise-add-listener! promise listener)
+  (set-promise-listeners!
+   (cons listener (promise-listeners promise)))
+  (promise-maybe-run-listeners!))
+
+(define (promise-settled? promise)
+  (not (eq? (promise-state promise) 'waiting)))
+
+(define (promise-error-if-settled promise)
+  (when (promise-settled? promise)
+    (error "Promise already settled")))
+
+(define (promise-state-changer state)
+  (lambda (promise err-or-val)
+    (promise-error-if-settled promise)
+    (set-promise-state! promise state)
+    (set-promise-resolution-or-error! promise err-or-val)
+    (promise-maybe-run-listeners! promise)
+    (void)))
+(define break-promise!
+  (promise-state-changer 'broken))
+(define fulfill-promise!
+  (promise-state-changer 'fulfilled))
+
