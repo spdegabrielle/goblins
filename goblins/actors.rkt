@@ -42,7 +42,7 @@
 
 ;; TODO: Maybe we merge these with remote-address
 (struct local-address
-  (id vat-channel)
+  (id hive-channel)
   #:methods gen:address
   [(define (address-id address)
      (force (local-address-id address)))]
@@ -62,7 +62,7 @@
   )
 
 (struct remote-address
-  (id vat-ref)
+  (id hive-ref)
   #:methods gen:address
   [(define (address-id address)
      (remote-address-id address))])
@@ -70,14 +70,14 @@
 (define (send-message to kws kw-args args
                       #:please-reply-to [please-reply-to #f]
                       #:in-reply-to [in-reply-to #f])
-  "Send a message to TO address (through the vat), with BODY.
+  "Send a message to TO address (through the hive), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
   (define msg
     (message to kws kw-args args
              in-reply-to
              please-reply-to))
-  (channel-put (send (current-vat) get-vat-channel)
+  (channel-put (send (current-hive) get-hive-channel)
                (vector 'send-message msg))
   msg)
 
@@ -123,14 +123,14 @@ to us."
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
 
-(define current-vat
+(define current-hive
   (make-parameter #f))
 
 ;; Or actor-address?  Anyway maybe this should be a weak box?
 (define self
   (make-parameter #f))
 
-(provide current-vat self)
+(provide current-hive self)
 
 (define (handle-message actor actor-address msg)
   (define (with-message-capture-prompt thunk)
@@ -191,9 +191,9 @@ to us."
                               kws kw-args args
                               #:in-reply-to msg))))))))))
 
-;; So we need flexible vats eventually.
+;; So we need flexible hives eventually.
 ;; But do we really need flexible actors? :\
-(define vat%
+(define hive%
   (class object%
     (super-new)
 
@@ -202,25 +202,25 @@ to us."
     ;; to a new registry, see 'gc-registry handler below.
     (define actor-registry
       (make-weak-hasheq))
-    (define vat-channel
+    (define hive-channel
       (make-channel))
-    (define/public (get-vat-channel)
-      vat-channel)
+    (define/public (get-hive-channel)
+      hive-channel)
 
-    (define vat-custodian
+    (define hive-custodian
       (make-custodian))
 
     (define address-will-executor
       (make-will-executor))
 
     ;; FIXME: this is really only for debugging, and thus should not be
-    ;;   exposed on the default vat.
+    ;;   exposed on the default hive.
     (define/public (get-actor-registry)
       actor-registry)
 
     (define/public (spawn-actor actor [will #f])
       (define actor-address
-        (local-address (delay (make-swiss-num)) vat-channel))
+        (local-address (delay (make-swiss-num)) hive-channel))
       ;; If the user gave us a will to execute, run that
       ;; (when will)
       (will-register address-will-executor
@@ -232,7 +232,7 @@ to us."
       actor-address)
 
     (define/public (main-loop)
-      (parameterize ([current-custodian vat-custodian])
+      (parameterize ([current-custodian hive-custodian])
         (thread
          (lambda ()
            ;; executes wills for the actor addresses going out of scope
@@ -249,12 +249,12 @@ to us."
                       ;; freeing up all their information in racket
                       ;; (or so it appears to me from tests...)
                       (begin
-                        (channel-put vat-channel 'gc-registry)
+                        (channel-put hive-channel 'gc-registry)
                         (loop steps-till-gc))
                       (loop (- countdown-till-gc-registry 1)))))))
 
            #;(define (listen-for-work)
-             (parameterize ([current-vat this])
+             (parameterize ([current-hive this])
                (let lp ()
                  (match (async-channel-get work-channel)
                    [(available-work registered-actor actor-address message)
@@ -262,12 +262,12 @@ to us."
                     (lp)]))))
 
            (let lp ()
-             (match (channel-get vat-channel)
+             (match (channel-get hive-channel)
                ;; Send a message to an actor at a particular address
                [(vector 'send-message msg)
                 (define msg-to
                   (message-to msg))
-                ;; TODO: Remote vat support goes here
+                ;; TODO: Remote hive support goes here
                 (when (not (hash-has-key? actor-registry msg-to))
                   (error "No actor with id" msg-to))
 
@@ -287,11 +287,11 @@ to us."
                 (set! actor-registry new-registry)
                 (lp)]
                ['shutdown
-                (custodian-shutdown-all vat-custodian)
+                (custodian-shutdown-all hive-custodian)
                 (void)])))))
       (void))))
 
-(provide vat%)
+(provide hive%)
 
 ;; Defines core actor behaviors.  Some of E's "miranda" methods
 ;; go here.
@@ -318,17 +318,17 @@ to us."
                     kws kw-args obj method args))))
 
 (define (spawn actor #:will [will #f])
-  (define (spawn-default-vat)
-    (define new-vat
-      (new vat%))
-    (send new-vat main-loop)
-    (current-vat new-vat)
-    new-vat)
-  (define vat
-    (or (current-vat)
-        (spawn-default-vat)))
+  (define (spawn-default-hive)
+    (define new-hive
+      (new hive%))
+    (send new-hive main-loop)
+    (current-hive new-hive)
+    new-hive)
+  (define hive
+    (or (current-hive)
+        (spawn-default-hive)))
   (define actor-address
-    (send vat spawn-actor actor will))
+    (send hive spawn-actor actor will))
   actor-address)
 
 (provide spawn)
