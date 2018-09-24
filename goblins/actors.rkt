@@ -23,14 +23,7 @@
   (crypto-random-bytes 56))
 
 (struct message
-  (;; a possible randomly generated identifier for this message.
-   ;; Only used across vats?
-   ;; @@: Do we even need this?  Maybe the vat is responsible for handling
-   ;;   a mapping of these when they move across boundaries?  Hm... nah...
-   ;;   that would be expensive because figuring out when to GC ids
-   ;;   would be hard.
-   id
-   ;; Address we're sending this to
+  (;; Address we're sending this to
    to
    ;; Keywords we'll be applying
    kws
@@ -81,8 +74,7 @@
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
   (define msg
-    (message (delay (make-swiss-num))
-             to kws kw-args args
+    (message to kws kw-args args
              in-reply-to
              please-reply-to))
   (channel-put (send (current-vat) get-vat-channel)
@@ -126,10 +118,7 @@ to us."
               ;; Re-raise values to this continuation
               (keyword-apply values kws kw-args args))))))))
 
-(define (<-block to . body)
-  'TODO)
-
-(provide <- <<- <-block)
+(provide <- <<-)
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
@@ -143,79 +132,64 @@ to us."
 
 (provide current-vat self)
 
-(struct registered-actor
-  [actor
-   waiting-on-replies
-   ;;;; The following two properties are *only* ever managed by the vat's main
-   ;;;; thread!
-   ;; If we're busy we stuff things to do in our backlog until we can get to them.
-   backlog
-   ;; Are we busy?  This means we're currently managing a message or have queued
-   ;; up some work to do so.
-   [busy? #:mutable]])
+(define (handle-message actor actor-address msg)
+  (define (with-message-capture-prompt thunk)
+    (call-with-continuation-prompt
+     thunk
+     actor-prompt-tag
+     (lambda (k to kws kw-args args)
+       #;(define msg
+         (send-message to kws kw-args args
+                       #:please-reply-to actor-address))
+       ;; Set waiting-on-replies continuation to be this msg
+       #;(hash-set! waiting-on-replies msg k)
+       ;; FIXME: Redo this
+       'TODO)))
 
-(define (handle-message actor-reg actor-address msg)
-  (match actor-reg
-    [(registered-actor actor waiting-on-replies backlog busy?)
-     (define (with-message-capture-prompt thunk)
-       (call-with-continuation-prompt
-        thunk
-        actor-prompt-tag
-        (lambda (k to kws kw-args args)
-          (define msg
-            (send-message to kws kw-args args
-                          #:please-reply-to actor-address))
-          ;; Set waiting-on-replies continuation to be this msg
-          (hash-set! waiting-on-replies msg k))))
-
-     (cond
-      ;; This message is in reply to another... so handle it!
-      [(message-in-reply-to msg) =>
-       (lambda (in-reply-to)
-         (when (not (hash-has-key? waiting-on-replies in-reply-to))
-           (error "Message in reply to object that doesn't exist"
-                  msg in-reply-to))
-         ;; Pull the waiting continuation out
-         (define waiting-kont (hash-ref waiting-on-replies in-reply-to))
-         (hash-remove! waiting-on-replies in-reply-to)
-         ;; Let's call it...
-         (with-message-capture-prompt
-          (lambda ()
-            (keyword-apply waiting-kont
-                           (message-kws msg)
-                           (message-kw-args msg)
-                           (message-args msg)))))]
-      [else
-       ;; Set up initial escape and capture prompts, along with error handler
+  #;(cond
+    ;; This message is in reply to another... so handle it!
+    [(message-in-reply-to msg)
+     =>
+     (lambda (in-reply-to)
+       (when (not (hash-has-key? waiting-on-replies in-reply-to))
+         (error "Message in reply to object that doesn't exist"
+                msg in-reply-to))
+       ;; Pull the waiting continuation out
+       (define waiting-kont (hash-ref waiting-on-replies in-reply-to))
+       (hash-remove! waiting-on-replies in-reply-to)
+       ;; Let's call it...
        (with-message-capture-prompt
-        (lambda ()
-          ;; Why put self parameterization here?  Why not at the top?
-          ;; If we put it here, we can ensure that while processing a message
-          ;; that we keep self from being gc'ed, but we allow the possibility
-          ;; of the actor being GC'ed from the main root, allowing
-          ;; for shutdown when no references are left
-          (parameterize ([self actor-address])
-            (with-handlers ([exn:fail?
-                             (lambda (v)
-                               ;; Error handling goes here!
-                               (display (exn->string v)))])
-              (call-with-values
-                  (lambda ()
-                    (keyword-apply (actor-handler actor)
-                                   (message-kws msg)
-                                   (message-kw-args msg)
-                                   (message-args msg)))
-                (make-keyword-procedure
-                 (lambda (kws kw-args . args)
-                   (when (message-please-reply-to msg)
-                     (send-message (message-please-reply-to msg)
-                                   kws kw-args args
-                                   #:in-reply-to msg)))))))))])
-     (send (current-vat) work-finished actor-reg)])
-  (void))
-
-(struct available-work
-  [registered-actor actor-address message])
+         (lambda ()
+           (keyword-apply waiting-kont
+                          (message-kws msg)
+                          (message-kw-args msg)
+                          (message-args msg)))))]
+    [else])
+  ;; Set up initial escape and capture prompts, along with error handler
+  (with-message-capture-prompt
+    (lambda ()
+      ;; Why put self parameterization here?  Why not at the top?
+      ;; If we put it here, we can ensure that while processing a message
+      ;; that we keep self from being gc'ed, but we allow the possibility
+      ;; of the actor being GC'ed from the main root, allowing
+      ;; for shutdown when no references are left
+      (parameterize ([self actor-address])
+        (with-handlers ([exn:fail?
+                         (lambda (v)
+                           ;; Error handling goes here!
+                           (display (exn->string v)))])
+          (call-with-values
+           (lambda ()
+             (keyword-apply (actor-handler actor)
+                            (message-kws msg)
+                            (message-kw-args msg)
+                            (message-args msg)))
+           (make-keyword-procedure
+            (lambda (kws kw-args . args)
+              (when (message-please-reply-to msg)
+                (send-message (message-please-reply-to msg)
+                              kws kw-args args
+                              #:in-reply-to msg))))))))))
 
 ;; So we need flexible vats eventually.
 ;; But do we really need flexible actors? :\
@@ -236,12 +210,6 @@ to us."
     (define vat-custodian
       (make-custodian))
 
-    (define thread-pool-size
-      1000)
-    ;; Where we put available work 
-    (define work-channel
-      (make-async-channel))
-
     (define address-will-executor
       (make-will-executor))
 
@@ -249,10 +217,6 @@ to us."
     ;;   exposed on the default vat.
     (define/public (get-actor-registry)
       actor-registry)
-
-    (define/public (work-finished actor-reg)
-      (channel-put vat-channel
-                   (vector 'work-finished actor-reg)))
 
     (define/public (main-loop)
       (parameterize ([current-custodian vat-custodian])
@@ -276,17 +240,13 @@ to us."
                         (loop steps-till-gc))
                       (loop (- countdown-till-gc-registry 1)))))))
 
-           (define (listen-for-work)
+           #;(define (listen-for-work)
              (parameterize ([current-vat this])
                (let lp ()
                  (match (async-channel-get work-channel)
                    [(available-work registered-actor actor-address message)
                     (handle-message registered-actor actor-address message)
                     (lp)]))))
-
-           (define thread-pool
-             (for/list ([i (in-range thread-pool-size)])
-               (thread listen-for-work)))
 
            (let lp ()
              (match (channel-get vat-channel)
@@ -298,9 +258,9 @@ to us."
                 (when (not (hash-has-key? actor-registry msg-to))
                   (error "No actor with id" msg-to))
 
-                (define actor-reg
+                (define actor
                   (hash-ref actor-registry msg-to))
-                (if (registered-actor-busy? actor-reg)
+                #;(if (registered-actor-busy? actor-reg)
                     ;; If the actor is busy, we actually queue this to their
                     ;; backlog...
                     (enqueue! (registered-actor-backlog actor-reg)
@@ -312,18 +272,12 @@ to us."
                       ;; and off to work we go!
                       (async-channel-put work-channel
                                          (available-work actor-reg msg-to msg))))
-                (lp)]
-               [(vector 'work-finished actor-reg)
-                (define backlog
-                  (registered-actor-backlog actor-reg))
-                (if (queue-empty? backlog)
-                    ;; Nothing left to do?  Let's mark ourselves as idle
-                    (set-registered-actor-busy?! actor-reg #f)
-                    ;; Otherwise, let's send another task to the workers
-                    (async-channel-put work-channel
-                                       (dequeue! backlog)))
+                ;; Do a "turn"
+                (handle-message actor msg-to msg)
+                
                 (lp)]
                ;; Register an actor as part of this vat
+               ;; FIXME: This should be done inline inside the actor
                [(vector 'spawn-actor actor send-actor-address-ch will)
                 (define actor-address
                   (local-address (delay (make-swiss-num)) vat-channel))
@@ -334,12 +288,7 @@ to us."
                                (lambda (v)
                                  (when will
                                    (will))))
-                (hash-set! actor-registry
-                           actor-address
-                           (registered-actor actor
-                                             (make-hasheq)
-                                             (make-queue)
-                                             #f))
+                (hash-set! actor-registry actor-address actor)
                 (channel-put send-actor-address-ch
                              actor-address)
                 (lp)]
@@ -421,14 +370,14 @@ to us."
    (unbox put-stuff-in-me)
    "cat")
 
-  (define actor-a
-    (spawn
-     (lambda (beep [boop 33] #:bop bop)
-       (list beep boop bop))))
-  (test-equal?
-   "Basic <<- works"
-   (<<- actor-a 1 #:bop 66)
-   (list 1 33 66))
+  ;; (define actor-a
+  ;;   (spawn
+  ;;    (lambda (beep [boop 33] #:bop bop)
+  ;;      (list beep boop bop))))
+  ;; (test-equal?
+  ;;  "Basic <<- works"
+  ;;  (<<- actor-a 1 #:bop 66)
+  ;;  (list 1 33 66))
   #;(test-equal?
    "Calling actor-a just as a procedure should behave the same"
    (actor-a 1 #:bop 66)
@@ -443,7 +392,7 @@ to us."
 
 (provide spawn-new)
 
-(module+ test
+#;(module+ test
   (define greeter%
     (class object%
       (super-new)
