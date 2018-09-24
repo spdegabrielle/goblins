@@ -218,6 +218,19 @@ to us."
     (define/public (get-actor-registry)
       actor-registry)
 
+    (define/public (spawn-actor actor [will #f])
+      (define actor-address
+        (local-address (delay (make-swiss-num)) vat-channel))
+      ;; If the user gave us a will to execute, run that
+      ;; (when will)
+      (will-register address-will-executor
+                     actor-address
+                     (lambda (v)
+                       (when will
+                         (will))))
+      (hash-set! actor-registry actor-address actor)
+      actor-address)
+
     (define/public (main-loop)
       (parameterize ([current-custodian vat-custodian])
         (thread
@@ -260,37 +273,10 @@ to us."
 
                 (define actor
                   (hash-ref actor-registry msg-to))
-                #;(if (registered-actor-busy? actor-reg)
-                    ;; If the actor is busy, we actually queue this to their
-                    ;; backlog...
-                    (enqueue! (registered-actor-backlog actor-reg)
-                              (available-work actor-reg msg-to msg))
-                    ;; Otherwise, work away!
-                    (begin
-                      ;; set ourselves as busy
-                      (set-registered-actor-busy?! actor-reg #t)
-                      ;; and off to work we go!
-                      (async-channel-put work-channel
-                                         (available-work actor-reg msg-to msg))))
+
                 ;; Do a "turn"
                 (handle-message actor msg-to msg)
                 
-                (lp)]
-               ;; Register an actor as part of this vat
-               ;; FIXME: This should be done inline inside the actor
-               [(vector 'spawn-actor actor send-actor-address-ch will)
-                (define actor-address
-                  (local-address (delay (make-swiss-num)) vat-channel))
-                ;; If the user gave us a will to execute, run that
-                ;; (when will)
-                (will-register address-will-executor
-                               actor-address
-                               (lambda (v)
-                                 (when will
-                                   (will))))
-                (hash-set! actor-registry actor-address actor)
-                (channel-put send-actor-address-ch
-                             actor-address)
                 (lp)]
                ;; "Garbage collect" the registry via stop-and-copy
                ['gc-registry
@@ -341,13 +327,8 @@ to us."
   (define vat
     (or (current-vat)
         (spawn-default-vat)))
-  (define get-address-ch
-    (make-channel))
-  (channel-put (send vat get-vat-channel) (vector 'spawn-actor
-                                                  actor get-address-ch
-                                                  will))
   (define actor-address
-    (channel-get get-address-ch))
+    (send vat spawn-actor actor will))
   actor-address)
 
 (provide spawn)
