@@ -57,13 +57,6 @@
      (require-current-actable)
      (send (current-actable) run-directly this kws kw-args args))))
 
-;; TODO: Rip out, use actable's environment for this
-(define (on-selfsame-hive? addr)
-  (and (local-address? addr)
-       (local-address? (self))
-       (eq? (local-address-hive addr)
-            (local-address-hive (self)))))
-
 (struct remote-address
   (id hive-ref)
   #:methods gen:address
@@ -245,6 +238,8 @@ to us."
       (hash-set! actor-registry actor-address actor)
       actor-address)
 
+    (define this-hive this)
+
     ;; Simplest version of the actable% class
     (define actable%
       (class* object% (actable<%>)
@@ -271,7 +266,8 @@ to us."
           (promise-add-listener! promise listener)
           (void))
         (define/public (run-directly actor-ref kws kw-args args)
-          (if (on-selfsame-hive? actor-ref)  ; TODO: can be optimized with local knowledge?
+          (if (and (local-address? actor-ref)
+                   (eq? (local-address-hive actor-ref) this-hive))
               (let ([actor (hash-ref actor-registry actor-ref)])
                 (displayln (format "actor: ~a" actor))
                 (keyword-apply (actor-handler actor)
