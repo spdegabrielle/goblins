@@ -39,7 +39,7 @@
 
 ;; TODO: Maybe we merge these with remote-address
 (struct local-address
-  (id hive-channel)
+  (id hive)
   #:methods gen:address
   [(define (address-id address)
      (force (local-address-id address)))]
@@ -51,12 +51,16 @@
                                (address-id local-address) #""))
                              ">")
               port))]
-  ;; TODO: Restore this, but only for localrefs
-  ;; #:property prop:procedure
-  ;; (make-keyword-procedure
-  ;;  (lambda (kws kw-args this . args)
-  ;;    (keyword-apply <<- kws kw-args this args)))
-  )
+  #:property prop:procedure
+  (make-keyword-procedure
+   (lambda (kws kw-args this . args)
+     (send (current-hive) run-directly this kws kw-args args))))
+
+(define (on-selfsame-hive? addr)
+  (and (local-address? addr)
+       (local-address? (self))
+       (eq? (local-address-hive addr)
+            (local-address-hive (self)))))
 
 (struct remote-address
   (id hive-ref)
@@ -169,7 +173,7 @@ to us."
   (send (current-hive) listen-to-promise promise listener)
   new-promise)
 
-(provide <- <<- on)
+(provide <- <-no-promise <<- on)
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
@@ -178,6 +182,8 @@ to us."
   (make-parameter #f))
 
 ;; Or actor-address?  Anyway maybe this should be a weak box?
+;; FIXME: (self) should be a getter only, and the underlying
+;;   parameter should not be publicly exposed
 (define self
   (make-parameter #f))
 
@@ -225,10 +231,16 @@ to us."
       ;; of the actor being GC'ed from the main root, allowing
       ;; for shutdown when no references are left
       (parameterize ([self actor-address])
+        (define please-resolve
+          (message-please-resolve msg))
         (with-handlers ([exn:fail?
                          (lambda (v)
                            ;; Error handling goes here!
-                           (display (exn->string v)))])
+                           (display (exn->string v))
+                           (when please-resolve
+                             ;; Or should we use <-no-promise?
+                             (please-resolve 'broken v))
+                           (void))])
           (call-with-values
            (lambda ()
              (keyword-apply (actor-handler actor)
@@ -237,12 +249,8 @@ to us."
                             (message-args msg)))
            (make-keyword-procedure
             (lambda (kws kw-args . args)
-              ;; Redo this!
-              'TODO
-              #;(when (message-please-reply-to msg)
-                (send-message (message-please-reply-to msg)
-                              kws kw-args args
-                              #:in-reply-to msg))))))))))
+              (when please-resolve
+                (please-resolve 'fulfilled args))))))))))
 
 ;; So we need flexible hives eventually.
 ;; But do we really need flexible actors? :\
@@ -273,7 +281,7 @@ to us."
 
     (define/public (spawn-actor actor [will #f])
       (define actor-address
-        (local-address (delay (make-swiss-num)) hive-channel))
+        (local-address (delay (make-swiss-num)) this))
       ;; If the user gave us a will to execute, run that
       ;; (when will)
       (will-register address-will-executor
@@ -292,6 +300,14 @@ to us."
         (error "Not a promise so we can't listen to it"))
       (promise-add-listener! promise listener)
       (void))
+
+    (define/public (run-directly actor-ref kws kw-args args)
+      (if (on-selfsame-hive? actor-ref)
+          (let ([actor (hash-ref actor-registry actor-ref)])
+            (displayln (format "actor: ~a" actor))
+            (keyword-apply (actor-handler actor)
+                           kws kw-args args))
+          (error "Can't directly run an actor not on the same hive")))
 
     (define/public (main-loop)
       (parameterize ([current-custodian hive-custodian])
@@ -323,34 +339,35 @@ to us."
                     (handle-message registered-actor actor-address message)
                     (lp)]))))
 
-           (let lp ()
-             (match (channel-get hive-channel)
-               ;; Send a message to an actor at a particular address
-               [(vector 'send-message msg)
-                (define msg-to
-                  (message-to msg))
-                ;; TODO: Remote hive support goes here
-                (when (not (hash-has-key? actor-registry msg-to))
-                  (error "No actor with id" msg-to))
+           (parameterize ([current-hive this])
+             (let lp ()
+               (match (channel-get hive-channel)
+                 ;; Send a message to an actor at a particular address
+                 [(vector 'send-message msg)
+                  (define msg-to
+                    (message-to msg))
+                  ;; TODO: Remote hive support goes here
+                  (when (not (hash-has-key? actor-registry msg-to))
+                    (error "No actor with id" msg-to))
 
-                (define actor
-                  (hash-ref actor-registry msg-to))
+                  (define actor
+                    (hash-ref actor-registry msg-to))
 
-                ;; Do a "turn"
-                (handle-message actor msg-to msg)
-                
-                (lp)]
-               ;; "Garbage collect" the registry via stop-and-copy
-               ['gc-registry
-                (define new-registry
-                  (make-weak-hasheq))
-                (for (([key val] actor-registry))
-                  (hash-set! new-registry key val))
-                (set! actor-registry new-registry)
-                (lp)]
-               ['shutdown
-                (custodian-shutdown-all hive-custodian)
-                (void)])))))
+                  ;; Do a "turn"
+                  (handle-message actor msg-to msg)
+                  
+                  (lp)]
+                 ;; "Garbage collect" the registry via stop-and-copy
+                 ['gc-registry
+                  (define new-registry
+                    (make-weak-hasheq))
+                  (for (([key val] actor-registry))
+                    (hash-set! new-registry key val))
+                  (set! actor-registry new-registry)
+                  (lp)]
+                 ['shutdown
+                  (custodian-shutdown-all hive-custodian)
+                  (void)]))))))
       (void))))
 
 (provide hive%)
@@ -476,16 +493,16 @@ to us."
     (spawn promise))
   (define resolver-actor
     (spawn
-     (match-lambda
-       [(list 'fulfill val)
+     (match-lambda*
+       [(list 'fulfilled val)
         (fulfill-promise! promise val)]
-       [(list 'break err)
+       [(list 'broken err)
         (break-promise! promise err)]
        [_ (error "Unsupported method")])))
   (values promise-actor resolver-actor))
 
 (struct promise ([state #:mutable]
-                 [resolution-or-error #:mutable]
+                 [args-or-error #:mutable]
                  [listeners #:mutable])
   #:methods gen:actor
   [(define (actor-handler actor)
@@ -496,14 +513,14 @@ to us."
               (keyword-apply <-no-promise kws kw-args val args))))))])
 
 (define (make-promise)
-  (promise 'waiting #f '() '()))
+  (promise 'waiting #f '()))
 
 (define (promise-maybe-run-listeners! promise)
   (match (promise-state promise)
     [(and (or 'fulfilled 'broken) state)
      (for ([listener (promise-listeners promise)])
        (<- listener state
-           (promise-resolution-or-error promise)))
+           (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
     ['waiting (void)]))
@@ -521,10 +538,10 @@ to us."
     (error "Promise already settled")))
 
 (define (promise-state-changer state)
-  (lambda (promise err-or-val)
+  (lambda (promise err-or-args)
     (promise-error-if-settled promise)
     (set-promise-state! promise state)
-    (set-promise-resolution-or-error! promise err-or-val)
+    (set-promise-args-or-error! promise err-or-args)
     (promise-maybe-run-listeners! promise)
     (void)))
 (define break-promise!
