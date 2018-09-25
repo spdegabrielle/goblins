@@ -54,7 +54,8 @@
   #:property prop:procedure
   (make-keyword-procedure
    (lambda (kws kw-args this . args)
-     (send (current-hive) run-directly this kws kw-args args))))
+     (require-current-actable)
+     (send (current-actable) run-directly this kws kw-args args))))
 
 (define (on-selfsame-hive? addr)
   (and (local-address? addr)
@@ -73,10 +74,10 @@
   "Send a message to TO address (through the hive), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
+  (require-current-actable)
   (define msg
     (message to kws kw-args args please-resolve))
-  (channel-put (send (current-hive) get-hive-channel)
-               (vector 'send-message msg))
+  (send (current-actable) send-message msg)
   msg)
 
 (define <-no-promise
@@ -161,6 +162,7 @@ to us."
 (define (on promise [on-fulfilled #f]
             #:catch [on-catch #f]
             #:finally [on-finally #f])
+  (require-current-actable)
   (define-values (new-promise new-resolver)
     (spawn-promise-pair))
   (define listener
@@ -170,7 +172,7 @@ to us."
                [on-fulfilled on-fulfilled]
                [on-catch on-catch]
                [on-finally on-finally]))
-  (send (current-hive) listen-to-promise promise listener)
+  (send (current-actable) listen-to-promise promise listener)
   new-promise)
 
 (provide <- <-no-promise <<- on)
@@ -178,79 +180,30 @@ to us."
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
 
-(define current-hive
+(define actor-address
+  (make-parameter #f))
+(define (self)
+  (actor-address))
+
+(provide self)
+
+;; This is the parameterized object that allows us to reach into the
+;; hive to do things as an actor
+(define current-actable
   (make-parameter #f))
 
-;; Or actor-address?  Anyway maybe this should be a weak box?
-;; FIXME: (self) should be a getter only, and the underlying
-;;   parameter should not be publicly exposed
-(define self
-  (make-parameter #f))
+(define actable<%>
+  (interface ()
+    send-message spawn))
 
-(provide current-hive self)
+(define actable-send-message
+  (generic actable<%> send-message))
+(define actable-spawn
+  (generic actable<%> spawn))
 
-(define (handle-message actor actor-address msg)
-  (define (with-message-capture-prompt thunk)
-    (call-with-continuation-prompt
-     thunk
-     actor-prompt-tag
-     (lambda (k to kws kw-args args)
-       #;(define msg
-         (send-message to kws kw-args args
-                       #:please-reply-to actor-address))
-       ;; Set waiting-on-replies continuation to be this msg
-       #;(hash-set! waiting-on-replies msg k)
-       ;; FIXME: Redo this
-       'TODO)))
-
-  #;(cond
-    ;; This message is in reply to another... so handle it!
-    [(message-in-reply-to msg)
-     =>
-     (lambda (in-reply-to)
-       (when (not (hash-has-key? waiting-on-replies in-reply-to))
-         (error "Message in reply to object that doesn't exist"
-                msg in-reply-to))
-       ;; Pull the waiting continuation out
-       (define waiting-kont (hash-ref waiting-on-replies in-reply-to))
-       (hash-remove! waiting-on-replies in-reply-to)
-       ;; Let's call it...
-       (with-message-capture-prompt
-         (lambda ()
-           (keyword-apply waiting-kont
-                          (message-kws msg)
-                          (message-kw-args msg)
-                          (message-args msg)))))]
-    [else])
-  ;; Set up initial escape and capture prompts, along with error handler
-  (with-message-capture-prompt
-    (lambda ()
-      ;; Why put self parameterization here?  Why not at the top?
-      ;; If we put it here, we can ensure that while processing a message
-      ;; that we keep self from being gc'ed, but we allow the possibility
-      ;; of the actor being GC'ed from the main root, allowing
-      ;; for shutdown when no references are left
-      (parameterize ([self actor-address])
-        (define please-resolve
-          (message-please-resolve msg))
-        (with-handlers ([exn:fail?
-                         (lambda (v)
-                           ;; Error handling goes here!
-                           (display (exn->string v))
-                           (when please-resolve
-                             ;; Or should we use <-no-promise?
-                             (please-resolve 'broken v))
-                           (void))])
-          (call-with-values
-           (lambda ()
-             (keyword-apply (actor-handler actor)
-                            (message-kws msg)
-                            (message-kw-args msg)
-                            (message-args msg)))
-           (make-keyword-procedure
-            (lambda (kws kw-args . args)
-              (when please-resolve
-                (please-resolve 'fulfilled args))))))))))
+(define (require-current-actable)
+  (unless (current-actable)
+    (error "Not in actor context.")))
 
 ;; So we need flexible hives eventually.
 ;; But do we really need flexible actors? :\
@@ -265,8 +218,6 @@ to us."
       (make-weak-hasheq))
     (define hive-channel
       (make-channel))
-    (define/public (get-hive-channel)
-      hive-channel)
 
     (define hive-custodian
       (make-custodian))
@@ -274,12 +225,9 @@ to us."
     (define address-will-executor
       (make-will-executor))
 
-    ;; FIXME: this is really only for debugging, and thus should not be
-    ;;   exposed on the default hive.
-    (define/public (get-actor-registry)
-      actor-registry)
+    (define running? #f)
 
-    (define/public (spawn-actor actor [will #f])
+    (define (do-spawn actor [will #f])
       (define actor-address
         (local-address (delay (make-swiss-num)) this))
       ;; If the user gave us a will to execute, run that
@@ -292,54 +240,132 @@ to us."
       (hash-set! actor-registry actor-address actor)
       actor-address)
 
-    (define/public (listen-to-promise promise listener)
-      ;; TODO: Add support for remote hives here
-      (define promise-object
-        (hash-ref actor-registry promise))
-      (unless (promise? promise-object)
-        (error "Not a promise so we can't listen to it"))
-      (promise-add-listener! promise listener)
-      (void))
+    ;; Simplest version of the actable% class
+    (define actable%
+      (class* object% (actable<%>)
+        (super-new)
+        ;; TODO: should we refactor this so that it "queues up"
+        ;;   messages to be sent...?
+        ;; TODO: maybe this should actually be <-
+        (define/public (send-message to kws kw-args args
+                                     #:please-resolve
+                                     [please-resolve #f])
+          ;; TODO: We'll put inter-hive-communication here
+          (define msg
+            (message to kws kw-args args please-resolve))
+          (channel-put hive-channel (vector 'send-message msg))
+          msg)
+        (define/public (spawn actor [will #f])
+          (do-spawn actor will))
+        (define/public (listen-to-promise promise listener)
+          ;; TODO: Add support for remote hives here
+          (define promise-object
+            (hash-ref actor-registry promise))
+          (unless (promise? promise-object)
+            (error "Not a promise so we can't listen to it"))
+          (promise-add-listener! promise listener)
+          (void))
+        (define/public (run-directly actor-ref kws kw-args args)
+          (if (on-selfsame-hive? actor-ref)  ; TODO: can be optimized with local knowledge?
+              (let ([actor (hash-ref actor-registry actor-ref)])
+                (displayln (format "actor: ~a" actor))
+                (keyword-apply (actor-handler actor)
+                               kws kw-args args))
+              (error "Can't directly run an actor not on the same hive")))))
 
-    (define/public (run-directly actor-ref kws kw-args args)
-      (if (on-selfsame-hive? actor-ref)
-          (let ([actor (hash-ref actor-registry actor-ref)])
-            (displayln (format "actor: ~a" actor))
-            (keyword-apply (actor-handler actor)
-                           kws kw-args args))
-          (error "Can't directly run an actor not on the same hive")))
+    ;; FIXME: this is really only for debugging, and thus should not be
+    ;;   exposed on the default hive.
+    #;(define/public (get-actor-registry)
+      actor-registry)
 
-    (define/public (main-loop)
+    (define/public (is-running?)
+      running?)
+
+    (define (handle-message actor actor-address msg)
+      ;; Set up initial escape and capture prompts, along with error handler
+      (call-with-continuation-prompt
+       (lambda ()
+         ;; Why put self parameterization here?  Why not at the top?
+         ;; If we put it here, we can ensure that while processing a message
+         ;; that we keep self from being gc'ed, but we allow the possibility
+         ;; of the actor being GC'ed from the main root, allowing
+         ;; for shutdown when no references are left
+         (parameterize ([actor-address actor-address]
+                        [current-actable (new actable%)])
+           (define please-resolve
+             (message-please-resolve msg))
+           (with-handlers ([exn:fail?
+                            (lambda (v)
+                              ;; Error handling goes here!
+                              (display (exn->string v))
+                              (when please-resolve
+                                ;; Or should we use <-no-promise?
+                                (please-resolve 'broken v))
+                              (void))])
+             (call-with-values
+              (lambda ()
+                (keyword-apply (actor-handler actor)
+                               (message-kws msg)
+                               (message-kw-args msg)
+                               (message-args msg)))
+              (make-keyword-procedure
+               (lambda (kws kw-args . args)
+                 (when please-resolve
+                   (please-resolve 'fulfilled args))))))))
+       actor-prompt-tag
+       (lambda (k to kws kw-args args)
+         #;(define msg
+             (send-message to kws kw-args args
+                           #:please-reply-to actor-address))
+         ;; Set waiting-on-replies continuation to be this msg
+         #;(hash-set! waiting-on-replies msg k)
+         ;; FIXME: Redo this
+         'TODO)))
+
+    ;; Bootstrapping methods
+    ;; =====================
+    (define/public (spawn actor #:will [will #f])
+      (define return-ch
+        (make-channel))
+      (channel-put hive-channel
+                   (vector 'external-spawn actor will return-ch))
+      (channel-get return-ch))
+
+    ;; The main loop, at last
+    ;; ======================
+    (define (main-loop)
       (parameterize ([current-custodian hive-custodian])
         (thread
          (lambda ()
-           ;; executes wills for the actor addresses going out of scope
-           (define executor-thread
-             (thread
-              (lambda ()
-                (define steps-till-gc 25000)
-                (let loop (;; Whats a good number for this?  I dunno.
-                           [countdown-till-gc-registry steps-till-gc])
-                  (will-execute address-will-executor)
-                  (if (= countdown-till-gc-registry 0)
-                      ;; we need to manually clear out the registry every
-                      ;; now and then because weak maps are imperfect about
-                      ;; freeing up all their information in racket
-                      ;; (or so it appears to me from tests...)
-                      (begin
-                        (channel-put hive-channel 'gc-registry)
-                        (loop steps-till-gc))
-                      (loop (- countdown-till-gc-registry 1)))))))
+           (with-handlers ([exn:fail?
+                            (set! running? #f)])
 
-           #;(define (listen-for-work)
-             (parameterize ([current-hive this])
-               (let lp ()
-                 (match (async-channel-get work-channel)
-                   [(available-work registered-actor actor-address message)
-                    (handle-message registered-actor actor-address message)
-                    (lp)]))))
+             ;; executes wills for the actor addresses going out of scope
+             (define executor-thread
+               (thread
+                (lambda ()
+                  (define steps-till-gc 25000)
+                  (let loop (;; Whats a good number for this?  I dunno.
+                             [countdown-till-gc-registry steps-till-gc])
+                    (will-execute address-will-executor)
+                    (if (= countdown-till-gc-registry 0)
+                        ;; we need to manually clear out the registry every
+                        ;; now and then because weak maps are imperfect about
+                        ;; freeing up all their information in racket
+                        ;; (or so it appears to me from tests...)
+                        (begin
+                          (channel-put hive-channel 'gc-registry)
+                          (loop steps-till-gc))
+                        (loop (- countdown-till-gc-registry 1)))))))
 
-           (parameterize ([current-hive this])
+             #;(define (listen-for-work)
+                 (parameterize ([current-hive this])
+                   (let lp ()
+                     (match (async-channel-get work-channel)
+                       [(available-work registered-actor actor-address message)
+                        (handle-message registered-actor actor-address message)
+                        (lp)]))))
+
              (let lp ()
                (match (channel-get hive-channel)
                  ;; Send a message to an actor at a particular address
@@ -357,6 +383,14 @@ to us."
                   (handle-message actor msg-to msg)
                   
                   (lp)]
+                 ;; spawn initialized through some external process.
+                 ;; Really, since external hives can't do this, only
+                 ;; through the Hive itself.
+                 [(vector 'external-spawn actor will return-ch)
+                  (define actor-id
+                    (parameterize ([current-actable (new actable%)])
+                      (do-spawn actor will)))
+                  (channel-put return-ch actor-id)]
                  ;; "Garbage collect" the registry via stop-and-copy
                  ['gc-registry
                   (define new-registry
@@ -367,8 +401,11 @@ to us."
                   (lp)]
                  ['shutdown
                   (custodian-shutdown-all hive-custodian)
-                  (void)]))))))
-      (void))))
+                  (void)]))
+             (set! running? #f)))))
+      (void))
+    ;; TODO: Maybe eventually allow the user to "restart" the main loop?
+    (main-loop)))
 
 (provide hive%)
 
@@ -397,35 +434,29 @@ to us."
                     kws kw-args obj method args))))
 
 (define (spawn actor #:will [will #f])
-  (define (spawn-default-hive)
-    (define new-hive
-      (new hive%))
-    (send new-hive main-loop)
-    (current-hive new-hive)
-    new-hive)
-  (define hive
-    (or (current-hive)
-        (spawn-default-hive)))
+  (require-current-actable)
   (define actor-address
-    (send hive spawn-actor actor will))
+    (send (current-actable) spawn-actor actor will))
   actor-address)
 
 (provide spawn)
 
 (module+ test
+  (define hive
+    (new hive%))
   (define put-stuff-in-me
     (box #f))
   (define wait-for-put
     (make-semaphore))
   (define putter
-    (spawn
-     (lambda (thing)
-       (set-box! put-stuff-in-me thing)
-       (semaphore-post wait-for-put))))
+    (send hive spawn
+          (lambda (thing)
+            (set-box! put-stuff-in-me thing)
+            (semaphore-post wait-for-put))))
   ;; TODO: have a time delay on this
-  (<- putter "cat")
-  (semaphore-wait wait-for-put)
-  (test-equal?
+  #;(<- putter "cat")
+  #;(semaphore-wait wait-for-put)
+  #;(test-equal?
    "<- works"
    (unbox put-stuff-in-me)
    "cat")
