@@ -205,6 +205,10 @@ to us."
   (unless (current-actable)
     (error "Not in actor context.")))
 
+(define (forbid-actable)
+  (when (current-actable)
+    (error "This hive method is not safe to run inside an actor context.")))
+
 ;; So we need flexible hives eventually.
 ;; But do we really need flexible actors? :\
 (define hive%
@@ -325,6 +329,7 @@ to us."
     ;; Bootstrapping methods
     ;; =====================
     (define/public (spawn actor #:will [will #f])
+      (forbid-actable)
       (define return-ch
         (make-channel))
       (channel-put hive-channel
@@ -388,9 +393,11 @@ to us."
                  ;; through the Hive itself.
                  [(vector 'external-spawn actor will return-ch)
                   (define actor-id
-                    (parameterize ([current-actable (new actable%)])
-                      (do-spawn actor will)))
-                  (channel-put return-ch actor-id)]
+                    ;; TODO: I don't think we need this, but maybe we do?
+                    ;; (parameterize ([current-actable (new actable%)]))
+                    (do-spawn actor will))
+                  (channel-put return-ch actor-id)
+                  (lp)]
                  ;; "Garbage collect" the registry via stop-and-copy
                  ['gc-registry
                   (define new-registry
