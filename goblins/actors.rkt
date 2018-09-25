@@ -55,7 +55,8 @@
   (make-keyword-procedure
    (lambda (kws kw-args this . args)
      (require-current-actable)
-     (send (current-actable) run-directly this kws kw-args args))))
+     (send-generic (current-actable) actable-run-directly
+                   this kws kw-args args))))
 
 (struct remote-address
   (id hive-ref)
@@ -71,7 +72,7 @@ to us."
   (require-current-actable)
   (define msg
     (message to kws kw-args args please-resolve))
-  (send (current-actable) send-message msg)
+  (send-generic (current-actable) actable-send-message msg)
   msg)
 
 (define <-no-promise
@@ -167,7 +168,7 @@ to us."
                [on-fulfilled on-fulfilled]
                [on-catch on-catch]
                [on-finally on-finally]))
-  (send (current-actable) listen-to-promise promise listener)
+  (send-generic (current-actable) actable-listen-to-promise promise listener)
   new-promise)
 
 (provide <- <-no-promise <<- on)
@@ -182,12 +183,16 @@ to us."
 
 (define actable<%>
   (interface ()
-    send-message spawn))
+    send-message spawn listen-to-promise run-directly))
 
 (define actable-send-message
   (generic actable<%> send-message))
 (define actable-spawn
   (generic actable<%> spawn))
+(define actable-listen-to-promise
+  (generic actable<%> listen-to-promise))
+(define actable-run-directly
+  (generic actable<%> run-directly))
 
 (define (require-current-actable)
   (unless (current-actable)
@@ -433,7 +438,7 @@ to us."
 (define (spawn actor #:will [will #f])
   (require-current-actable)
   (define actor-address
-    (send (current-actable) spawn-actor actor will))
+    (send-generic (current-actable) actable-spawn-actor actor will))
   actor-address)
 
 (provide spawn)
