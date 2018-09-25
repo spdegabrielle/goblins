@@ -90,7 +90,8 @@ to us."
      new-promise)))
 
 (define <<-
-  (make-keyword-procedure
+  'TODO
+  #;(make-keyword-procedure
    (lambda (kws kw-args to . args)
      (if (self)
          ;; This is being called from an actor, great we can reply to it
@@ -173,13 +174,6 @@ to us."
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
-
-(define actor-address
-  (make-parameter #f))
-(define (self)
-  (actor-address))
-
-(provide self)
 
 ;; This is the parameterized object that allows us to reach into the
 ;; hive to do things as an actor
@@ -291,8 +285,7 @@ to us."
          ;; that we keep self from being gc'ed, but we allow the possibility
          ;; of the actor being GC'ed from the main root, allowing
          ;; for shutdown when no references are left
-         (parameterize ([actor-address actor-address]
-                        [current-actable (new actable%)])
+         (parameterize ([current-actable (new actable%)])
            (define please-resolve
              (message-please-resolve msg))
            (with-handlers ([exn:fail?
@@ -523,9 +516,10 @@ to us."
 ;; getting unwieldy
 (define (spawn-promise-pair)
   (define promise
-    (make-promise))
+    (promise 'waiting #f '() #f))
   (define promise-actor
     (spawn promise))
+  (set-promise-this-address! promise promise-actor)
   (define resolver-actor
     (spawn
      (match-lambda*
@@ -538,17 +532,15 @@ to us."
 
 (struct promise ([state #:mutable]
                  [args-or-error #:mutable]
-                 [listeners #:mutable])
+                 [listeners #:mutable]
+                 [this-address #:mutable])
   #:methods gen:actor
   [(define (actor-handler actor)
      (make-keyword-procedure
       (lambda (kws kw-args . args)
-        (on (self)
+        (on (promise-this-address actor)
             (lambda (val)
               (keyword-apply <-no-promise kws kw-args val args))))))])
-
-(define (make-promise)
-  (promise 'waiting #f '()))
 
 (define (promise-maybe-run-listeners! promise)
   (match (promise-state promise)
