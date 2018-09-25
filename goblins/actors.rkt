@@ -517,9 +517,15 @@ to us."
 
 (define (promise-maybe-run-listeners! promise)
   (match (promise-state promise)
-    [(and (or 'fulfilled 'broken) state)
+    ['fulfilled
      (for ([listener (promise-listeners promise)])
-       (<- listener state
+       (apply <- listener 'fulfilled
+              (promise-args-or-error promise)))
+     (set-promise-listeners! promise '())
+     (void)]
+    ['broken
+     (for ([listener (promise-listeners promise)])
+       (<- listener 'broken
            (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
