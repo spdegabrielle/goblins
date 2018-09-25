@@ -57,6 +57,7 @@
      (require-current-actable)
      (send (current-actable) run-directly this kws kw-args args))))
 
+;; TODO: Rip out, use actable's environment for this
 (define (on-selfsame-hive? addr)
   (and (local-address? addr)
        (local-address? (self))
