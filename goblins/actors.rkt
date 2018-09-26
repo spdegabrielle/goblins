@@ -130,8 +130,7 @@ to us."
 (define listener%
   (class object%
     (super-new)
-    (init-field new-promise
-                new-resolver
+    (init-field new-resolver
                 on-fulfilled
                 on-catch
                 on-finally)
@@ -168,7 +167,6 @@ to us."
     (spawn-promise-pair))
   (define listener
     (spawn-new listener%
-               [new-promise new-promise]
                [new-resolver new-resolver]
                [on-fulfilled on-fulfilled]
                [on-catch on-catch]
