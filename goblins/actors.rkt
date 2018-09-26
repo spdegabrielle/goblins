@@ -69,10 +69,15 @@
   "Send a message to TO address (through the hive), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
-  (require-current-actable)
   (define msg
     (message to kws kw-args args please-resolve))
-  (send-generic (current-actable) actable-send-message msg)
+  (cond
+    [(current-actable)
+     (send-generic (current-actable) actable-send-message msg)]
+    [(current-hive)
+     (send (current-hive) send-message msg)]
+    [else
+     (error "Can't send message if no current-actable nor current-msg")])
   msg)
 
 (define <-no-promise
@@ -201,6 +206,12 @@ to us."
 (define (forbid-actable)
   (when (current-actable)
     (error "This hive method is not safe to run inside an actor context.")))
+
+(define current-hive
+  (make-parameter #f))
+
+(provide current-hive)
+
 
 ;; So we need flexible hives eventually.
 ;; But do we really need flexible actors? :\
@@ -331,6 +342,12 @@ to us."
                    (vector 'external-spawn actor will return-ch))
       (channel-get return-ch))
 
+    (define/public (send-message msg)
+      (forbid-actable)
+      (channel-put hive-channel
+                   (vector 'send-message msg))
+      (void))
+
     ;; The main loop, at last
     ;; ======================
     (define (main-loop)
@@ -436,10 +453,22 @@ to us."
                     kws kw-args obj method args))))
 
 (define (spawn actor #:will [will #f])
-  (require-current-actable)
-  (define actor-address
-    (send-generic (current-actable) actable-spawn-actor actor will))
-  actor-address)
+  (cond
+    [(current-actable)
+     (define actor-address
+       (send-generic (current-actable) actable-spawn actor will))
+     actor-address]
+    [(current-hive)
+     (define actor-address
+       (send (current-hive) spawn actor #:will will))
+     actor-address]
+    [else
+     (define new-hive
+       (new hive%))
+     (current-hive new-hive)
+     (define actor-address
+       (send new-hive spawn actor #:will will))
+     actor-address]))
 
 (provide spawn)
 
@@ -451,10 +480,10 @@ to us."
   (define wait-for-put
     (make-semaphore))
   (define putter
-    (send hive spawn
-          (lambda (thing)
-            (set-box! put-stuff-in-me thing)
-            (semaphore-post wait-for-put))))
+    (spawn
+     (lambda (thing)
+       (set-box! put-stuff-in-me thing)
+       (semaphore-post wait-for-put))))
   ;; TODO: have a time delay on this
   #;(<- putter "cat")
   #;(semaphore-wait wait-for-put)
@@ -520,18 +549,18 @@ to us."
 ;; TODO: I really ought to separate out this into modules, this is
 ;; getting unwieldy
 (define (spawn-promise-pair)
-  (define promise
+  (define this-promise
     (promise 'waiting #f '() #f))
   (define promise-actor
-    (spawn promise))
-  (set-promise-this-address! promise promise-actor)
+    (spawn this-promise))
+  (set-promise-this-address! this-promise promise-actor)
   (define resolver-actor
     (spawn
      (match-lambda*
        [(list 'fulfilled val)
-        (fulfill-promise! promise val)]
+        (fulfill-promise! this-promise val)]
        [(list 'broken err)
-        (break-promise! promise err)]
+        (break-promise! this-promise err)]
        [_ (error "Unsupported method")])))
   (values promise-actor resolver-actor))
 
