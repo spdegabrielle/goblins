@@ -128,7 +128,8 @@ to us."
             (new-resolver 'fulfilled val))
           (new-resolver 'fulfilled #f))  ; or void...?
       (when on-finally
-        (on-finally)))
+        (on-finally))
+      (void))
     (define/public (broken err)
       (when on-catch
         (with-handlers ([exn:fail?
@@ -138,9 +139,9 @@ to us."
                            (new-resolver 'broken err))])
           (on-catch err)
           (new-resolver 'broken err)))
-      (new-resolver 'broken err)
       (when on-finally
-        (on-finally)))))
+        (on-finally))
+      (void))))
 
 ;; Or maybe "listen" ?
 (define (on promise [on-fulfilled #f]
@@ -284,7 +285,8 @@ to us."
            (with-handlers ([exn:fail?
                             (lambda (v)
                               ;; Error handling goes here!
-                              (display (exn->string v))
+                              (display (exn->string v)
+                                       (current-error-port))
                               (when please-resolve
                                 ;; Or should we use <-no-promise?
                                 (please-resolve 'broken v))
@@ -301,7 +303,7 @@ to us."
                    (please-resolve 'fulfilled args))))))))
        actor-prompt-tag
        (lambda (k to kws kw-args args)
-         (on (keyword-apply <- to kws kw-args args)
+         (on (keyword-apply <- kws kw-args to args)
              ;; resume continuation
              (lambda vals
                (k (vector 'resume-values vals)))
@@ -332,7 +334,12 @@ to us."
         (thread
          (lambda ()
            (with-handlers ([exn:fail?
-                            (set! running? #f)])
+                            (lambda (err)
+                              (display ";;;; Error when attempting to run hive main loop:"
+                                       (current-output-port))
+                              (display (exn->string err)
+                                       (current-error-port))
+                              (set! running? #f))])
 
              ;; executes wills for the actor addresses going out of scope
              (define executor-thread
@@ -361,43 +368,50 @@ to us."
                         (lp)]))))
 
              (let lp ()
-               (match (async-channel-get hive-channel)
-                 ;; Send a message to an actor at a particular address
-                 [(vector 'send-message msg)
-                  (define msg-to
-                    (message-to msg))
-                  ;; TODO: Remote hive support goes here
-                  (when (not (hash-has-key? actor-registry msg-to))
-                    (error "No actor with id" msg-to))
+               (with-handlers ([exn:fail?
+                                (lambda (err)
+                                  (display ";;;; Hive caught error"
+                                           (current-output-port))
+                                  (display (exn->string err)
+                                           (current-error-port))
+                                  (newline (current-error-port)))])
+                 (match (async-channel-get hive-channel)
+                   ;; Send a message to an actor at a particular address
+                   [(vector 'send-message msg)
+                    (define msg-to
+                      (message-to msg))
+                    ;; TODO: Remote hive support goes here
+                    (when (not (hash-has-key? actor-registry msg-to))
+                      (error "No actor with id" msg-to))
 
-                  (define actor
-                    (hash-ref actor-registry msg-to))
+                    (define actor
+                      (hash-ref actor-registry msg-to))
 
-                  ;; Do a "turn"
-                  (handle-message actor msg-to msg)
-                  
-                  (lp)]
-                 ;; spawn initialized through some external process.
-                 ;; Really, since external hives can't do this, only
-                 ;; through the Hive itself.
-                 [(vector 'external-spawn actor will return-ch)
-                  (define actor-id
-                    ;; TODO: I don't think we need this, but maybe we do?
-                    ;; (parameterize ([current-actable (new actable%)]))
-                    (do-spawn actor will))
-                  (channel-put return-ch actor-id)
-                  (lp)]
-                 ;; "Garbage collect" the registry via stop-and-copy
-                 ['gc-registry
-                  (define new-registry
-                    (make-weak-hasheq))
-                  (for (([key val] actor-registry))
-                    (hash-set! new-registry key val))
-                  (set! actor-registry new-registry)
-                  (lp)]
-                 ['shutdown
-                  (custodian-shutdown-all hive-custodian)
-                  (void)]))
+                    ;; Do a "turn"
+                    (handle-message actor msg-to msg)
+                    
+                    (lp)]
+                   ;; spawn initialized through some external process.
+                   ;; Really, since external hives can't do this, only
+                   ;; through the Hive itself.
+                   [(vector 'external-spawn actor will return-ch)
+                    (define actor-id
+                      ;; TODO: I don't think we need this, but maybe we do?
+                      ;; (parameterize ([current-actable (new actable%)]))
+                      (do-spawn actor will))
+                    (channel-put return-ch actor-id)
+                    (lp)]
+                   ;; "Garbage collect" the registry via stop-and-copy
+                   ['gc-registry
+                    (define new-registry
+                      (make-weak-hasheq))
+                    (for (([key val] actor-registry))
+                      (hash-set! new-registry key val))
+                    (set! actor-registry new-registry)
+                    (lp)]
+                   ['shutdown
+                    (custodian-shutdown-all hive-custodian)
+                    (void)])))
              (set! running? #f)))))
       (void))
     ;; TODO: Maybe eventually allow the user to "restart" the main loop?
