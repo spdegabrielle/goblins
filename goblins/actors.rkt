@@ -96,36 +96,20 @@ to us."
      new-promise)))
 
 (define <<-
-  'TODO
-  #;(make-keyword-procedure
+  (make-keyword-procedure
    (lambda (kws kw-args to . args)
-     (if (self)
-         ;; This is being called from an actor, great we can reply to it
-         (call-with-composable-continuation
-          (lambda (k)
-            (abort-current-continuation actor-prompt-tag k to kws kw-args args))
-          actor-prompt-tag)
-         ;; It's not being called from an actor?
-         ;; Well let's make an actor that can reply to it
-         ;; FIXME: Propagate errors
-         (let* ([ch (make-channel)]
-                [tmp-actor
-                 (spawn
-                  ;; a one-time-use actor...
-                  (lambda ()
-                    (call-with-values
-                        (lambda ()
-                          (keyword-apply <<- kws kw-args to args))
-                      (make-keyword-procedure
-                       (lambda (kws kw-args . args)
-                         (channel-put ch (vector kws kw-args args)))))))])
-           ;; call the actor once to get it to run
-           (<- tmp-actor)
-           ;; now retrieve the value
-           (match (channel-get ch)
-             ([vector kws kw-args args]
-              ;; Re-raise values to this continuation
-              (keyword-apply values kws kw-args args))))))))
+     (require-current-actable)
+     (define resume-data
+       (call-with-composable-continuation
+        (lambda (k)
+          (abort-current-continuation actor-prompt-tag k to kws kw-args args))
+        actor-prompt-tag))
+     (match resume-data
+       [(vector 'resume-values vals)
+        (apply values vals)]
+       [(vector 'error err)
+        ;; TODO: Do we really just want to re-raise the error this way
+        (error err)]))))
 
 (define listener%
   (class object%
@@ -223,7 +207,7 @@ to us."
     (define actor-registry
       (make-weak-hasheq))
     (define hive-channel
-      (make-channel))
+      (make-async-channel))
 
     (define hive-custodian
       (make-custodian))
@@ -255,14 +239,10 @@ to us."
         ;; TODO: should we refactor this so that it "queues up"
         ;;   messages to be sent...?
         ;; TODO: maybe this should actually be <-
-        (define/public (send-message to kws kw-args args
-                                     #:please-resolve
-                                     [please-resolve #f])
+        (define/public (send-message msg)
           ;; TODO: We'll put inter-hive-communication here
-          (define msg
-            (message to kws kw-args args please-resolve))
-          (channel-put hive-channel (vector 'send-message msg))
-          msg)
+          (async-channel-put hive-channel (vector 'send-message msg))
+          (void))
         (define/public (spawn actor [will #f])
           (do-spawn actor will))
         (define/public (listen-to-promise promise listener)
@@ -271,13 +251,12 @@ to us."
             (hash-ref actor-registry promise))
           (unless (promise? promise-object)
             (error "Not a promise so we can't listen to it"))
-          (promise-add-listener! promise listener)
+          (promise-add-listener! promise-object listener)
           (void))
         (define/public (run-directly actor-ref kws kw-args args)
           (if (and (local-address? actor-ref)
                    (eq? (local-address-hive actor-ref) this-hive))
               (let ([actor (hash-ref actor-registry actor-ref)])
-                (displayln (format "actor: ~a" actor))
                 (keyword-apply (actor-handler actor)
                                kws kw-args args))
               (error "Can't directly run an actor not on the same hive")))))
@@ -322,13 +301,13 @@ to us."
                    (please-resolve 'fulfilled args))))))))
        actor-prompt-tag
        (lambda (k to kws kw-args args)
-         #;(define msg
-             (send-message to kws kw-args args
-                           #:please-reply-to actor-address))
-         ;; Set waiting-on-replies continuation to be this msg
-         #;(hash-set! waiting-on-replies msg k)
-         ;; FIXME: Redo this
-         'TODO)))
+         (on (keyword-apply <- to kws kw-args args)
+             ;; resume continuation
+             (lambda vals
+               (k (vector 'resume-values vals)))
+             #:catch
+             (lambda (err)
+               (k (vector 'error err)))))))
 
     ;; Bootstrapping methods
     ;; =====================
@@ -336,14 +315,14 @@ to us."
       (forbid-actable)
       (define return-ch
         (make-channel))
-      (channel-put hive-channel
-                   (vector 'external-spawn actor will return-ch))
+      (async-channel-put hive-channel
+                         (vector 'external-spawn actor will return-ch))
       (channel-get return-ch))
 
     (define/public (send-message msg)
       (forbid-actable)
-      (channel-put hive-channel
-                   (vector 'send-message msg))
+      (async-channel-put hive-channel
+                         (vector 'send-message msg))
       (void))
 
     ;; The main loop, at last
@@ -369,7 +348,7 @@ to us."
                         ;; freeing up all their information in racket
                         ;; (or so it appears to me from tests...)
                         (begin
-                          (channel-put hive-channel 'gc-registry)
+                          (async-channel-put hive-channel 'gc-registry)
                           (loop steps-till-gc))
                         (loop (- countdown-till-gc-registry 1)))))))
 
@@ -382,7 +361,7 @@ to us."
                         (lp)]))))
 
              (let lp ()
-               (match (channel-get hive-channel)
+               (match (async-channel-get hive-channel)
                  ;; Send a message to an actor at a particular address
                  [(vector 'send-message msg)
                   (define msg-to
@@ -471,13 +450,35 @@ to us."
 (provide spawn)
 
 (module+ test
-  (define hive
+  #;(define hive
     (new hive%))
   (define put-stuff-in-me
     (box #f))
   (define wait-for-put
     (make-semaphore))
-  (define putter
+
+  (define foop
+    (spawn (lambda () 'foop)))
+  (define boop
+    (spawn (lambda (n)
+             (for ([i (in-range n)])
+               (foop)))))
+
+  (define alice
+    (spawn
+     (lambda ()
+       (displayln 'alice)
+       'alicey)))
+  (define bob
+    (spawn
+     (lambda ()
+       (displayln 'bob-pre-alice)
+       (on (<- alice)
+           (lambda (val)
+             (displayln (format "got: ~a" val))))
+       (displayln 'bob-post-alice))))
+
+  #;(define putter
     (spawn
      (lambda (thing)
        (set-box! put-stuff-in-me thing)
@@ -551,7 +552,7 @@ to us."
     (promise 'waiting #f '() #f))
   (define promise-actor
     (spawn this-promise))
-  (set-promise-this-address! this-promise promise-actor)
+  (set-promise-this-address! this-promise (make-weak-box promise-actor))
   (define resolver-actor
     (spawn
      (match-lambda*
@@ -578,22 +579,23 @@ to us."
   (match (promise-state promise)
     ['fulfilled
      (for ([listener (promise-listeners promise)])
-       (apply <- listener 'fulfilled
+       (apply <-no-promise listener 'fulfilled
               (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
     ['broken
      (for ([listener (promise-listeners promise)])
-       (<- listener 'broken
-           (promise-args-or-error promise)))
+       (<-no-promise listener 'broken
+                     (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
     ['waiting (void)]))
 
 (define (promise-add-listener! promise listener)
   (set-promise-listeners!
+   promise
    (cons listener (promise-listeners promise)))
-  (promise-maybe-run-listeners!))
+  (promise-maybe-run-listeners! promise))
 
 (define (promise-settled? promise)
   (not (eq? (promise-state promise) 'waiting)))
