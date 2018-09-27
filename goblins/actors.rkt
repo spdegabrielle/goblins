@@ -16,6 +16,8 @@
          racket/random
          racket/async-channel)
 
+(require linkeddata/pk)
+
 (module+ test
   (require rackunit))
 
@@ -303,13 +305,14 @@ to us."
                    (please-resolve 'fulfilled args))))))))
        actor-prompt-tag
        (lambda (k to kws kw-args args)
-         (on (keyword-apply <- kws kw-args to args)
-             ;; resume continuation
-             (lambda vals
-               (k (vector 'resume-values vals)))
-             #:catch
-             (lambda (err)
-               (k (vector 'error err)))))))
+         (parameterize ([current-actable (new actable%)])
+           (on (keyword-apply <- kws kw-args to args)
+               ;; resume continuation
+               (lambda vals
+                 (k (vector 'resume-values vals)))
+               #:catch
+               (lambda (err)
+                 (k (vector 'error err))))))))
 
     ;; Bootstrapping methods
     ;; =====================
@@ -397,7 +400,6 @@ to us."
                    [(vector 'external-spawn actor will return-ch)
                     (define actor-id
                       ;; TODO: I don't think we need this, but maybe we do?
-                      ;; (parameterize ([current-actable (new actable%)]))
                       (do-spawn actor will))
                     (channel-put return-ch actor-id)
                     (lp)]
@@ -489,8 +491,31 @@ to us."
        (displayln 'bob-pre-alice)
        (on (<- alice)
            (lambda (val)
-             (displayln (format "got: ~a" val))))
+             (displayln (format "got: ~a" val)))
+           #:finally
+           (lambda ()
+             (displayln "TGIF!")))
        (displayln 'bob-post-alice))))
+  (define breakable
+    (spawn
+     (lambda ()
+       (error "I broke!")
+       'bork)))
+  (define uses-breakable
+    (spawn
+     (lambda ()
+       (on (<- breakable)
+           (lambda _ (displayln "That worked?  Really???"))
+           #:catch
+           (lambda (err)
+             (displayln (format "got error: ~a" err)))
+           #:finally
+           (lambda ()
+             (displayln "I hate mondays"))))))
+
+  (<- (spawn (lambda ()
+               (displayln (format "Got: ~a"
+                                  (<<- alice))))))
 
   #;(define putter
     (spawn
