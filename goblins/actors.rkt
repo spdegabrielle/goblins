@@ -82,7 +82,8 @@ to us."
      (error "Can't send message if no current-actable nor current-msg")])
   msg)
 
-(define <-no-promise
+;; np stands for "No Promise"
+(define <-np
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
      (send-message to kws kw-args args)
@@ -161,7 +162,7 @@ to us."
   (send-generic (current-actable) actable-listen-to-promise promise listener)
   new-promise)
 
-(provide <- <-no-promise <<- on)
+(provide <- <-np <<- on)
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
@@ -290,7 +291,7 @@ to us."
                               (display (exn->string v)
                                        (current-error-port))
                               (when please-resolve
-                                ;; Or should we use <-no-promise?
+                                ;; Or should we use <-np?
                                 (please-resolve 'broken v))
                               (void))])
              (call-with-values
@@ -612,20 +613,20 @@ to us."
       (lambda (kws kw-args . args)
         (on (promise-this-address actor)
             (lambda (val)
-              (keyword-apply <-no-promise kws kw-args val args))))))])
+              (keyword-apply <-np kws kw-args val args))))))])
 
 (define (promise-maybe-run-listeners! promise)
   (match (promise-state promise)
     ['fulfilled
      (for ([listener (promise-listeners promise)])
-       (apply <-no-promise listener 'fulfilled
+       (apply <-np listener 'fulfilled
               (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
     ['broken
      (for ([listener (promise-listeners promise)])
-       (<-no-promise listener 'broken
-                     (promise-args-or-error promise)))
+       (<-np listener 'broken
+             (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
     ['waiting (void)]))
