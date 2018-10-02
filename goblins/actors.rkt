@@ -101,18 +101,36 @@ to us."
 (define <<-
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
-     (require-current-actable)
      (define resume-data
-       (call-with-composable-continuation
-        (lambda (k)
-          (abort-current-continuation actor-prompt-tag k to kws kw-args args))
-        actor-prompt-tag))
+       (cond
+         [(current-actable)
+          (call-with-composable-continuation
+           (lambda (k)
+             (abort-current-continuation actor-prompt-tag k to kws kw-args args))
+           actor-prompt-tag)]
+         [(current-hive)
+          (define return-ch
+            (make-channel))
+          (<- (spawn
+               (lambda ()
+                 (with-handlers ([exn:fail?
+                                  (lambda (err)
+                                    (channel-put return-ch
+                                                 (vector 'error err)))])
+                   (call-with-values
+                    (lambda ()
+                      (keyword-apply <<- kws kw-args to args))
+                    (lambda args
+                      (channel-put return-ch (vector 'resume-values args))))))))
+          (channel-get return-ch)]
+         [else
+          (error "Can't send message if no current-actable nor current-msg")]))
      (match resume-data
        [(vector 'resume-values vals)
         (apply values vals)]
        [(vector 'error err)
         ;; TODO: Do we really just want to re-raise the error this way
-        (error err)]))))
+        (raise err)]))))
 
 (define listener%
   (class object%
@@ -538,27 +556,26 @@ to us."
                (displayln (format "Got: ~a"
                                   (<<- alice))))))
 
-  #;(define putter
+  (define putter
     (spawn
      (lambda (thing)
        (set-box! put-stuff-in-me thing)
        (semaphore-post wait-for-put))))
-  ;; TODO: have a time delay on this
-  #;(<- putter "cat")
-  #;(semaphore-wait wait-for-put)
-  #;(test-equal?
+  (<- putter "cat")
+  (semaphore-wait wait-for-put)
+  (test-equal?
    "<- works"
    (unbox put-stuff-in-me)
    "cat")
 
-  ;; (define actor-a
-  ;;   (spawn
-  ;;    (lambda (beep [boop 33] #:bop bop)
-  ;;      (list beep boop bop))))
-  ;; (test-equal?
-  ;;  "Basic <<- works"
-  ;;  (<<- actor-a 1 #:bop 66)
-  ;;  (list 1 33 66))
+  (define actor-a
+    (spawn
+     (lambda (beep [boop 33] #:bop bop)
+       (list beep boop bop))))
+  (test-equal?
+   "Basic <<- works"
+   (<<- actor-a 1 #:bop 66)
+   (list 1 33 66))
   #;(test-equal?
    "Calling actor-a just as a procedure should behave the same"
    (actor-a 1 #:bop 66)
@@ -573,7 +590,7 @@ to us."
 
 (provide spawn-new)
 
-#;(module+ test
+(module+ test
   (define greeter%
     (class object%
       (super-new)
