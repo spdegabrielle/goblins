@@ -294,16 +294,36 @@ to us."
                                 ;; Or should we use <-np?
                                 (please-resolve 'broken v))
                               (void))])
-             (call-with-values
-              (lambda ()
-                (keyword-apply (actor-handler actor)
-                               (message-kws msg)
-                               (message-kw-args msg)
-                               (message-args msg)))
-              (make-keyword-procedure
-               (lambda (kws kw-args . args)
-                 (when please-resolve
-                   (please-resolve 'fulfilled args))))))))
+             (cond
+               ;; Note that this could possibly be simplified by having
+               ;; actor-handler get access to the entire msg object.  That
+               ;; would allow other actors to choose when to resolve the
+               ;; "please-resolve" message... though there is some risk that
+               ;; they might never do so.
+               [(promise? actor)
+                (on (weak-box-value (promise-this-address actor))
+                    (lambda (val)
+                      (call-with-values
+                       (lambda ()
+                         (keyword-apply <<-
+                                        (message-kws msg)
+                                        (message-kw-args msg)
+                                        val
+                                        (message-args msg)))
+                       (lambda args
+                         (when please-resolve
+                           (please-resolve 'fulfilled args))))))]
+               [else
+                (call-with-values
+                 (lambda ()
+                   (keyword-apply (actor-handler actor)
+                                  (message-kws msg)
+                                  (message-kw-args msg)
+                                  (message-args msg)))
+                 (make-keyword-procedure
+                  (lambda (kws kw-args . args)
+                    (when please-resolve
+                      (please-resolve 'fulfilled args)))))]))))
        actor-prompt-tag
        (lambda (k to kws kw-args args)
          (parameterize ([current-actable (new actable%)])
@@ -609,11 +629,7 @@ to us."
                  [this-address #:mutable])
   #:methods gen:actor
   [(define (actor-handler actor)
-     (make-keyword-procedure
-      (lambda (kws kw-args . args)
-        (on (promise-this-address actor)
-            (lambda (val)
-              (keyword-apply <-np kws kw-args val args))))))])
+     (error "Well this never should have been called..."))])
 
 (define (promise-maybe-run-listeners! promise)
   (match (promise-state promise)
