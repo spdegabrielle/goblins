@@ -139,14 +139,14 @@ to us."
                 on-fulfilled
                 on-catch
                 on-finally)
-    (define/public (fulfilled val)
+    (define/public (fulfilled vals)
       (if on-fulfilled
           (with-handlers ([exn:fail?
                            (lambda (err)
                              (new-resolver 'broken err))])
             (define result
-              (on-fulfilled val))
-            (new-resolver 'fulfilled val))
+              (apply on-fulfilled vals))
+            (new-resolver 'fulfilled vals))
           (new-resolver 'fulfilled #f))  ; or void...?
       (when on-finally
         (on-finally))
@@ -576,6 +576,35 @@ to us."
    "Basic <<- works"
    (<<- actor-a 1 #:bop 66)
    (list 1 33 66))
+
+  (let ([vals
+         (call-with-values
+          (lambda ()
+            (<<- (spawn (lambda ()
+                          (values 'a 'b 'c)))))
+          (lambda vals vals))])
+    (test-equal?
+     "Multiple value return works, version 1"
+     vals
+     (list 'a 'b 'c)))
+
+  (let* ([return-ch (make-channel)]
+         [vals
+          (begin
+            (<- (spawn
+                 (lambda ()
+                   (channel-put return-ch
+                                (call-with-values
+                                 (lambda ()
+                                   (<<- (spawn (lambda ()
+                                                 (values 'a 'b 'c)))))
+                                 (lambda vals vals))))))
+            (channel-get return-ch))])
+    (test-equal?
+     "Multiple value return works, version 2"
+     vals
+     (list 'a 'b 'c)))
+
   #;(test-equal?
    "Calling actor-a just as a procedure should behave the same"
    (actor-a 1 #:bop 66)
@@ -652,8 +681,8 @@ to us."
   (match (promise-state promise)
     ['fulfilled
      (for ([listener (promise-listeners promise)])
-       (apply <-np listener 'fulfilled
-              (promise-args-or-error promise)))
+       (<-np listener 'fulfilled
+             (promise-args-or-error promise)))
      (set-promise-listeners! promise '())
      (void)]
     ['broken
