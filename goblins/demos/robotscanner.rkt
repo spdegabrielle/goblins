@@ -166,7 +166,7 @@
            ;; Set our health to the new value
            (set! hp new-hp)
            (when (not alive)
-             (display (format "~a: *Kaboom!*\n" (self)))
+             (display (format "~a: *Kaboom!*\n" self))
              ;;; TODO:
              ;; (self-destruct actor)
              )
@@ -220,13 +220,14 @@
            ;; Keep firing till it's dead.
            (let fire-lp ()
              (call-with-values
-                 (lambda () (<<- droid-id 'get-shot))
-               (lambda (hp-left damage-taken alive)
-                 (<- overseer 'transmission
-                     #:text (droid-status-format droid-id alive damage-taken hp-left))
-                 ;; still alive... keep firing!
-                 (when alive
-                   (fire-lp))))))
+                 (lambda ()
+                   (<<- droid-id 'get-shot))
+                 (lambda (hp-left damage-taken alive)
+                   (<- overseer 'transmission
+                       #:text (droid-status-format droid-id alive damage-taken hp-left))
+                   ;; still alive... keep firing!
+                   (when alive
+                     (fire-lp))))))
 
           ;; Not infected... inform and go to the next one
           (else
@@ -250,5 +251,7 @@
   (define done? (make-semaphore))
   (define overseer (spawn-overseer done?))
   (<- overseer 'init-world)
-  (semaphore-wait done?))
+  #;(semaphore-wait done?))
 
+(module+ test
+  (run-simulation))
