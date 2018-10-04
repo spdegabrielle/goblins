@@ -45,131 +45,133 @@
     (5 0)
     (2 1)))
 
-(define overseer%
-  (class object%
-    (super-new)
-    (init-field done?)
+(define (spawn-overseer done?)
+  (define self
+    (spawn-new
+     (class object%
+       (super-new)
 
-    (define/public (init-world)
-      ;; Porting mostly straight up from super-imperative XUDD code.
-      (define previous-room #f)
-      (define first-room #f)
+       (define/public (init-world)
+         ;; Porting mostly straight up from super-imperative XUDD code.
+         (define previous-room #f)
+         (define first-room #f)
 
-      ;; Set up all rooms
-      (for ([room-spec room-structure])
-        (match room-spec
-          [(list clean-droids infected-droids)
-           ;; Create this room
-           (define room
-             (spawn-new warehouse-room%))
-           (define (init-droid #:infected infected)
-             (define droid
-               (spawn-new droid%
-                          [infected infected]
-                          [room room]))
-             (<<- droid 'register-with-room))
+         ;; Set up all rooms
+         (for ([room-spec room-structure])
+           (match room-spec
+             [(list clean-droids infected-droids)
+              ;; Create this room
+              (define room
+                (spawn-warehouse-room))
+              (define (init-droid #:infected infected)
+                (define droid
+                  (spawn-droid infected room))
+                (<<- droid 'register-with-room))
 
-           ;; Link rooms.
-           ;; Couldn't this just be folded into the warehouse room init?
-           (when previous-room
-             (<<- previous-room 'set-next-room
+              ;; Link rooms.
+              ;; Couldn't this just be folded into the warehouse room init?
+              (when previous-room
+                (<<- previous-room 'set-next-room
                      #:id room)
-             (<<- room 'set-previous-room
+                (<<- room 'set-previous-room
                      #:id previous-room))
 
-           ;; Set up clean droids in the room
-           (for ([i (in-range clean-droids)])
-             (init-droid #:infected #f))
+              ;; Set up clean droids in the room
+              (for ([i (in-range clean-droids)])
+                (init-droid #:infected #f))
 
-           ;; Set up infected droids in the room
-           (for ([i (in-range infected-droids)])
-             (init-droid #:infected #t))
+              ;; Set up infected droids in the room
+              (for ([i (in-range infected-droids)])
+                (init-droid #:infected #t))
 
-           (set! previous-room room)
-           (when (not first-room)
-             (set! first-room room))]))
+              (set! previous-room room)
+              (when (not first-room)
+                (set! first-room room))]))
 
-      ;; Add security robot
-      (let ((security-robot
-             (spawn-new security-robot%)))
-        (<- security-robot 'begin-mission
-            #:starting-room first-room
-            #:overseer (self))))
+         ;; Add security robot
+         (let ((security-robot
+                (spawn-security-robot)))
+           (<- security-robot 'begin-mission
+               #:starting-room first-room
+               #:overseer self)))
 
-    (define/public (transmission #:text text)
-      (displayln text))
+       (define/public (transmission #:text text)
+         (displayln text))
 
-    (define/public (done!)
-      (semaphore-post done?))))
+       (define/public (done!)
+         (semaphore-post done?)))))
+  self)
 
 
 ;;; A room full of robots.
-(define warehouse-room%
-  (class object%
-    (super-new)
-    (define droids '())
-    (define next-room #f)
-    (define previous-room #f)
+(define (spawn-warehouse-room)
+  (spawn-new
+   (class object%
+     (super-new)
+     (define droids '())
+     (define next-room #f)
+     (define previous-room #f)
 
-    (define/public (set-next-room #:id id)
-      "Set the room following this"
-      (set! next-room id))
+     (define/public (set-next-room #:id id)
+       "Set the room following this"
+       (set! next-room id))
 
-    (define/public (set-previous-room #:id id)
-      "Set the room previous to this"
-      (set! previous-room id))
+     (define/public (set-previous-room #:id id)
+       "Set the room previous to this"
+       (set! previous-room id))
 
-    (define/public (get-next-room)
-     "Return a reference to the link following this"
-     next-room)
+     (define/public (get-next-room)
+       "Return a reference to the link following this"
+       next-room)
 
-    (define/public (get-previous-room)
-      "Return a reference to the link preceding this"
-      previous-room)
+     (define/public (get-previous-room)
+       "Return a reference to the link preceding this"
+       previous-room)
 
-    (define/public (list-droids)
-      "Return a list of all the droid ids we know of in this room"
-      droids)
+     (define/public (list-droids)
+       "Return a list of all the droid ids we know of in this room"
+       droids)
 
-    (define/public (register-droid #:droid-id droid-id)
-      "Register a droid as being in this room"
-      (set! droids (cons droid-id droids)))))
+     (define/public (register-droid #:droid-id droid-id)
+       "Register a droid as being in this room"
+       (set! droids (cons droid-id droids))))))
 
 
 ;;; A droid that may or may not be infected!
 ;;; What will happen?  Stay tuned!
-(define droid%
-  (class object%
-    (super-new)
-    (init-field infected room)
-    (define hp 50)
+(define (spawn-droid infected room)
+  (define self
+    (spawn-new
+     (class object%
+       (super-new)
+       (define hp 50)
 
-    (define/public (register-with-room)
-      "Register ourselves as being in a room"
-      (<<- room 'register-droid
-              #:droid-id (self))
-      (display
-       (format "Droid ~a registered with room ~a\n"
-               (self)
-               room)))
+       (define/public (register-with-room)
+         "Register ourselves as being in a room"
+         (<<- room 'register-droid
+              #:droid-id self)
+         (display
+          (format "Droid ~a registered with room ~a\n"
+                  self room)))
 
-    (define/public (infection-expose)
-      "Leak whether or not we're infected to a security droid"
-      infected)
+       (define/public (infection-expose)
+         "Leak whether or not we're infected to a security droid"
+         infected)
 
-    (define/public (get-shot)
-      "Get shot by bullets"
-      (let* ((damage (random 60))
-             (new-hp (- hp damage))
-             (alive (> new-hp 0)))
-        ;; Set our health to the new value
-        (set! hp new-hp)
-        (when (not alive)
-          (display (format "~a: *Kaboom!*\n" (self)))
-          ;;; TODO:
-          ;; (self-destruct actor)
-          )
-        (values new-hp damage alive)))))
+       (define/public (get-shot)
+         "Get shot by bullets"
+         (let* ((damage (random 60))
+                (new-hp (- hp damage))
+                (alive (> new-hp 0)))
+           ;; Set our health to the new value
+           (set! hp new-hp)
+           (when (not alive)
+             (display (format "~a: *Kaboom!*\n" (self)))
+             ;;; TODO:
+             ;; (self-destruct actor)
+             )
+           (values new-hp damage alive))))))
+  self)
 
 
 (define (droid-status-format droid-id alive damage-taken hp-left)
@@ -184,12 +186,13 @@
 ;;; Security robot... designed to seek out and destroy infected droids.
 
 
-(define security-robot%
-  (class object%
-    (super-new)
-    (define/public (begin-mission #:starting-room starting-room
-                                  #:overseer overseer)
-      (security-robot-begin-mission starting-room overseer))))
+(define (spawn-security-robot)
+  (spawn-new
+   (class object%
+     (super-new)
+     (define/public (begin-mission #:starting-room starting-room
+                                   #:overseer overseer)
+       (security-robot-begin-mission starting-room overseer)))))
 
 (define (security-robot-begin-mission starting-room overseer)
   ;; used to track the current room / if any rooms are remaining
@@ -245,8 +248,7 @@
 
 (define (run-simulation)
   (define done? (make-semaphore))
-  (define overseer (spawn-new overseer%
-                              [done? done?]))
+  (define overseer (spawn-overseer done?))
   (<- overseer 'init-world)
   (semaphore-wait done?))
 
