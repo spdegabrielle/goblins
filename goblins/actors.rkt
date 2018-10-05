@@ -144,9 +144,11 @@ to us."
           (with-handlers ([exn:fail?
                            (lambda (err)
                              (new-resolver 'broken err))])
-            (define result
-              (apply on-fulfilled vals))
-            (new-resolver 'fulfilled result))
+            (call-with-values
+             (lambda ()
+               (apply on-fulfilled vals))
+             (lambda result
+               (new-resolver 'fulfilled result))))
           (new-resolver 'fulfilled #f))  ; or void...?
       (when on-finally
         (on-finally))
