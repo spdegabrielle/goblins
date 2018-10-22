@@ -2,7 +2,7 @@
 
 (require goblins/actors)
 
-(provide <- <<- <-block
+(provide <- <<-
          current-vat self
          vat% spawn
          spawn-object spawn-new)
