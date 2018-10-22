@@ -1,6 +1,22 @@
 #lang scribble/manual
 
-@(require scriblib/footnote)
+@(require racket/sandbox
+          scriblib/footnote
+          scribble/example
+          (prefix-in scribble-eval: scribble/eval)
+          scribble/manual)
+
+@(define my-evaluator
+   (make-evaluator 'racket))
+
+@(define-syntax-rule (interact e ...)
+  (examples #:eval my-evaluator
+            #:label #f
+            e ...))
+
+@(define-syntax-rule (interact-errors e ...)
+  (scribble-eval:interaction #:eval my-evaluator
+                             e ...))
 
 @title{Goblins: a lightweight actor library}
 
@@ -14,10 +30,11 @@ with support for highly distributed computing.
 @note{More accurately, support for highly distributed computing coming
 soon.}
 
-@section{How do I Goblins?}
+@section{Goblins by example}
 
-coming soon
 
-@section{Goblins reference}
+@section{High level concepts}
 
-coming soon
+
+
+
