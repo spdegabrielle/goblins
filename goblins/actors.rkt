@@ -133,21 +133,23 @@ to us."
 (define listener%
   (class object%
     (super-new)
-    (init-field new-resolver
-                on-fulfilled
+    (init-field on-fulfilled
                 on-catch
-                on-finally)
+                on-finally
+                [resolve-me #f])
     (define/public (fulfilled vals)
       (if on-fulfilled
           (with-handlers ([exn:fail?
                            (lambda (err)
-                             (new-resolver 'broken err))])
+                             (and resolve-me
+                                  (resolve-me 'broken err)))])
             (call-with-values
              (lambda ()
                (apply on-fulfilled vals))
              (lambda result
-               (new-resolver 'fulfilled result))))
-          (new-resolver 'fulfilled #f))  ; or void...?
+               (and resolve-me
+                    (resolve-me 'fulfilled result)))))
+          (and resolve-me (resolve-me 'fulfilled #f)))
       (when on-finally
         (on-finally))
       (void))
@@ -157,9 +159,11 @@ to us."
                          (lambda (err)
                            ;; if you break on on-catch, then um...
                            ;; I guess that's the new error
-                           (new-resolver 'broken err))])
+                           (and resolve-me
+                                (resolve-me 'broken err)))])
           (on-catch err)
-          (new-resolver 'broken err)))
+          (and resolve-me
+               (resolve-me 'broken err))))
       (when on-finally
         (on-finally))
       (void))))
@@ -167,18 +171,29 @@ to us."
 ;; Or maybe "listen" ?
 (define (on promise [on-fulfilled #f]
             #:catch [on-catch #f]
-            #:finally [on-finally #f])
+            #:finally [on-finally #f]
+            #:promise? [promise? #f])
   (require-current-actable)
-  (define-values (new-promise new-resolver)
-    (spawn-promise-pair))
-  (define listener
-    (spawn-new listener%
-               [new-resolver new-resolver]
-               [on-fulfilled on-fulfilled]
-               [on-catch on-catch]
-               [on-finally on-finally]))
-  (send-generic (current-actable) actable-listen-to-promise promise listener)
-  new-promise)
+  (cond
+    [promise?
+     (define-values (new-promise new-resolver)
+       (spawn-promise-pair))
+     (define listener
+       (spawn-new listener%
+                  [resolve-me new-resolver]
+                  [on-fulfilled on-fulfilled]
+                  [on-catch on-catch]
+                  [on-finally on-finally]))
+     (send-generic (current-actable) actable-listen-to-promise promise listener)
+     new-promise]
+    [else
+     (define listener
+       (spawn-new listener%
+                  [on-fulfilled on-fulfilled]
+                  [on-catch on-catch]
+                  [on-finally on-finally]))
+     (send-generic (current-actable) actable-listen-to-promise promise listener)
+     (void)]))
 
 (provide <- <-np <<- on)
 
