@@ -2,8 +2,5 @@
 
 (require goblins/actors)
 
-(provide <- <<-
-         current-vat self
-         vat% spawn
-         spawn-object spawn-new)
+(provide (all-from-out goblins/actors))
 
