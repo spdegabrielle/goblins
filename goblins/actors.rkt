@@ -16,8 +16,6 @@
          racket/random
          racket/async-channel)
 
-(require linkeddata/pk)
-
 (module+ test
   (require rackunit))
 
