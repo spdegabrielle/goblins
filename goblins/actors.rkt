@@ -387,6 +387,7 @@ to us."
     ;; The main loop, at last
     ;; ======================
     (define (main-loop)
+      (set! running? #t)
       (parameterize ([current-custodian hive-custodian])
         (thread
          (lambda ()
