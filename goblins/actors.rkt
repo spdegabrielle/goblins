@@ -75,6 +75,8 @@ to us."
     [(current-actable)
      (send-generic (current-actable) actable-send-message msg)]
     [(current-hive)
+     (unless (send (current-hive) is-running?)
+       (error "Hive is not running"))
      (send (current-hive) send-message msg)]
     [else
      (error "Can't send message if no current-actable nor current-msg")])
@@ -109,6 +111,8 @@ to us."
          [(current-hive)
           (define return-ch
             (make-channel))
+          (unless (send (current-hive) is-running?)
+            (error "Hive is not running"))
           (<- (spawn
                (lambda ()
                  (with-handlers ([exn:fail?
