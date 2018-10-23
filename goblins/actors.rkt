@@ -83,6 +83,8 @@ to us."
     [(current-actable)
      (send-generic (current-actable) actable-send-message msg)]
     [(current-hive)
+     (unless (send (current-hive) is-running?)
+       (error "Hive is not running"))
      (send (current-hive) send-message msg)]
     [else
      (error "Can't send message if no current-actable nor current-msg")])
@@ -130,6 +132,8 @@ to us."
          [(current-hive)
           (define return-ch
             (make-channel))
+          (unless (send (current-hive) is-running?)
+            (error "Hive is not running"))
           ;; FIXME: I think this can be <-np?
           (<- (spawn
                (lambda ()
@@ -421,6 +425,7 @@ to us."
     ;; The main loop, at last
     ;; ======================
     (define (main-loop)
+      (set! running? #t)
       (parameterize ([current-custodian hive-custodian])
         (thread
          (lambda ()
