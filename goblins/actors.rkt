@@ -8,6 +8,10 @@
 ;; 
 ;; See LICENSE, LICENSE-lgpl.txt and LICENSE-apache.txt for details.
 
+(provide <- <-np <<- on
+         current-hive hive%
+         spawn spawn-new)
+
 (require data/queue
          net/base64
          racket/exn
@@ -195,8 +199,6 @@ to us."
      (send-generic (current-actable) actable-listen-to-promise promise listener)
      (void)]))
 
-(provide <- <-np <<- on)
-
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
 
@@ -228,8 +230,6 @@ to us."
 
 (define current-hive
   (make-parameter #f))
-
-(provide current-hive)
 
 
 ;; So we need flexible hives eventually.
@@ -473,7 +473,6 @@ to us."
     ;; TODO: Maybe eventually allow the user to "restart" the main loop?
     (main-loop)))
 
-(provide hive%)
 
 ;; Defines core actor behaviors.  Some of E's "miranda" methods
 ;; go here.
@@ -516,8 +515,6 @@ to us."
      (define actor-address
        (send new-hive spawn actor #:will will))
      actor-address]))
-
-(provide spawn)
 
 (module+ test
   #;(define hive
@@ -631,8 +628,6 @@ to us."
 (define-syntax-rule (spawn-new args ...)
   (spawn
    (new args ...)))
-
-(provide spawn-new)
 
 (module+ test
   (define greeter%
