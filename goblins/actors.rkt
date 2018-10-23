@@ -416,14 +416,6 @@ to us."
                           (loop steps-till-gc))
                         (loop (- countdown-till-gc-registry 1)))))))
 
-             #;(define (listen-for-work)
-                 (parameterize ([current-hive this])
-                   (let lp ()
-                     (match (async-channel-get work-channel)
-                       [(available-work registered-actor actor-address message)
-                        (handle-message registered-actor actor-address message)
-                        (lp)]))))
-
              (let lp ()
                (with-handlers ([exn:fail?
                                 (lambda (err)
@@ -517,8 +509,6 @@ to us."
      actor-address]))
 
 (module+ test
-  #;(define hive
-    (new hive%))
   (define put-stuff-in-me
     (box #f))
   (define wait-for-put
@@ -615,13 +605,7 @@ to us."
     (test-equal?
      "Multiple value return works, version 2"
      vals
-     (list 'a 'b 'c)))
-
-  #;(test-equal?
-   "Calling actor-a just as a procedure should behave the same"
-   (actor-a 1 #:bop 66)
-   (list 1 33 66))
-  )
+     (list 'a 'b 'c))))
 
 ;;; Classes and objects
 ;;; Shortcut for (spawn-object (new args ...))
