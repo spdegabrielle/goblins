@@ -456,50 +456,43 @@ to us."
                         (loop (- countdown-till-gc-registry 1)))))))
              ;; Why put the handler right outside of the main loop?
              ;; Otherwise, exception handlers start stacking
-             (with-handlers ([exn:fail?
-                              (lambda (err)
-                                (display ";;;; Hive caught error"
-                                         (current-output-port))
-                                (display (exn->string err)
-                                         (current-error-port))
-                                (newline (current-error-port)))])
-               (let lp ()
-                 (match (async-channel-get hive-channel)
-                   ;; Send a message to an actor at a particular address
-                   [(vector 'send-message msg)
-                    (define msg-to
-                      (message-to msg))
-                    ;; TODO: Remote hive support goes here
-                    (when (not (hash-has-key? actor-registry msg-to))
-                      (error "No actor with id" msg-to))
+             (let lp ()
+               (match (async-channel-get hive-channel)
+                 ;; Send a message to an actor at a particular address
+                 [(vector 'send-message msg)
+                  (define msg-to
+                    (message-to msg))
+                  ;; TODO: Remote hive support goes here
+                  (when (not (hash-has-key? actor-registry msg-to))
+                    (error "No actor with id" msg-to))
 
-                    (define actor
-                      (hash-ref actor-registry msg-to))
+                  (define actor
+                    (hash-ref actor-registry msg-to))
 
-                    ;; Do a "turn"
-                    (handle-message actor msg-to msg)
-                    
-                    (lp)]
-                   ;; spawn initialized through some external process.
-                   ;; Really, since external hives can't do this, only
-                   ;; through the Hive itself.
-                   [(vector 'external-spawn actor will return-ch)
-                    (define actor-id
-                      ;; TODO: I don't think we need this, but maybe we do?
-                      (do-spawn actor will))
-                    (channel-put return-ch actor-id)
-                    (lp)]
-                   ;; "Garbage collect" the registry via stop-and-copy
-                   ['gc-registry
-                    (define new-registry
-                      (make-weak-hasheq))
-                    (for (([key val] actor-registry))
-                      (hash-set! new-registry key val))
-                    (set! actor-registry new-registry)
-                    (lp)]
-                   ['shutdown
-                    (custodian-shutdown-all hive-custodian)
-                    (void)])))
+                  ;; Do a "turn"
+                  (handle-message actor msg-to msg)
+                  
+                  (lp)]
+                 ;; spawn initialized through some external process.
+                 ;; Really, since external hives can't do this, only
+                 ;; through the Hive itself.
+                 [(vector 'external-spawn actor will return-ch)
+                  (define actor-id
+                    ;; TODO: I don't think we need this, but maybe we do?
+                    (do-spawn actor will))
+                  (channel-put return-ch actor-id)
+                  (lp)]
+                 ;; "Garbage collect" the registry via stop-and-copy
+                 ['gc-registry
+                  (define new-registry
+                    (make-weak-hasheq))
+                  (for (([key val] actor-registry))
+                    (hash-set! new-registry key val))
+                  (set! actor-registry new-registry)
+                  (lp)]
+                 ['shutdown
+                  (custodian-shutdown-all hive-custodian)
+                  (void)]))
              (set! running? #f)))))
       (void))
     ;; TODO: Maybe eventually allow the user to "restart" the main loop?
