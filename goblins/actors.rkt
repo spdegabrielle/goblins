@@ -350,36 +350,41 @@ to us."
                                 ;; Or should we use <-np?
                                 (please-resolve 'broken v))
                               (void))])
-             (cond
-               ;; Note that this could possibly be simplified by having
-               ;; actor-handler get access to the entire msg object.  That
-               ;; would allow other actors to choose when to resolve the
-               ;; "please-resolve" message... though there is some risk that
-               ;; they might never do so.
-               [(promise? actor)
-                (on (weak-box-value (promise-this-address actor))
-                    (lambda (val)
-                      (call-with-values
-                       (lambda ()
-                         (keyword-apply <<-
-                                        (message-kws msg)
-                                        (message-kw-args msg)
-                                        val
-                                        (message-args msg)))
-                       (lambda args
-                         (when please-resolve
-                           (please-resolve 'fulfilled args))))))]
-               [else
-                (call-with-values
-                 (lambda ()
-                   (keyword-apply (actor-handler actor)
-                                  (message-kws msg)
-                                  (message-kw-args msg)
-                                  (message-args msg)))
-                 (make-keyword-procedure
-                  (lambda (kws kw-args . args)
-                    (when please-resolve
-                      (please-resolve 'fulfilled args)))))]))))
+             (match (message-sys-method msg)
+               ['handle
+                (cond
+                  ;; Note that this could possibly be simplified by having
+                  ;; actor-handler get access to the entire msg object.  That
+                  ;; would allow other actors to choose when to resolve the
+                  ;; "please-resolve" message... though there is some risk that
+                  ;; they might never do so.
+                  [(promise? actor)
+                   (on (weak-box-value (promise-this-address actor))
+                       (lambda (val)
+                         (call-with-values
+                          (lambda ()
+                            (keyword-apply <<-
+                                           (message-kws msg)
+                                           (message-kw-args msg)
+                                           val
+                                           (message-args msg)))
+                          (lambda args
+                            (when please-resolve
+                              (please-resolve 'fulfilled args))))))]
+                  [else
+                   (call-with-values
+                    (lambda ()
+                      (keyword-apply (actor-handler actor)
+                                     (message-kws msg)
+                                     (message-kw-args msg)
+                                     (message-args msg)))
+                    (make-keyword-procedure
+                     (lambda (kws kw-args . args)
+                       (when please-resolve
+                         (please-resolve 'fulfilled args)))))])]
+               [other-method
+                (raise-user-error "Invalid actor system method"
+                                  other-method)]))))
        actor-prompt-tag
        (lambda (k to sys-method kws kw-args args)
          (parameterize ([current-actable (new actable%)])
