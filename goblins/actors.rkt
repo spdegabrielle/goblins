@@ -29,6 +29,9 @@
 (struct message
   (;; Address we're sending this to
    to
+   ;; System method, usually 'resolve but may be another
+   ;; system/miranda method
+   sys-method
    ;; Keywords we'll be applying
    kws
    ;; Values for keywords we'll be applying
@@ -69,12 +72,13 @@
      (remote-address-id address))])
 
 (define (send-message to kws kw-args args
-                      #:please-resolve [please-resolve #f])
+                      #:please-resolve [please-resolve #f]
+                      #:sys-method [sys-method 'handle])
   "Send a message to TO address (through the hive), with BODY.
 If PLEASE-REPLY? is true, ask for the recipient to eventually respond
 to us."
   (define msg
-    (message to kws kw-args args please-resolve))
+    (message to sys-method kws kw-args args please-resolve))
   (cond
     [(current-actable)
      (send-generic (current-actable) actable-send-message msg)]
@@ -85,34 +89,48 @@ to us."
   msg)
 
 ;; np stands for "No Promise"
+(define <-sys-np
+  (make-keyword-procedure
+   (lambda (kws kw-args to sys-method . args)
+     (send-message to kws kw-args args
+                   #:sys-method sys-method)
+     (void))))
+
 (define <-np
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
-     (send-message to kws kw-args args)
-     (void))))
+     (keyword-apply <-sys-np kws kw-args to 'handle args))))
+
+(define <-sys
+  (make-keyword-procedure
+   (lambda (kws kw-args to sys-method . args)
+     (define-values (new-promise new-resolver)
+       (spawn-promise-pair))
+     (send-message to kws kw-args args
+                   #:please-resolve new-resolver
+                   #:sys-method sys-method)
+     new-promise)))
 
 (define <-
   (make-keyword-procedure
    (lambda (kws kw-args to . args)
-     (define-values (new-promise new-resolver)
-       (spawn-promise-pair))
-     (send-message to kws kw-args args
-                   #:please-resolve new-resolver)
-     new-promise)))
+     (keyword-apply <-sys kws kw-args to 'handle args))))
 
-(define <<-
+(define <<-sys
   (make-keyword-procedure
-   (lambda (kws kw-args to . args)
+   (lambda (kws kw-args to sys-method . args)
      (define resume-data
        (cond
          [(current-actable)
           (call-with-composable-continuation
            (lambda (k)
-             (abort-current-continuation actor-prompt-tag k to kws kw-args args))
+             (abort-current-continuation actor-prompt-tag k to sys-method
+                                         kws kw-args args))
            actor-prompt-tag)]
          [(current-hive)
           (define return-ch
             (make-channel))
+          ;; FIXME: I think this can be <-np?
           (<- (spawn
                (lambda ()
                  (with-handlers ([exn:fail?
@@ -121,7 +139,7 @@ to us."
                                                  (vector 'error err)))])
                    (call-with-values
                     (lambda ()
-                      (keyword-apply <<- kws kw-args to args))
+                      (keyword-apply <<-sys kws kw-args to sys-method args))
                     (lambda args
                       (channel-put return-ch (vector 'resume-values args))))))))
           (channel-get return-ch)]
@@ -133,6 +151,11 @@ to us."
        [(vector 'error err)
         ;; TODO: Do we really just want to re-raise the error this way
         (raise err)]))))
+
+(define <<-
+  (make-keyword-procedure
+   (lambda (kws kw-args to . args)
+     (keyword-apply <<-sys kws kw-args to 'handle args))))
 
 (define listener%
   (class object%
@@ -358,9 +381,9 @@ to us."
                     (when please-resolve
                       (please-resolve 'fulfilled args)))))]))))
        actor-prompt-tag
-       (lambda (k to kws kw-args args)
+       (lambda (k to sys-method kws kw-args args)
          (parameterize ([current-actable (new actable%)])
-           (on (keyword-apply <- kws kw-args to args)
+           (on (keyword-apply <-sys kws kw-args to sys-method args)
                ;; resume continuation
                (lambda vals
                  (k (vector 'resume-values vals)))
