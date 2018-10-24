@@ -168,7 +168,17 @@ to us."
                 on-catch
                 on-finally
                 [resolve-me #f])
+    (define resolved? #f)
+    (define (mark-resolved!)
+      (when resolved?
+        (error "Listener already resolved"))
+      (set! resolved? #t))
+    (define (wipe-listeners!)
+      (set! on-fulfilled #f)
+      (set! on-catch #f)
+      (set! on-finally #f))
     (define/public (fulfilled vals)
+      (mark-resolved!)
       (if on-fulfilled
           (with-handlers ([exn:fail?
                            (lambda (err)
@@ -183,8 +193,10 @@ to us."
           (and resolve-me (resolve-me 'fulfilled #f)))
       (when on-finally
         (on-finally))
+      (wipe-listeners!)
       (void))
     (define/public (broken err)
+      (mark-resolved!)
       (when on-catch
         (with-handlers ([exn:fail?
                          (lambda (err)
@@ -197,6 +209,7 @@ to us."
                (resolve-me 'broken err))))
       (when on-finally
         (on-finally))
+      (wipe-listeners!)
       (void))))
 
 ;; Or maybe "listen" ?
