@@ -87,7 +87,7 @@ to us."
        (error "Hive is not running"))
      (send (current-hive) send-message msg)]
     [else
-     (error "Can't send message if no current-actable nor current-msg")])
+     (error "Can't send message if no current-actable nor current-hive")])
   msg)
 
 ;; np stands for "No Promise"
@@ -148,7 +148,7 @@ to us."
                       (channel-put return-ch (vector 'resume-values args))))))))
           (channel-get return-ch)]
          [else
-          (error "Can't send message if no current-actable nor current-msg")]))
+          (error "Can't send message if no current-actable nor current-hive")]))
      (match resume-data
        [(vector 'resume-values vals)
         (apply values vals)]
@@ -217,27 +217,37 @@ to us."
             #:catch [on-catch #f]
             #:finally [on-finally #f]
             #:promise? [promise? #f])
-  (require-current-actable)
   (cond
-    [promise?
-     (define-values (new-promise new-resolver)
-       (spawn-promise-pair))
-     (define listener
-       (spawn-new listener%
-                  [resolve-me new-resolver]
-                  [on-fulfilled on-fulfilled]
-                  [on-catch on-catch]
-                  [on-finally on-finally]))
-     (send-generic (current-actable) actable-listen-to-promise promise listener)
-     new-promise]
+    [(current-actable)
+     (cond
+       [promise?
+        (define-values (new-promise new-resolver)
+          (spawn-promise-pair))
+        (define listener
+          (spawn-new listener%
+                     [resolve-me new-resolver]
+                     [on-fulfilled on-fulfilled]
+                     [on-catch on-catch]
+                     [on-finally on-finally]))
+        (send-generic (current-actable) actable-listen-to-promise promise listener)
+        new-promise]
+       [else
+        (define listener
+          (spawn-new listener%
+                     [on-fulfilled on-fulfilled]
+                     [on-catch on-catch]
+                     [on-finally on-finally]))
+        (send-generic (current-actable) actable-listen-to-promise promise listener)
+        (void)])]
+    [(current-hive)
+     (<<- (spawn
+           (lambda ()
+             (on promise on-fulfilled
+                 #:catch on-catch
+                 #:finally on-finally
+                 #:promise? promise?))))]
     [else
-     (define listener
-       (spawn-new listener%
-                  [on-fulfilled on-fulfilled]
-                  [on-catch on-catch]
-                  [on-finally on-finally]))
-     (send-generic (current-actable) actable-listen-to-promise promise listener)
-     (void)]))
+     (error "Can't listen to a promise if no current-actable nor current-hive")]))
 
 (define actor-prompt-tag
   (make-continuation-prompt-tag))
