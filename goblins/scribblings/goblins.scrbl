@@ -60,7 +60,7 @@ please consider
 
 @section{Goblins by example}
 
-@subsection{Our first actor message call}
+@subsection{Our first actor interaction}
 
 First we'll need to import Goblins, like so:
 
@@ -81,6 +81,8 @@ Here's the easy way to do it:
 
 @interact[
   (<<- greeter "Samantha")]
+
+@subsection{But why actors?}
 
 In fact, that looks a little too similar to calling a function.
 At this point you may be wondering, why the extra hassle of this
@@ -127,7 +129,12 @@ being the fingerprint of a public key.
 Local references can get away with in-process object references
 without needing the overhead of generating ids.)
 
+@subsection{More actor interactions}
+
 That's enough theory; let's see some more code.
+
+@subsubsection{Actors talk to actors}
+
 
 Of course, actors can (and should) send each other messages:
 
@@ -142,6 +149,8 @@ Of course, actors can (and should) send each other messages:
        (format "My friend says: ~a"
                (<<- friend)))))
   (<<- bob alice)]
+
+@subsubsection{Object'y actors}
 
 Not just procedures can be actors... anything that defines the
 actor generic interface can be actors.
@@ -173,6 +182,8 @@ Observe:
     
 As we can see, we can call public methods on our class-based actors,
 but we need to specify the method by its symbol.
+
+@subsubsection{<- (eventual send) and <<- (splitchronous send)}
 
 Anyway, our poor cat is hungry!
 We should probably feed it.
@@ -278,6 +289,8 @@ in this example.
 have one actor handle responsibility for a resource, so maybe we'd
 set up an actor which handles displaying text to the screen.}
 
+@subsubsection{Splitchronous anywhere execution vs synchronous local execution}
+
 It's important to re-emphasize though that @racketidfont{<<-}
 "splits" up the turn.
 This is important to realize, in case you wrote an actor like
@@ -349,11 +362,105 @@ Now we can define and use a safer feeds-when-hungry kind of actor:
 And we can be assured that the crow really wasn't overfed, because
 we made use of the synchronous local interface.
 
-So when to use @racketidfont{<-} (eventual send) vs @racketidfont{<<-}
-(splitchronous send) vs synchronous Racket code?
+@subsubsection{Promises upon promises}
+
+If you've used some other systems that have promises or callbacks,
+you may be familiar with the "pyramid of doom": your promise handlers
+keep nesting inward and inward and inward.
+Here's a contrived example:
+
+@interact[
+ (define car%
+   (class object%
+     (super-new)
+     (init-field make model color)
+     (define/public (description)
+       (format "~a ~a ~a" color make model))
+     (define/public (drive mph)
+       (define movement
+         (cond
+           [(< mph 0) "moving backwards"]
+           [(= mph 0) "sitting still"]
+           [(< mph 15) "crawling along the road"]
+           [(< mph 30) "driving leisurely"]
+           [(< mph 60) "driving along"]
+           [(< mph 80) "speeding along"]
+           [else "blasting down the highway"]))
+       (format "The ~a is ~a!"
+               (description) movement))))
+ (define (spawn-car-factory default-make default-model default-color)
+   (spawn
+    (lambda (#:make [make default-make]
+             #:model [model default-model]
+             #:color [color default-color])
+      (spawn-new car%
+                 [make make]
+                 [model model]
+                 [color color]))))
+ (define honda-factory (spawn-car-factory "honda" "civic" "black"))]
+
+Now we can create cars with the @racketidfont{honda-factory} and drive
+them.
+If we wanted to make a car and print out the text from a driving
+interaction in one swoop, the most familiar code style for doing this
+can be achieved with the @racketidfont{<<-} operator:
+
+@interact[
+  (displayln (<<- (<<- honda-factory #:color "blue")
+                  'drive 16))]
+
+If we wanted to use @racketidfont{<-}, we could do so like this:
+
+@codeblock|{
+ (on (<- honda-factory #:color "blue")
+     (lambda (a-car)
+       (on (<- a-car 'drive 16)
+           (lambda (drive-desc)
+             (displayln drive-desc)))))
+}|
+
+But this is kind of hard to read, despite only being two message sends
+deep.
+This might discourage you from using the @racketidfont{<-} operator,
+but it has some extra power that the @racketidfont{<<-} does not:
+we can do eventual sends to promises and get back more promises.
+@note{This cool design taken from the
+@hyperlink["http://erights.org/"]{E programming language}, laboratory
+of many great ideas.}
+That probably sonds confusing, so see for yourself:
+
+@codeblock|{
+ (on (<- (<- honda-factory #:color "blue") 'drive 16)
+     (lambda (drive-desc)
+       (displayln drive-desc)))
+}|
+
+See?
+
+So what advantage does this have over using @racketidfont{<<-}?
+Two things: the rest of our code can proceed forward immediately;
+this may be useful if we have many messages to send out.
+We also save a round trip of "waking up" this suspended handler
+again.
+Best of all, once distributed inter-hive messaging lands in Goblins,
+we will be able to take advantage of the efficient, round-trip-avoiding
+power of
+@hyperlink["http://erights.org/elib/distrib/pipeline.html"]{promise pipelining}.
+
+@subsubsection{When to use what?}
+
+So when to use @racketidfont{<-} vs @racketidfont{<<-}
+vs plain ol' synchronous Racket code?
 
 @itemize[
-  @item{}]
+  @item{Use @racketidfont{<-} (eventual send) when:
+    @itemize{
+      @item{}
+    }}
+  @item{use @racketidfont{<<-} (splitchronous send) when:
+    @itemize{
+      @item{}
+    }}]
 
 @section{How does <<- work?}
 
