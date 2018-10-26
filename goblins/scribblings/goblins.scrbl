@@ -452,43 +452,34 @@ power of
 So when to use @racketidfont{<-} vs @racketidfont{<<-}
 vs plain ol' synchronous Racket code?
 
-@itemize[
-  @item{Use @racketidfont{<-} (eventual send) when:
-    @itemize{
-      @item{}
-    }}
-  @item{use @racketidfont{<<-} (splitchronous send) when:
-    @itemize{
-      @item{}
-    }}]
+To be written :)
+
+@; @itemize[
+@;   @item{Use @racketidfont{<-} (eventual send) when:
+@;     @itemize{
+@;       @item{}
+@;     }}
+@;   @item{use @racketidfont{<<-} (splitchronous send) when:
+@;     @itemize{
+@;       @item{}
+@;     }}]
 
 @section{How does <<- work?}
 
-It's not critical to understand as a user, but technically
-@racketidfont{<<-} is built on top of @racketidfont{<-}.
+It's not critical to understand as a user, so if this section
+breaks your brain, ignore it.
+
+Technically @racketidfont{<<-} is built on top of @racketidfont{<-}.
+(Well technically on top of @racketidfont{send-message}, which
+permits an additional argument of "resolve this promise
+once the handler of this message completes".)
 There's a delimited continuation "prompt" right above the actor event
 loop, and what @racketidfont{<<-} does is it "suspends" the current
-code 
+code to that prompt, calls the target using @racketidfont{<-} passing
+in all arguments, and then listens to the resulting promise with
+@racketidfont{on}, setting up the listener to resume the continuation
+of the handler with the response values on success, and on error
+to propagate the exception.
 
-
-
-
-
-
-We've also entered the realm of asynchronous communication.
-
-
-
-@interact[
-  (define done (make-semaphore))
-  (on (<- cat 'chat)
-      (lambda (val)
-        (displayln (format "Got back: ~a" val)))
-      #:catch
-      (lambda (err)
-        (displayln "Uhoh, something is wrong with our cat!"))
-      #:finally
-      (lambda ()
-        (semaphore-post done)))
-  (semaphore-wait done)]
-    
+So, it's not magic... no more so than delimited continuations normally
+are. :)
