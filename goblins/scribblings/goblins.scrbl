@@ -198,7 +198,9 @@ Instead of @racketidfont{<<-} we used @racketidfont{<-}.
 that tradition, and avoids a conflict with Racket's @racket{send}
 expression in the process.}
 We pronounce @racketidfont{<-} "eventual send" and
-@racketidfont{<<-} "splitchronous send".
+@racketidfont{<<-} "splitchronous send" (punned, just as you'd
+guess, on "synchronous send"... except it's not synchronous, since
+our actor remains available to handling other messages).
 What's the difference?
 
 Well, you may have noticed that using @racketidfont{<<-} looks very
