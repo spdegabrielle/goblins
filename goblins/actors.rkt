@@ -420,14 +420,15 @@ to us."
          (current-actable #f))
        actor-prompt-tag
        (lambda (k to sys-method kws kw-args args)
-         (parameterize ([current-actable (new actable%)])
-           (on (keyword-apply <-sys kws kw-args to sys-method args)
-               ;; resume continuation
-               (lambda vals
-                 (k (vector 'resume-values vals)))
-               #:catch
-               (lambda (err)
-                 (k (vector 'error err))))))))
+         (current-actable (new actable%))
+         (on (keyword-apply <-sys kws kw-args to sys-method args)
+             ;; resume continuation
+             (lambda vals
+               (k (vector 'resume-values vals)))
+             #:catch
+             (lambda (err)
+               (k (vector 'error err))))
+         (current-actable #f))))
 
     ;; Bootstrapping methods
     ;; =====================
