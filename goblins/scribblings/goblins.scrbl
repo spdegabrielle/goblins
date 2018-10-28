@@ -46,8 +46,8 @@ mixed specialized @racketidfont{#lang}s.
 It is inspired by such object capability actor languages as the
 @hyperlink["http://erights.org"]{E}, bringing strong security mixed
 with support for highly distributed computing.
-@note{More accurately, support for highly distributed computing coming
-soon.}
+(More accurately, support for highly distributed computing
+@hyperlink["https://gitlab.com/spritely/goblins/issues/3"]{coming soon}.)
 
 Goblins is designed as the foundational layer for the
 @hyperlink["https://dustycloud.org/blog/spritely/"]{Spritely project}
@@ -56,7 +56,6 @@ of it as well.
 This work is funded by people like you, so if you consider it valuable,
 please consider
 @hyperlink["https://www.patreon.com/cwebber"]{supporting this work}.
-
 
 @section{Goblins by example}
 
