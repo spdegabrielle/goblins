@@ -354,9 +354,31 @@ to us."
     (define/public (is-running?)
       running?)
 
+    (define (with-message-capture-prompt thunk)
+      (call-with-continuation-prompt
+       (lambda ()
+         (current-actable (new actable%))
+         (thunk)
+         (current-actable #f))
+       actor-prompt-tag
+       (lambda (k to sys-method kws kw-args args)
+         (current-actable (new actable%))
+         (on (keyword-apply <-sys kws kw-args to sys-method args)
+             ;; resume continuation
+             (lambda vals
+               (async-channel-put hive-channel
+                                  (vector 'resume-kont k
+                                          (vector 'resume-values vals))))
+             #:catch
+             (lambda (err)
+               (async-channel-put hive-channel
+                                  (vector 'resume-kont k
+                                          (vector 'error err)))))
+         (current-actable #f))))
+
     (define (handle-message actor actor-address msg)
       ;; Set up initial escape and capture prompts, along with error handler
-      (call-with-continuation-prompt
+      (with-message-capture-prompt
        (lambda ()
          ;; TODO: Uh, did we break this by removing self?  See comment
          ;;   below
@@ -368,64 +390,53 @@ to us."
 
          ;; We set rather than parameterize current-actable so we don't
          ;; accidentally build up a bunch of dynamic values on the stack
-         (current-actable (new actable%))
-         (define please-resolve
-           (message-please-resolve msg))
-         (with-handlers ([exn:fail?
-                          (lambda (v)
-                            ;; Error handling goes here!
-                            (display (exn->string v)
-                                     (current-error-port))
+         (parameterize ([current-actable (new actable%)])
+           (define please-resolve
+             (message-please-resolve msg))
+           (with-handlers ([exn:fail?
+                            (lambda (v)
+                              ;; Error handling goes here!
+                              (display (exn->string v)
+                                       (current-error-port))
+                              (when please-resolve
+                                ;; Or should we use <-np?
+                                (please-resolve 'broken v))
+                              (void))])
+             (match (message-sys-method msg)
+               ['handle
+                (cond
+                  ;; Note that this could possibly be simplified by having
+                  ;; actor-handler get access to the entire msg object.  That
+                  ;; would allow other actors to choose when to resolve the
+                  ;; "please-resolve" message... though there is some risk that
+                  ;; they might never do so.
+                  [(promise? actor)
+                   (on (weak-box-value (promise-this-address actor))
+                       (lambda (val)
+                         (call-with-values
+                          (lambda ()
+                            (keyword-apply <<-
+                                           (message-kws msg)
+                                           (message-kw-args msg)
+                                           val
+                                           (message-args msg)))
+                          (lambda args
                             (when please-resolve
-                              ;; Or should we use <-np?
-                              (please-resolve 'broken v))
-                            (void))])
-           (match (message-sys-method msg)
-             ['handle
-              (cond
-                ;; Note that this could possibly be simplified by having
-                ;; actor-handler get access to the entire msg object.  That
-                ;; would allow other actors to choose when to resolve the
-                ;; "please-resolve" message... though there is some risk that
-                ;; they might never do so.
-                [(promise? actor)
-                 (on (weak-box-value (promise-this-address actor))
-                     (lambda (val)
-                       (call-with-values
-                        (lambda ()
-                          (keyword-apply <<-
-                                         (message-kws msg)
-                                         (message-kw-args msg)
-                                         val
-                                         (message-args msg)))
-                        (lambda args
-                          (when please-resolve
-                            (please-resolve 'fulfilled args))))))]
-                [else
-                 (call-with-values
-                  (lambda ()
-                    (keyword-apply (actor-handler actor)
-                                   (message-kws msg)
-                                   (message-kw-args msg)
-                                   (message-args msg)))
-                  (make-keyword-procedure
-                   (lambda (kws kw-args . args)
-                     (when please-resolve
-                       (please-resolve 'fulfilled args)))))])]
-             [other-method
-              (raise-user-error "Invalid actor system method"
-                                other-method)]))
-         (current-actable #f))
-       actor-prompt-tag
-       (lambda (k to sys-method kws kw-args args)
-         (current-actable (new actable%))
-         (on (keyword-apply <-sys kws kw-args to sys-method args)
-             ;; resume continuation
-             (lambda vals
-               (k (vector 'resume-values vals)))
-             #:catch
-             (lambda (err)
-               (k (vector 'error err))))
+                              (please-resolve 'fulfilled args))))))]
+                  [else
+                   (call-with-values
+                    (lambda ()
+                      (keyword-apply (actor-handler actor)
+                                     (message-kws msg)
+                                     (message-kw-args msg)
+                                     (message-args msg)))
+                    (make-keyword-procedure
+                     (lambda (kws kw-args . args)
+                       (when please-resolve
+                         (please-resolve 'fulfilled args)))))])]
+               [other-method
+                (raise-user-error "Invalid actor system method"
+                                  other-method)])))
          (current-actable #f))))
 
     ;; Bootstrapping methods
@@ -494,6 +505,11 @@ to us."
                   ;; Do a "turn"
                   (handle-message actor msg-to msg)
                   
+                  (lp)]
+                 [(vector 'resume-kont k resume-vals)
+                  (with-message-capture-prompt
+                    (lambda ()
+                      (k resume-vals)))
                   (lp)]
                  ;; spawn initialized through some external process.
                  ;; Really, since external hives can't do this, only
