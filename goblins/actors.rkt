@@ -134,18 +134,17 @@ to us."
             (make-channel))
           (unless (send (current-hive) is-running?)
             (error "Hive is not running"))
-          ;; FIXME: I think this can be <-np?
-          (<- (spawn
-               (lambda ()
-                 (with-handlers ([exn:fail?
-                                  (lambda (err)
-                                    (channel-put return-ch
-                                                 (vector 'error err)))])
-                   (call-with-values
-                    (lambda ()
-                      (keyword-apply <<-sys kws kw-args to sys-method args))
-                    (lambda args
-                      (channel-put return-ch (vector 'resume-values args))))))))
+          (<-np (spawn
+                 (lambda ()
+                   (with-handlers ([exn:fail?
+                                    (lambda (err)
+                                      (channel-put return-ch
+                                                   (vector 'error err)))])
+                     (call-with-values
+                      (lambda ()
+                        (keyword-apply <<-sys kws kw-args to sys-method args))
+                      (lambda args
+                        (channel-put return-ch (vector 'resume-values args))))))))
           (channel-get return-ch)]
          [else
           (error "Can't send message if no current-actable nor current-hive")]))
