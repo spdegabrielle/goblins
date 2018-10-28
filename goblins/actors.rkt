@@ -282,8 +282,7 @@ to us."
   (make-parameter #f))
 
 
-;; So we need flexible hives eventually.
-;; But do we really need flexible actors? :\
+;; We need flexible hives eventually
 (define hive%
   (class object%
     (super-new)
