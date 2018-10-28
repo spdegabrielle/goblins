@@ -39,6 +39,14 @@
 
 @title{Goblins: a lightweight actor library}
 
+@emph{
+  Goblins is currently pre-alpha.
+  The semantics can and will change.
+  Experimenting with the library is encouraged and welcome, but please
+  don't use it for production-oriented code yet.
+  Please especially be aware of
+  @hyperlink["https://gitlab.com/spritely/goblins/issues/8"]{this known bug}.}
+
 Goblins is a lightweight actor model library for Racket.
 It doesn't require a special @racketidfont{#lang}, though it may be
 mixed specialized @racketidfont{#lang}s.
