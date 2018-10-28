@@ -360,7 +360,6 @@ Now we can define and use a safer feeds-when-hungry kind of actor:
         (define direct-animal
           (<<- animal 'direct-access))
         (cond [(send direct-animal hungry?)
-               ;; race condition between above and below lines!
                (send direct-animal feed 10)
                'fed-it]
               [else 'didnt-feed-it]))))
