@@ -211,7 +211,7 @@ to us."
       (wipe-listeners!)
       (void))))
 
-;; Or maybe "listen" ?
+;; Listen to a promise
 (define (on promise [on-fulfilled #f]
             #:catch [on-catch #f]
             #:finally [on-finally #f]
