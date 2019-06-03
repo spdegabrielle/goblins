@@ -1,0 +1,121 @@
+E style vats, in the pure lambda calculus (plus sealer/unsealers, with
+weak-maps desireable for efficiency)
+
+It does assume the existence of "eq?".
+
+* Brainstorming
+
+** syscaller
+
+Passed into every actor, and returned from every actor.
+
+(sys 'call actor-id args ...) => (values result syscaller?)
+
+This returned syscaller must be trademarked by sys?
+I guess that only matters for the turn level
+
+Every turn has a sys with a new trademark.  THIS IS IMPORTANT
+because it prevents actors from maliciously "rolling back" actors.
+
+Then we just return the new sys.
+
+(sys 'spawn actor-handler) => (values actor-id syscaller?)
+
+actor-handler is just a procedure, the initial handler of the actor
+
+;; This schedules an 
+(sys '<- to-fo args ...) => syscaller?
+
+<- might either not be exposed or may be ignored by some syscallers.
+
+An actor is spawned with a sys, and whatever other arguments
+are appropriate.
+
+Return values for actor:
+  (values return-val [new-sys [next-self]])
+
+with new-sys defaulting to called-with sys and next-self defaulting
+to current self.
+
+One downside of this design: it allows callers to intentionally
+"refuse" to propagate a callee's changes to self while still
+extracting information.  This might be a significant problem in
+some cases but I'm not sure which they are.
+  
+** the vat
+
+Separated into two stages:
+ - churns: process all current messages
+ - turns: each individual message processing
+
+A message looks like:
+  (struct local-message (to-id args kws kw-args))
+
+Or simplified when w/o keywords, could be as simple as:
+  (list 'local-message to-id args ...)
+
+Where keywords could be in key/value pairs.
+
+The foundational function:
+
+(vat 'turn message?) => (values any/c              ; return-val
+                                vat?               ; next vat
+                                (listof message?)  ; to-local messages
+                                (listof message?)) ; to-remote messages
+
+Here's some sugar for (vat 'turn message?)
+(vat-turn vat actor-id args ...)
+
+Strictly speaking, churn is sugar, running each turn and accumulating
+messages.
+
+(churn vat? (treeof message?)) => (values vat?               ; next vat
+                                          (treeof message?)  ; to-local messages
+                                          (treeof message?)) ; to-remote messages
+
+The reason for treeof instead of listof is it avoids an unnecessary
+append.
+
+We might need to do something about promises... not sure.
+
+** How does a turn work?
+
+** drivers and inputs?
+
+Drivers could be perceived as <- to "imaginary vats".
+
+** fixed-rate game
+
+Simple.  Ignore <- messages and have an object that knows about
+all active gameobjs that need to be run.
+
+(sys 'call spawn-gameobj make-my-gameobj)
+
+adds a new actor, registered by the gameobj manager calls
+
+(define ((make-my-gameobj kill-me) sys args ...)
+  ...)
+
+This gameobj is then registered so that it will run every game tick.
+
+The gameobj manager can be manually invoked with a single turn to
+find out everyone that should run:
+
+(define (game-tick vat)
+  (define-values (tick-gameobjs _ _ _)
+    (vat-turn vat gameobj-manager 'get-active-gameobjs))
+  (define tick-messages
+    (map (lambda (gobj)
+           (local-message to-id '(tick) '() '()))
+         tick-gameobjs))
+  (define-values (next-vat _ _) ; we ignore <- messages in this example
+    (vat-churn vat tick-messages))
+  next-vat)
+
+** other stuff
+
+*** sugar for (sys 'call actor-id?)
+
+maybe (sys actor-id args ...) is considered sugar for
+(sys 'call actor-id args ...) because it's so common.
+
