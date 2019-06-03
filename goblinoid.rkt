@@ -28,7 +28,7 @@
              ['present-self-seal present-self-seal]
              ['syscaller-child? syscaller-child?]
              ['sealed-internals sealed-internals]
-             ['spawn spawn]
+             ['spawn _spawn]
              ['<- <-]
              [_ (error "invalid syscaller method")]))
          (keyword-apply method kws kw-args args))))
@@ -36,11 +36,9 @@
     ;; call actor's handler
     (define call
       (make-keyword-procedure
-       (lambda (kws kw-args . to-id args)
+       (lambda (kws kw-args to-id . args)
          (define actor-handler
-           (hash-ref actor-map
-                     (local-message-to message)
-                     #f))
+           (hash-ref actor-map to-id #f))
          (unless actor-handler
            (error "Can't send message; no actor with this id"))
          (define-values (return-val returned-syscaller returned-handler)
@@ -61,16 +59,16 @@
                                          returned-syscaller)))
            (error "Returned syscaller not built from one given to handler"))
 
-         (define syscaller-before-handler
+         (define syscaller-before-add-handler
            (or returned-syscaller this-syscaller))
 
          (define final-syscaller
            (if returned-handler
-               (match (unseal (syscaller-before-handler
+               (match (unseal (syscaller-before-add-handler
                                'sealed-internals))
                  [(list actor-map to-local to-remote)
                   (make-syscaller actor-map to-local to-remote)])
-               syscaller-before--handler))
+               syscaller-before-add-handler))
 
          (values return-val final-syscaller))))
 
@@ -92,11 +90,9 @@
       (seal (list actor-map to-local to-remote)))
 
     ;; spawn a new actor
-    (define (spawn actor-handler [debug-name #f])
-      (define actor-id
-        (make-local-actor-id debug-name))
-      (define new-actor-map
-        (hash-set actor-map actor-id actor-handler))
+    (define (_spawn actor-handler [debug-name #f])
+      (define-values (actor-id new-actor-map)
+        (spawn actor-map actor-handler debug-name))
       (values actor-id
               (make-syscaller new-actor-map
                               to-local to-remote)))
@@ -129,11 +125,23 @@
      (turn* actor-map to-id kws kw-args args))))
 
 (define (turn-message actor-map message)
-  (turn* actor-map
-         to-id
+  (define to (message-to message))
+  (unless (local-actor-id? to)
+    (error "Can only perform a turn on a message to local actors"))
+  (turn* actor-map to
          (message-kws message)
-         (message-kw-args message)
+         (message-kw-vals message)
          (message-args)))
+
+(define (new-actor-map)
+  (make-weak-hasheq))
+
+(define (spawn actor-map actor-handler [debug-name #f])
+  (define actor-id
+    (make-local-actor-id debug-name))
+  (values actor-id
+          (hash-set actor-map actor-id actor-handler)))
+
 
 ;; ;; Do we even need a vat structure?  Maybe the actor-map
 ;; ;; is all there is in this system.
