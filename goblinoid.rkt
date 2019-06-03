@@ -3,16 +3,15 @@
 (require "seal-unseal.rkt"
          racket/match)
 
-;; Do we even need a vat structure?  Maybe the actor-map
-;; is all there is in this system.
-(struct vat (actor-map send-deliveries receive-deliveries))
+(struct message (to kws kw-vals args))
 
-(define (fresh-vat)
-  (vat (make-weak-hasheq) (make-weak-hasheq)))
-
-
-(struct local-actor-id ()
+(struct local-actor-id (debug-name)
+  #:transparent
   #:constructor-name make-local-actor-id)
+
+(struct remote-actor-id (remote-vat-id)
+  #:transparent
+  #:constructor-name make-remote-actor-id)
 
 (define (fresh-syscaller actor-map)
   (define-values (seal unseal sealed?)
@@ -26,11 +25,11 @@
          (define method
            (match method-id
              ['call call]
-             ['spawn spawn]
-             ['<- <-]
              ['present-self-seal present-self-seal]
              ['syscaller-child? syscaller-child?]
-             ['sealed-actor-map sealed-actor-map]
+             ['sealed-internals sealed-internals]
+             ['spawn spawn]
+             ['<- <-]
              [_ (error "invalid syscaller method")]))
          (keyword-apply method kws kw-args args))))
 
@@ -75,60 +74,72 @@
 
          (values return-val final-syscaller))))
 
+    (define (present-self-seal)
+      (seal this-syscaller))
+
+    (define (syscaller-child? syscaller)
+      (define sc-self-seal
+        (syscaller 'present-self-seal))
+      (and (sealed? sc-self-seal)  ; we sealed it
+           ;; the internals match the object
+           ;; aka the trademark validates
+           (eq? (unseal sc-self-seal)
+                syscaller)))
+
+    ;; present our current values are to someone
+    ;; with the unsealer
+    (define (sealed-internals)
+      (seal (list actor-map to-local to-remote)))
+
     ;; spawn a new actor
-    (define (spawn actor-handler)
+    (define (spawn actor-handler [debug-name #f])
       (define actor-id
-        (make-local-actor-id))
+        (make-local-actor-id debug-name))
       (define new-actor-map
         (hash-set actor-map actor-id actor-handler))
       (values actor-id
               (make-syscaller new-actor-map
                               to-local to-remote)))
-    
-    (define (sealed-internals)
-      (seal (list actor-map to-local to-remote)))
 
-    this-syscaller
-
-    
-    
-    #;(match-lambda*
-        ;; TODO: Add keyword args
-        [(list 'call actor-id args ...)
-         ;;(define result)
-         ;; (values new-syscaller)
-         'TODO]
-        [(list 'spawn actor-handler)
-         'TODO]
-        [(list '<- to-id )]
-        [(list 'present-self-seal)
-         (seal syscaller)]
-        [(list 'sealed-by-me? val)
-         (sealed? val)]
-        )
-
-    )
+    (define <-
+      (make-keyword-procedure
+       (lambda (kws kw-args actor-id . args)
+         (define new-message
+           (message actor-id kws kw-args args))
+         (match actor-id
+           [(? local-actor-id?)
+            (make-syscaller actor-map
+                            (cons new-message to-local)
+                            to-remote)]
+           [(? remote-actor-id?)
+            (make-syscaller actor-map
+                            to-local
+                            (cons new-message to-remote))]))))
+    this-syscaller)
   (values (make-syscaller actor-map) unseal))
 
-(define (vat-turn vat message)
+(define (turn* actor-map to-id kws kw-args args)
+  (define-values (sys sys-unsealer)
+    (fresh-syscaller actor-map))
+  (keyword-apply sys kws kw-args 'call to-id args))
+
+(define turn
+  (make-keyword-procedure
+   (lambda (kws kw-args actor-map to-id . args)
+     (turn* actor-map to-id kws kw-args args))))
+
+(define (turn-message actor-map message)
+  (turn* actor-map
+         to-id
+         (message-kws message)
+         (message-kw-args message)
+         (message-args)))
+
+;; ;; Do we even need a vat structure?  Maybe the actor-map
+;; ;; is all there is in this system.
+;; (struct vat (actor-map send-deliveries receive-deliveries))
+
+;; (define (fresh-vat)
+;;   (vat (make-weak-hasheq) ))
 
 
-  
-
-  (define-values (return-val next-vat result-sys)
-    (call-with-values
-     (lambda ()
-       (keyword-apply )
-       ))
-    )
-
-  (unless ((syscaller-trademark syscaller) result-sys)
-    )
-  (call-with-values (lambda ()
-
-                      ))
-
-  )
-
-(define (call-actor vat message syscaller)
-  )
