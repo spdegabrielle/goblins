@@ -6,8 +6,8 @@
          actormap? transactormap? actormappable?
 
          actormap-turn
-         actormap-turn-poke!
-         actormap-turn-peek
+         actormap-poke!
+         actormap-peek
          actormap-turn-message
          actormap-spawn!
 

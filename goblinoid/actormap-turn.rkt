@@ -1,8 +1,8 @@
 #lang racket/base
 
 (provide actormap-turn
-         actormap-turn-poke!
-         actormap-turn-peek
+         actormap-poke!
+         actormap-peek
          actormap-turn-message
 
          actormap-spawn!)
@@ -90,7 +90,7 @@
      (actormap-turn* actormap to-ref kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
-(define actormap-turn-poke!
+(define actormap-poke!
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val transactormap _tl _tr)
@@ -101,7 +101,7 @@
 ;; run a turn but only for getting the result.
 ;; we're not interested in committing the result
 ;; so we discard everything but the result.
-(define actormap-turn-peek
+(define actormap-peek
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val _am _tl _tr)
@@ -164,13 +164,13 @@
               (a-friend new-called-times)))
     (sys 'spawn (a-friend) 'friend))
   (define fr-spwn (actormap-spawn! am friend-spawner))
-  (define joe (actormap-turn-poke! am fr-spwn 'joe))
+  (define joe (actormap-poke! am fr-spwn 'joe))
   (check-equal?
-   (actormap-turn-peek am joe)
+   (actormap-peek am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
-   (actormap-turn-poke! am joe)
+   (actormap-poke! am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
-   (actormap-turn-poke! am joe)
+   (actormap-poke! am joe)
    "Hello!  My name is joe and I've been called 2 times!"))
