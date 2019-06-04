@@ -5,18 +5,18 @@
          turn-poke
          turn-message
 
-         new-actor-map
+         new-actormap
          spawn!)
 
 (require "message.rkt"
          "ref.rkt"
-         "actor-map.rkt"
+         "actormap.rkt"
          "hash-contracts.rkt"
          racket/match)
 
-(define (fresh-syscaller prev-actor-map)
-  (define actor-map
-    (make-transactormap prev-actor-map))
+(define (fresh-syscaller prev-actormap)
+  (define actormap
+    (make-transactormap prev-actormap))
   (define to-local '())
   (define to-remote '())
   (define this-syscaller
@@ -35,7 +35,7 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
        (define actor-handler
-         (transactormap-ref actor-map to-ref #f))
+         (transactormap-ref actormap to-ref #f))
        (unless actor-handler
          (error "Can't send message; no actor with this id"))
        (define-values (return-val new-handler)
@@ -53,13 +53,13 @@
        ;; if a new handler for this actor was specified,
        ;; let's replace it
        (when new-handler
-         (transactormap-set! actor-map to-ref new-handler))
+         (transactormap-set! actormap to-ref new-handler))
 
        return-val)))
 
   ;; spawn a new actor
   (define (_spawn actor-handler [debug-name #f])
-    (spawn! actor-map actor-handler debug-name))
+    (spawn! actormap actor-handler debug-name))
 
   (define <-
     (make-keyword-procedure
@@ -73,13 +73,13 @@
           (set! to-remote (cons new-message to-remote))]))))
 
   (define (get-internals)
-    (list actor-map to-local to-remote))
+    (list actormap to-local to-remote))
 
   (values this-syscaller get-internals))
 
-(define (turn* actor-map to-ref kws kw-args args)
+(define (turn* actormap to-ref kws kw-args args)
   (define-values (sys get-sys-internals)
-    (fresh-syscaller actor-map))
+    (fresh-syscaller actormap))
   (define result-val
     (keyword-apply sys kws kw-args 'call to-ref args))
   (apply values result-val
@@ -87,15 +87,15 @@
 
 (define turn
   (make-keyword-procedure
-   (lambda (kws kw-args actor-map to-ref . args)
-     (turn* actor-map to-ref kws kw-args args))))
+   (lambda (kws kw-args actormap to-ref . args)
+     (turn* actormap to-ref kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
 (define turn-commit!
   (make-keyword-procedure
-   (lambda (kws kw-args actor-map to-ref . args)
+   (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val transactormap _tl _tr)
-       (turn* actor-map to-ref kws kw-args args))
+       (turn* actormap to-ref kws kw-args args))
      (transactormap-merge! transactormap)
      returned-val)))
 
@@ -104,38 +104,38 @@
 ;; so we discard everything but the result.
 (define turn-poke
   (make-keyword-procedure
-   (lambda (kws kw-args actor-map to-ref . args)
+   (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val _am _tl _tr)
-       (turn* actor-map to-ref kws kw-args args))
+       (turn* actormap to-ref kws kw-args args))
      returned-val)))
 
-(define (turn-message actor-map message)
+(define (turn-message actormap message)
   (define to (message-to message))
   (unless (near-ref? to)
     (error "Can only perform a turn on a message to local actors"))
-  (turn* actor-map to
+  (turn* actormap to
          (message-kws message)
          (message-kw-vals message)
          (message-args)))
 
-(define new-actor-map
+(define new-actormap
   make-weak-hasheq)
 
-(define (spawn! actor-map actor-handler [debug-name #f])
+(define (spawn! actormap actor-handler [debug-name #f])
   (define actor-ref
     (make-near-ref debug-name))
   (define map-set!
-    (match actor-map
+    (match actormap
       [(? weak-hasheq/c)
        hash-set!]
       [(? transactormap?)
        transactormap-set!]))
-  (map-set! actor-map actor-ref actor-handler)
+  (map-set! actormap actor-ref actor-handler)
   actor-ref)
 
-;; ;; Do we even need a vat structure?  Maybe the actor-map
+;; ;; Do we even need a vat structure?  Maybe the actormap
 ;; ;; is all there is in this system.
-;; (struct vat (actor-map send-deliveries receive-deliveries))
+;; (struct vat (actormap send-deliveries receive-deliveries))
 
 ;; (define (fresh-vat)
 ;;   (vat (make-weak-hasheq) ))
@@ -143,7 +143,7 @@
 
 (module+ test
   (require rackunit)
-  (define am (new-actor-map))
+  (define am (new-actormap))
 
   (define ((counter n) sys)
     (values n (counter (add1 n))))

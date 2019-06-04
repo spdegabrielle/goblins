@@ -14,7 +14,7 @@
 
          snapshot-hasheq hasheq->weak-hasheq
 
-         actor-map/c)
+         actormap/c)
 
 (require racket/contract
          racket/match
@@ -83,7 +83,7 @@
     (hash-set! ht key val))
   (void))
 
-(define actor-map/c
+(define actormap/c
   (or/c transactormap? weak-hasheq/c))
 
 (module+ test
