@@ -2,7 +2,7 @@
 
 (provide actormap-turn
          actormap-turn-commit!
-         actormap-turn-poke
+         actormap-turn-peek
          actormap-turn-message
 
          spawn!)
@@ -101,7 +101,7 @@
 ;; run a turn but only for getting the result.
 ;; we're not interested in committing the result
 ;; so we discard everything but the result.
-(define actormap-turn-poke
+(define actormap-turn-peek
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val _am _tl _tr)
@@ -167,7 +167,7 @@
   (define fr-spwn (spawn! am friend-spawner))
   (define joe (actormap-turn-commit! am fr-spwn 'joe))
   (check-equal?
-   (actormap-turn-poke am joe)
+   (actormap-turn-peek am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
    (actormap-turn-commit! am joe)
