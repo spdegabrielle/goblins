@@ -12,7 +12,9 @@
          transactormap-merged?
          transactormap-merge!
 
-         snapshot-hasheq hasheq->weak-hasheq)
+         snapshot-hasheq hasheq->weak-hasheq
+
+         actormap/c)
 
 (require racket/contract
          racket/match
@@ -80,6 +82,9 @@
   (for ([(key val) ht])
     (hash-set! ht key val))
   (void))
+
+(define actormap/c
+  (or/c transactormap? weak-hasheq/c))
 
 (module+ test
   (require rackunit)
