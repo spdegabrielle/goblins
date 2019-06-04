@@ -2,9 +2,13 @@
 
 (require "message.rkt"
          "ref.rkt"
+         "actor-map.rkt"
+         "hash-contracts.rkt"
          racket/match)
 
-(define (fresh-syscaller actor-map)
+(define (fresh-syscaller prev-actor-map)
+  (define actor-map
+    (make-transactormap prev-actor-map))
   (define to-local '())
   (define to-remote '())
   (define this-syscaller
@@ -23,7 +27,7 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
        (define actor-handler
-         (hash-ref actor-map to-ref #f))
+         (transactormap-ref actor-map to-ref #f))
        (unless actor-handler
          (error "Can't send message; no actor with this id"))
        (define-values (return-val new-handler)
@@ -41,13 +45,13 @@
        ;; if a new handler for this actor was specified,
        ;; let's replace it
        (when new-handler
-         (actormap-set! actor-map to-ref new-handler))
+         (transactormap-set! actor-map to-ref new-handler))
 
        return-val)))
 
   ;; spawn a new actor
   (define (_spawn actor-handler [debug-name #f])
-    (spawn actor-map actor-handler debug-name))
+    (spawn! actor-map actor-handler debug-name))
 
   (define <-
     (make-keyword-procedure
@@ -61,18 +65,17 @@
           (set! to-remote (cons new-message to-remote))]))))
 
   (define (get-internals)
-    (values actor-map to-local to-remote))
+    (list actor-map to-local to-remote))
 
   (values this-syscaller get-internals))
 
 (define (turn* actor-map to-ref kws kw-args args)
-  (define-values (sys sys-unsealer)
+  (define-values (sys get-sys-internals)
     (fresh-syscaller actor-map))
-  (define-values (result-val new-syscaller)
+  (define result-val
     (keyword-apply sys kws kw-args 'call to-ref args))
-  (apply values
-         result-val
-         (sys-unsealer (new-syscaller 'sealed-internals))))
+  (apply values result-val
+         (get-sys-internals)))
 
 (define turn
   (make-keyword-procedure
@@ -88,17 +91,19 @@
          (message-kw-vals message)
          (message-args)))
 
-;; NOTE: This isn't weak.  If we want it to gc, we need
-;;   the possibility of weak hashmaps.
-;;   The way to probably do this is in a two-hashmap layer...
-;;;    (TO BE WRITTEN)
-(define (new-actor-map)
-  '#hasheq())
+(define new-actor-map
+  make-weak-hasheq)
 
 (define (spawn! actor-map actor-handler [debug-name #f])
   (define actor-ref
     (make-near-ref debug-name))
-  (actor-map-set! actor-map actor-ref actor-handler)
+  (define map-set!
+    (match actor-map
+      [(? weak-hasheq/c)
+       hash-set!]
+      [(? transactormap?)
+       transactormap-set!]))
+  (map-set! actor-map actor-ref actor-handler)
   actor-ref)
 
 ;; ;; Do we even need a vat structure?  Maybe the actor-map
@@ -114,18 +119,30 @@
   (define am (new-actor-map))
 
   (define ((counter n) sys)
-    (values n sys (counter (add1 n))))
+    (values n (counter (add1 n))))
 
   ;; can actors update themselves?
-  (define-values (ctr-ref am+ctr)
-    (spawn am (counter 1)
-           'ctr))
+  (define ctr-ref
+    (spawn! am (counter 1)
+            'ctr))
   (define-values (turned-val1 am+ctr1 _to-local _to-remote)
-    (turn am+ctr ctr-ref))
+    (turn am ctr-ref))
   (check-eqv? turned-val1 1)
-  (define-values (turned-val2 next-am2 _to-local2 _to-remote2)
+  (define-values (turned-val2 am+ctr2 _to-local2 _to-remote2)
     (turn am+ctr1 ctr-ref))
   (check-eqv? turned-val2 2)
 
+  ;; transaction shouldn't be applied yet
+  (define-values (turned-val1-again
+                  am+ctr1-again
+                  _to-local-again _to-remote-again)
+    (turn am ctr-ref))
+  (check-eqv? turned-val1-again 1)
 
-  )
+  ;; but now it should be
+  (transactormap-merge! am+ctr2)
+  (define-values (turned-val3 am+ctr3 _to-local3 _to-remote3)
+    ;; observe that we're turning using the "original"
+    ;; actormap though!  It should have committed.
+    (turn am ctr-ref))
+  (check-eqv? turned-val3 3))
