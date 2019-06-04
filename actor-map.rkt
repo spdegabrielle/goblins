@@ -16,15 +16,8 @@
 
 (require racket/contract
          racket/match
-         "ref.rkt")
-
-(define weak-hasheq/c
-  (and/c hash? hash-eq? hash-weak?))
-
-(define (immutable-hasheq? val)
-  (and (hash? val)
-       (hash-eq? val)
-       (immutable? val)))
+         "ref.rkt"
+         "hash-contracts.rkt")
 
 (struct transactormap (parent delta [merged? #:mutable])
   #:constructor-name _make-transactormap)
