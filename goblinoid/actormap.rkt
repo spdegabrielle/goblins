@@ -4,6 +4,7 @@
 ;; actormap turn system
 
 (provide make-actormap
+         actormap?
          actormap-ref
          actormap-set!
 
