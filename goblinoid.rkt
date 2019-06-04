@@ -166,3 +166,23 @@
 ;;   (vat (make-weak-hasheq) ))
 
 
+(module+ test
+  (require rackunit)
+  (define am (new-actor-map))
+
+  (define ((counter n) sys)
+    (values n sys (counter (add1 n))))
+
+  ;; can actors update themselves?
+  (define-values (ctr-ref am+ctr)
+    (spawn am (counter 1)
+           'ctr))
+  (define-values (turned-val1 am+ctr1 _to-local _to-remote)
+    (turn am+ctr ctr-ref))
+  (check-eqv? turned-val1 1)
+  (define-values (turned-val2 next-am2 _to-local2 _to-remote2)
+    (turn am+ctr1 ctr-ref))
+  (check-eqv? turned-val2 2)
+
+
+  )
