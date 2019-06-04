@@ -1,9 +1,9 @@
 #lang racket/base
 
-(provide turn
-         turn-commit!
-         turn-poke
-         turn-message
+(provide actormap-turn
+         actormap-turn-commit!
+         actormap-turn-poke
+         actormap-turn-message
 
          new-actormap
          spawn!)
@@ -77,7 +77,7 @@
 
   (values this-syscaller get-internals))
 
-(define (turn* actormap to-ref kws kw-args args)
+(define (actormap-turn* actormap to-ref kws kw-args args)
   (define-values (sys get-sys-internals)
     (fresh-syscaller actormap))
   (define result-val
@@ -85,35 +85,35 @@
   (apply values result-val
          (get-sys-internals)))
 
-(define turn
+(define actormap-turn
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
-     (turn* actormap to-ref kws kw-args args))))
+     (actormap-turn* actormap to-ref kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
-(define turn-commit!
+(define actormap-turn-commit!
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val transactormap _tl _tr)
-       (turn* actormap to-ref kws kw-args args))
+       (actormap-turn* actormap to-ref kws kw-args args))
      (transactormap-merge! transactormap)
      returned-val)))
 
 ;; run a turn but only for getting the result.
 ;; we're not interested in committing the result
 ;; so we discard everything but the result.
-(define turn-poke
+(define actormap-turn-poke
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val _am _tl _tr)
-       (turn* actormap to-ref kws kw-args args))
+       (actormap-turn* actormap to-ref kws kw-args args))
      returned-val)))
 
-(define (turn-message actormap message)
+(define (actormap-turn-message actormap message)
   (define to (message-to message))
   (unless (near-ref? to)
     (error "Can only perform a turn on a message to local actors"))
-  (turn* actormap to
+  (actormap-turn* actormap to
          (message-kws message)
          (message-kw-vals message)
          (message-args)))
@@ -153,17 +153,17 @@
     (spawn! am (counter 1)
             'ctr))
   (define-values (turned-val1 am+ctr1 _to-local _to-remote)
-    (turn am ctr-ref))
+    (actormap-turn am ctr-ref))
   (check-eqv? turned-val1 1)
   (define-values (turned-val2 am+ctr2 _to-local2 _to-remote2)
-    (turn am+ctr1 ctr-ref))
+    (actormap-turn am+ctr1 ctr-ref))
   (check-eqv? turned-val2 2)
 
   ;; transaction shouldn't be applied yet
   (define-values (turned-val1-again
                   am+ctr1-again
                   _to-local-again _to-remote-again)
-    (turn am ctr-ref))
+    (actormap-turn am ctr-ref))
   (check-eqv? turned-val1-again 1)
 
   ;; but now it should be
@@ -171,7 +171,7 @@
   (define-values (turned-val3 am+ctr3 _to-local3 _to-remote3)
     ;; observe that we're turning using the "original"
     ;; actormap though!  It should have committed.
-    (turn am ctr-ref))
+    (actormap-turn am ctr-ref))
   (check-eqv? turned-val3 3)
 
   (define (friend-spawner sys friend-name)
@@ -183,14 +183,14 @@
               (a-friend new-called-times)))
     (sys 'spawn (a-friend) 'friend))
   (define fr-spwn (spawn! am friend-spawner))
-  (define joe (turn-commit! am fr-spwn 'joe))
+  (define joe (actormap-turn-commit! am fr-spwn 'joe))
   (check-equal?
-   (turn-poke am joe)
+   (actormap-turn-poke am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
-   (turn-commit! am joe)
+   (actormap-turn-commit! am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
-   (turn-commit! am joe)
+   (actormap-turn-commit! am joe)
    "Hello!  My name is joe and I've been called 2 times!")
   )
