@@ -1,11 +1,11 @@
 #lang racket/base
 
 (provide actormap-turn
-         actormap-turn-commit!
+         actormap-turn-poke!
          actormap-turn-peek
          actormap-turn-message
 
-         spawn!)
+         actormap-spawn!)
 
 (require "message.rkt"
          "ref.rkt"
@@ -58,7 +58,7 @@
 
   ;; spawn a new actor
   (define (_spawn actor-handler [debug-name #f])
-    (spawn! actormap actor-handler debug-name))
+    (actormap-spawn! actormap actor-handler debug-name))
 
   (define <-
     (make-keyword-procedure
@@ -90,7 +90,7 @@
      (actormap-turn* actormap to-ref kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
-(define actormap-turn-commit!
+(define actormap-turn-poke!
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-ref . args)
      (define-values (returned-val transactormap _tl _tr)
@@ -117,7 +117,7 @@
          (message-kw-vals message)
          (message-args)))
 
-(define (spawn! actormap actor-handler [debug-name #f])
+(define (actormap-spawn! actormap actor-handler [debug-name #f])
   (define actor-ref
     (make-near-ref debug-name))
   (actormappable-set! actormap actor-ref actor-handler)
@@ -132,8 +132,7 @@
 
   ;; can actors update themselves?
   (define ctr-ref
-    (spawn! am (counter 1)
-            'ctr))
+    (actormap-spawn! am (counter 1) 'ctr))
   (define-values (turned-val1 am+ctr1 _to-local _to-remote)
     (actormap-turn am ctr-ref))
   (check-eqv? turned-val1 1)
@@ -164,14 +163,14 @@
                       friend-name new-called-times)
               (a-friend new-called-times)))
     (sys 'spawn (a-friend) 'friend))
-  (define fr-spwn (spawn! am friend-spawner))
-  (define joe (actormap-turn-commit! am fr-spwn 'joe))
+  (define fr-spwn (actormap-spawn! am friend-spawner))
+  (define joe (actormap-turn-poke! am fr-spwn 'joe))
   (check-equal?
    (actormap-turn-peek am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
-   (actormap-turn-commit! am joe)
+   (actormap-turn-poke! am joe)
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
-   (actormap-turn-commit! am joe)
+   (actormap-turn-poke! am joe)
    "Hello!  My name is joe and I've been called 2 times!"))
