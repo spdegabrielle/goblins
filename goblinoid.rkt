@@ -44,7 +44,9 @@
          (define-values (return-val returned-syscaller returned-handler)
            (call-with-values
             (lambda ()
-              (keyword-apply actor-handler kws kw-args args))
+              (keyword-apply actor-handler kws kw-args
+                             this-syscaller
+                             args))
             (case-lambda
               [(return-val)
                (values return-val #f #f)]
@@ -67,7 +69,10 @@
                (match (unseal (syscaller-before-add-handler
                                'sealed-internals))
                  [(list actor-map to-local to-remote)
-                  (make-syscaller actor-map to-local to-remote)])
+                  (define new-actor-map
+                    (hash-set actor-map to-id returned-handler))
+                  (make-syscaller new-actor-map
+                                  to-local to-remote)])
                syscaller-before-add-handler))
 
          (values return-val final-syscaller))))
@@ -112,12 +117,19 @@
                             to-local
                             (cons new-message to-remote))]))))
     this-syscaller)
-  (values (make-syscaller actor-map) unseal))
+  (values (make-syscaller actor-map
+                          '()
+                          '())
+          unseal))
 
 (define (turn* actor-map to-id kws kw-args args)
   (define-values (sys sys-unsealer)
     (fresh-syscaller actor-map))
-  (keyword-apply sys kws kw-args 'call to-id args))
+  (define-values (result-val new-syscaller)
+    (keyword-apply sys kws kw-args 'call to-id args))
+  (apply values
+         result-val
+         (sys-unsealer (new-syscaller 'sealed-internals))))
 
 (define turn
   (make-keyword-procedure
@@ -133,15 +145,18 @@
          (message-kw-vals message)
          (message-args)))
 
+;; NOTE: This isn't weak.  If we want it to gc, we need
+;;   the possibility of weak hashmaps.
+;;   The way to probably do this is in a two-hashmap layer...
+;;;    (TO BE WRITTEN)
 (define (new-actor-map)
-  (make-weak-hasheq))
+  '#hasheq())
 
 (define (spawn actor-map actor-handler [debug-name #f])
   (define actor-id
     (make-local-actor-id debug-name))
   (values actor-id
           (hash-set actor-map actor-id actor-handler)))
-
 
 ;; ;; Do we even need a vat structure?  Maybe the actor-map
 ;; ;; is all there is in this system.
