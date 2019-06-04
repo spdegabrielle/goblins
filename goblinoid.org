@@ -23,8 +23,8 @@ Then we just return the new sys.
 
 actor-handler is just a procedure, the initial handler of the actor
 
-;; This schedules an 
-(sys '<- to-fo args ...) => syscaller?
+;; This schedules a remote actor
+(sys '<- (or/c local-actor-id? remote-actor-id?) args ...) => syscaller?
 
 <- might either not be exposed or may be ignored by some syscallers.
 
@@ -78,6 +78,12 @@ append.
 
 We might need to do something about promises... not sure.
 
+We also need a low-level way to add initial actors to the vat:
+
+(vat 'spawn actor-handler) => (values actor-id vat?)
+
+** What info does the syscaller contain?
+
 ** How does a turn work?
 
 ** drivers and inputs?
@@ -119,3 +125,35 @@ find out everyone that should run:
 maybe (sys actor-id args ...) is considered sugar for
 (sys 'call actor-id args ...) because it's so common.
 
+* romeo and juliet confuse the guard
+
+Here's a problem with the purely functional approach: callees can
+sometimes conspire with callers further up the stack to have
+themselves be committed while preventing the committing of their
+intermediate objects... which should be against the theoretical
+realm of possibility.
+
+Here's the scenario:
+ - romeo would like to serenade juliet
+ - juliet is within the capulet orchard
+   (has state 'wherefore-art-thou)
+ - the capulet orchard is surveiled by the capulets
+   (spy of tybalt)?
+ - To get to juliet, one must go through the orchard, but the
+   orchard would like to log romeo and juliet's interaction.
+   Normally, if romeo simply calls the orchard to get to juliet,
+   the orchard will log that information, and a capulet can find
+   out later.
+ - But Romeo and Juliet would like to meet *completely* undetected
+   and still share the experience.  Is there a way?
+ - If Romeo, in calling Juliet through the Capulet Orchard, passes
+   Juliet a "gift" which inside contains *Romeo's* syscaller object
+   (as opposed to the one Juliet was given), Juliet can perform
+   her write based off of Romeo's.  Juliet can then return her updated
+   sys object as well, also wrapped in a gift (sealed?).
+ - Romeo can then then return the syscaller with the updated Juliet,
+   ignoring the state changes / logging attempted by the capulet
+   observer.
+     
+That's a win for love, but a loss for security; it could, for
+instance, break Horton.
