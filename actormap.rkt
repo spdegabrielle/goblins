@@ -25,10 +25,20 @@
 
 (require racket/contract
          racket/match
+         racket/generic
          "ref.rkt"
          "hash-contracts.rkt")
 
-(struct actormap (wht)) ; weak hash table
+(define-generics actormappable
+  (actormappable-ref actormappable key [dflt])
+  (actormappable-set! actormappable key val))
+
+(struct actormap (wht) ; weak hash table
+  #:methods gen:actormappable
+  [(define (actormappable-ref actormap key [dflt #f])
+     (actormap-ref actormap key dflt))
+   (define (actormappable-set! actormap key [dflt #f])
+     (actormap-set! actormap key dflt))])
 
 (define (make-actormap)
   (actormap (make-weak-hasheq)))
@@ -62,9 +72,14 @@
 ;;; Now the transactional stuff
 
 (struct transactormap (parent delta [merged? #:mutable])
-  #:constructor-name _make-transactormap)
+  #:constructor-name _make-transactormap
+  #:methods gen:actormappable
+  [(define (actormappable-ref transactormap key [dflt #f])
+     (transactormap-ref key dflt))
+   (define (actormappable-set! transactormap key val)
+     (transactormap-set! transactormap key val))])
 
-(define actormappable?
+#;(define actormappable?
   (or/c transactormap? actormap?))
 
 (define/contract (make-transactormap parent)
@@ -114,21 +129,6 @@
     root-actormap)
   (do-merge! transactormap)
   (void))
-
-;; TODO: We could use generics for this...
-(define (actormappable-ref amappable key [dflt #f])
-  (define proc
-    (match amappable
-      [(? actormap?) actormap-ref]
-      [(? transactormap?) transactormap-ref]))
-  (proc amappable key dflt))
-
-(define (actormappable-set! amappable key val)
-  (define proc
-    (match amappable
-      [(? actormap?) actormap-set!]
-      [(? transactormap?) transactormap-set!]))
-  (proc amappable key val))
 
 (module+ test
   (require rackunit)
