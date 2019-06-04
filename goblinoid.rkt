@@ -82,6 +82,25 @@
    (lambda (kws kw-args actor-map to-ref . args)
      (turn* actor-map to-ref kws kw-args args))))
 
+;; Note that this does nothing with the messages.
+(define turn-commit!
+  (make-keyword-procedure
+   (lambda (kws kw-args actor-map to-ref . args)
+     (define-values (returned-val transactormap _tl _tr)
+       (turn* actor-map to-ref kws kw-args args))
+     (transactormap-merge! transactormap)
+     returned-val)))
+
+;; run a turn but only for getting the result.
+;; we're not interested in committing the result
+;; so we discard everything but the result.
+(define turn-poke
+  (make-keyword-procedure
+   (lambda (kws kw-args actor-map to-ref . args)
+     (define-values (returned-val _am _tl _tr)
+       (turn* actor-map to-ref kws kw-args args))
+     returned-val)))
+
 (define (turn-message actor-map message)
   (define to (message-to message))
   (unless (near-ref? to)
@@ -145,4 +164,25 @@
     ;; observe that we're turning using the "original"
     ;; actormap though!  It should have committed.
     (turn am ctr-ref))
-  (check-eqv? turned-val3 3))
+  (check-eqv? turned-val3 3)
+
+  (define (friend-spawner sys friend-name)
+    (define ((a-friend [called-times 0]) sys)
+      (define new-called-times
+        (add1 called-times))
+      (values (format "Hello!  My name is ~a and I've been called ~a times!"
+                      friend-name new-called-times)
+              (a-friend new-called-times)))
+    (sys 'spawn (a-friend) 'friend))
+  (define fr-spwn (spawn! am friend-spawner))
+  (define joe (turn-commit! am fr-spwn 'joe))
+  (check-equal?
+   (turn-poke am joe)
+   "Hello!  My name is joe and I've been called 1 times!")
+  (check-equal?
+   (turn-commit! am joe)
+   "Hello!  My name is joe and I've been called 1 times!")
+  (check-equal?
+   (turn-commit! am joe)
+   "Hello!  My name is joe and I've been called 2 times!")
+  )
