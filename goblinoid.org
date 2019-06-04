@@ -1,9 +1,9 @@
+* Brainstorming
+
 E style vats, in the pure lambda calculus (plus sealer/unsealers, with
 weak-maps desireable for efficiency)
 
 It does assume the existence of "eq?".
-
-* Brainstorming
 
 ** syscaller
 
