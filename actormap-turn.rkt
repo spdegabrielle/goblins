@@ -192,5 +192,4 @@
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
    (actormap-turn-commit! am joe)
-   "Hello!  My name is joe and I've been called 2 times!")
-  )
+   "Hello!  My name is joe and I've been called 2 times!"))
