@@ -1,5 +1,13 @@
 #lang racket/base
 
+(provide turn
+         turn-commit!
+         turn-poke
+         turn-message
+
+         new-actor-map
+         spawn!)
+
 (require "message.rkt"
          "ref.rkt"
          "actor-map.rkt"
