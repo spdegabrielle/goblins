@@ -3,7 +3,13 @@
 ;; An transactormap is a transactional structure used by the
 ;; actormap turn system
 
-(provide transactormap-set! transactormap-ref
+(provide make-actormap
+         actormap-ref
+         actormap-set!
+
+         snapshot-actormap hasheq->actormap
+
+         transactormap-set! transactormap-ref
 
          make-transactormap
          transactormap?
@@ -12,20 +18,57 @@
          transactormap-merged?
          transactormap-merge!
 
-         snapshot-hasheq hasheq->weak-hasheq
+         actormappable?
 
-         actormap/c)
+         actormappable-ref
+         actormappable-set!)
 
 (require racket/contract
          racket/match
          "ref.rkt"
          "hash-contracts.rkt")
 
+(struct actormap (wht)) ; weak hash table
+
+(define (make-actormap)
+  (actormap (make-weak-hasheq)))
+(define (actormap-ref actormap key [dflt #f])
+  (define val
+    (hash-ref (actormap-wht actormap) key #f))
+  ;; TODO: we should use the retain argument instead, once that becomes available
+  ;;   https://github.com/racket/racket/commit/99feebf070d0dd3e62c697814e0a42508f7995ee
+  (or (and val (match (ephemeron-value val key)
+                 ;; workaround until retain-v becomes broadly available
+                 [(? (lambda (v) (eq? key v)))
+                  #f]
+                 [result result]))
+      dflt))
+
+(define (actormap-set! actormap key val)
+  (hash-set! (actormap-wht actormap)
+             key (make-ephemeron key val)))
+
+(define (snapshot-actormap actormap)
+  (for/fold ([new-hasheq #hasheq()])
+            ([(key val) (actormap-wht actormap)])
+    (hash-set new-hasheq key val)))
+
+(define (hasheq->actormap ht)
+  (define actormap (make-actormap))
+  (for ([(key val) ht])
+    (actormap-set! actormap key val))
+  actormap)
+
+;;; Now the transactional stuff
+
 (struct transactormap (parent delta [merged? #:mutable])
   #:constructor-name _make-transactormap)
 
+(define actormappable?
+  (or/c transactormap? actormap?))
+
 (define/contract (make-transactormap parent)
-  (-> (or/c transactormap? weak-hasheq/c) any/c)
+  (-> actormappable? any/c)
   (_make-transactormap parent (make-hasheq) #f))
 
 (define (transactormap-ref transactormap key [dflt #f])
@@ -37,8 +80,8 @@
         (match parent
           [(? transactormap?)
            (transactormap-ref parent key #f)]
-          [(? hash?)
-           (hash-ref parent key #f)]))
+          [(? actormap?)
+           (actormap-ref parent key #f)]))
       dflt))
 
 (define/contract (transactormap-set! transactormap key val)
@@ -58,51 +101,52 @@
   (define (do-merge! transactormap)
     (define parent
       (transactormap-parent transactormap))
-    (define root-weakmap
+    (define root-actormap
       (match parent
         [(? transactormap?)
          (do-merge! parent)]
-        [(? weak-hasheq/c)
+        [(? actormap?)
          parent]))
     (unless (transactormap-merged? transactormap)
       (for ([(key val) (transactormap-delta transactormap)])
-        (hash-set! root-weakmap key val))
+        (actormap-set! root-actormap key val))
       (set-transactormap-merged?! transactormap #t))
-    root-weakmap)
+    root-actormap)
   (do-merge! transactormap)
   (void))
 
-(define (snapshot-hasheq ht)
-  (for/fold ([new-hasheq #hasheq()])
-            ([(key val) ht])
-    (hash-set new-hasheq key val)))
+;; TODO: We could use generics for this...
+(define (actormappable-ref amappable key [dflt #f])
+  (define proc
+    (match amappable
+      [(? actormap?) actormap-ref]
+      [(? transactormap?) transactormap-ref]))
+  (proc amappable key dflt))
 
-(define (hasheq->weak-hasheq ht)
-  (define weak-hasheq (make-hasheq))
-  (for ([(key val) ht])
-    (hash-set! ht key val))
-  (void))
-
-(define actormap/c
-  (or/c transactormap? weak-hasheq/c))
+(define (actormappable-set! amappable key val)
+  (define proc
+    (match amappable
+      [(? actormap?) actormap-set!]
+      [(? transactormap?) transactormap-set!]))
+  (proc amappable key val))
 
 (module+ test
   (require rackunit)
 
   ;; set up actormap base with beeper and booper
-  (define actormap-base (make-weak-hasheq))
+  (define actormap-base (make-actormap))
   (define beeper-ref (make-near-ref 'beeper))
   (define (beeper-proc . args)
     'beep)
-  (hash-set! actormap-base beeper-ref beeper-proc)
+  (actormap-set! actormap-base beeper-ref beeper-proc)
   (define booper-ref (make-near-ref 'booper))
   (define (booper-proc . args)
     'boop)
-  (hash-set! actormap-base booper-ref booper-proc)
+  (actormap-set! actormap-base booper-ref booper-proc)
   (define blepper-ref (make-near-ref 'blepper))
   (define (blepper-proc . args)
     'blep)
-  (hash-set! actormap-base blepper-ref blepper-proc)
+  (actormap-set! actormap-base blepper-ref blepper-proc)
 
   (define tam1
     (make-transactormap actormap-base))
@@ -124,7 +168,7 @@
              booper-proc2)
   (check-eq? (transactormap-ref tam1 blepper-ref)
              blepper-proc2)
-  (check-eq? (hash-ref actormap-base booper-ref #f)
+  (check-eq? (actormap-ref actormap-base booper-ref #f)
              booper-proc)
   (check-false (transactormap-merged? tam1))
 
@@ -149,9 +193,9 @@
              boppiter-proc)
   (check-eq? (transactormap-ref tam2 blepper-ref)
              blepper-proc2)
-  (check-eq? (hash-ref actormap-base booper-ref #f)
+  (check-eq? (actormap-ref actormap-base booper-ref #f)
              booper-proc)
-  (check-eq? (hash-ref actormap-base boppiter-ref #f)
+  (check-eq? (actormap-ref actormap-base boppiter-ref #f)
              #f)
   (check-false (transactormap-merged? tam2))
 
@@ -169,13 +213,13 @@
                (transactormap-set! tam1 beeper-ref
                                    (lambda _ 'whatever))))
 
-  (check-eq? (hash-ref actormap-base beeper-ref)
+  (check-eq? (actormap-ref actormap-base beeper-ref)
              beeper-proc)
-  (check-eq? (hash-ref actormap-base booper-ref)
+  (check-eq? (actormap-ref actormap-base booper-ref)
              booper-proc3)
-  (check-eq? (hash-ref actormap-base bipper-ref)
+  (check-eq? (actormap-ref actormap-base bipper-ref)
              bipper-proc)
-  (check-eq? (hash-ref actormap-base boppiter-ref)
+  (check-eq? (actormap-ref actormap-base boppiter-ref)
              boppiter-proc)
-  (check-eq? (hash-ref actormap-base blepper-ref)
+  (check-eq? (actormap-ref actormap-base blepper-ref)
              blepper-proc2))

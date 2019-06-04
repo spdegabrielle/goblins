@@ -5,7 +5,6 @@
          actormap-turn-poke
          actormap-turn-message
 
-         new-actormap
          spawn!)
 
 (require "message.rkt"
@@ -118,32 +117,15 @@
          (message-kw-vals message)
          (message-args)))
 
-(define new-actormap
-  make-weak-hasheq)
-
 (define (spawn! actormap actor-handler [debug-name #f])
   (define actor-ref
     (make-near-ref debug-name))
-  (define map-set!
-    (match actormap
-      [(? weak-hasheq/c)
-       hash-set!]
-      [(? transactormap?)
-       transactormap-set!]))
-  (map-set! actormap actor-ref actor-handler)
+  (actormappable-set! actormap actor-ref actor-handler)
   actor-ref)
-
-;; ;; Do we even need a vat structure?  Maybe the actormap
-;; ;; is all there is in this system.
-;; (struct vat (actormap send-deliveries receive-deliveries))
-
-;; (define (fresh-vat)
-;;   (vat (make-weak-hasheq) ))
-
 
 (module+ test
   (require rackunit)
-  (define am (new-actormap))
+  (define am (make-actormap))
 
   (define ((counter n) sys)
     (values n (counter (add1 n))))
