@@ -157,3 +157,29 @@ Here's the scenario:
      
 That's a win for love, but a loss for security; it could, for
 instance, break Horton.
+
+* Transactional, only semi-functional version
+
+In this version, most things work the same except that the syscaller
+is an object whose state is mutated by the syscaller itself.
+Updates only happen in the syscaller itself, and thus are
+transactional.
+This should avoid the romeo-and-juliet attack and should be
+considerably easier to use as a user to bot; both (sys 'spawn handler)
+and (sys 'call foo-ref ...) can now skip returning the syscaller.
+It no longer needs to be "threaded" through the program.
+However since each turn generates its own separate syscaller, this
+should still be safe to do.
+
+We might need to be able to mark an inactive syscaller as "stale"
+however, since old syscallers will still be in scope.
+
+* Parameterization of the syscaller?
+
+Parameterization of the syscaller would result in the easiest to use
+design (now we can simply call actors directly and use <- and spawn
+directly as well).
+It's a bit less interesting to show off to groups that don't have
+access to parameterization though.
+This is probably the "nicest to use" design, and more or less gets
+us the api we want to use with goblins.
