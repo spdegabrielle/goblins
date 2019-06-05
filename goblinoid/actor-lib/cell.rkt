@@ -1,14 +1,11 @@
 #lang racket/base
 
-(require racket/match)
-
 ;; A simple turn-mutable cell
 
 (define (make-cell [val #f])
-  (match-lambda*
-    [(list sys)
-     val]
-    [(list sys val)
+  (case-lambda
+    [() val]
+    [(val)
      (values (void) (make-cell val))]))
 
 (module+ test

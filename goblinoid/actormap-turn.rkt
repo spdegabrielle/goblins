@@ -5,6 +5,8 @@
          actormap-peek
          actormap-turn-message
 
+         call spawn <-
+
          actormap-spawn!)
 
 (require "message.rkt"
@@ -13,8 +15,26 @@
          "hash-contracts.rkt"
          racket/match)
 
+;; Syscaller internals
+;; ===================
+;;
+;; NEVER export these.
+
 (define current-syscaller
   (make-parameter #f))
+
+(define (get-syscaller-or-die)
+  (define sys (current-syscaller))
+  (unless sys
+    (error "No current syscaller"))
+  sys)
+
+(define (call-with-fresh-syscaller actormap proc)
+  (define-values (sys get-sys-internals close-up!)
+    (fresh-syscaller actormap))
+  (begin0 (parameterize ([current-syscaller sys])
+            (proc sys get-sys-internals))
+    (close-up!)))
 
 (define (fresh-syscaller prev-actormap)
   (define actormap
@@ -48,9 +68,7 @@
        (define-values (return-val new-handler)
          (call-with-values
           (lambda ()
-            (keyword-apply actor-handler kws kw-args
-                           this-syscaller
-                           args))
+            (keyword-apply actor-handler kws kw-args args))
           (case-lambda
             [(return-val)
              (values return-val #f)]
@@ -65,7 +83,8 @@
        return-val)))
 
   ;; spawn a new actor
-  (define (_spawn actor-handler [debug-name #f])
+  (define (_spawn actor-handler
+                  [debug-name (object-name actor-handler)])
     (actormap-spawn! actormap actor-handler debug-name))
 
   (define <-
@@ -87,11 +106,30 @@
 
   (values this-syscaller get-internals close-up!))
 
-(define (call-with-fresh-syscaller actormap proc)
-  (define-values (sys get-sys-internals close-up!)
-    (fresh-syscaller actormap))
-  (begin0 (proc sys get-sys-internals)
-    (close-up!)))
+
+;; syscall external functions
+;; ==========================
+
+(define <-
+  (make-keyword-procedure
+   (lambda (kws kw-args to-ref . args)
+     (define sys (get-syscaller-or-die))
+     (keyword-apply sys kws kw-args '<- to-ref args))))
+
+(define call
+  (make-keyword-procedure
+   (lambda (kws kw-args to-ref . args)
+     (define sys (get-syscaller-or-die))
+     (keyword-apply sys kws kw-args 'call to-ref args))))
+
+(define (spawn actor-handler
+               [debug-name (object-name actor-handler)])
+  (define sys (get-syscaller-or-die))
+  (sys 'spawn actor-handler debug-name))
+
+
+;; actormap turning and utils
+;; ==========================
 
 (define (actormap-turn* actormap to-ref kws kw-args args)
   (call-with-fresh-syscaller
@@ -135,7 +173,12 @@
          (message-kw-vals message)
          (message-args)))
 
-(define (actormap-spawn! actormap actor-handler [debug-name #f])
+
+;; Spawning
+;; ========
+
+(define (actormap-spawn! actormap actor-handler
+                         [debug-name (object-name actor-handler)])
   (define actor-ref
     (make-near-ref debug-name))
   (actormappable-set! actormap actor-ref actor-handler)
@@ -145,7 +188,7 @@
   (require rackunit)
   (define am (make-actormap))
 
-  (define ((counter n) sys)
+  (define ((counter n))
     (values n (counter (add1 n))))
 
   ;; can actors update themselves?
@@ -173,14 +216,14 @@
     (actormap-turn am ctr-ref))
   (check-eqv? turned-val3 3)
 
-  (define (friend-spawner sys friend-name)
-    (define ((a-friend [called-times 0]) sys)
+  (define (friend-spawner friend-name)
+    (define ((a-friend [called-times 0]))
       (define new-called-times
         (add1 called-times))
       (values (format "Hello!  My name is ~a and I've been called ~a times!"
                       friend-name new-called-times)
               (a-friend new-called-times)))
-    (sys 'spawn (a-friend) 'friend))
+    (spawn (a-friend) 'friend))
   (define fr-spwn (actormap-spawn! am friend-spawner))
   (define joe (actormap-poke! am fr-spwn 'joe))
   (check-equal?
