@@ -13,14 +13,22 @@
          "hash-contracts.rkt"
          racket/match)
 
+(define current-syscaller
+  (make-parameter #f))
+
 (define (fresh-syscaller prev-actormap)
   (define actormap
     (make-transactormap prev-actormap))
   (define to-local '())
   (define to-remote '())
+
+  (define closed? #f)
+
   (define this-syscaller
     (make-keyword-procedure
      (lambda (kws kw-args method-id . args)
+       (when closed?
+         (error "Sorry, this syscaller is closed for business!"))
        (define method
          (match method-id
            ['call call]
@@ -74,15 +82,25 @@
   (define (get-internals)
     (list actormap to-local to-remote))
 
-  (values this-syscaller get-internals))
+  (define (close-up!)
+    (set! closed? #t))
+
+  (values this-syscaller get-internals close-up!))
+
+(define (call-with-fresh-syscaller actormap proc)
+  (define-values (sys get-sys-internals close-up!)
+    (fresh-syscaller actormap))
+  (begin0 (proc sys get-sys-internals)
+    (close-up!)))
 
 (define (actormap-turn* actormap to-ref kws kw-args args)
-  (define-values (sys get-sys-internals)
-    (fresh-syscaller actormap))
-  (define result-val
-    (keyword-apply sys kws kw-args 'call to-ref args))
-  (apply values result-val
-         (get-sys-internals)))
+  (call-with-fresh-syscaller
+   actormap
+   (lambda (sys get-sys-internals)
+     (define result-val
+       (keyword-apply sys kws kw-args 'call to-ref args))
+     (apply values result-val
+            (get-sys-internals)))))
 
 (define actormap-turn
   (make-keyword-procedure
