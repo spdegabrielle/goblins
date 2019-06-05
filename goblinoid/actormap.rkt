@@ -30,6 +30,8 @@
          "ref.rkt"
          "hash-contracts.rkt")
 
+;; TODO: I don't understand ephemerons and this is probably wrong.
+
 (define-generics actormappable
   (actormappable-ref actormappable key [dflt])
   (actormappable-set! actormappable key val))
@@ -41,8 +43,8 @@
    (define (actormappable-set! actormap key [dflt #f])
      (actormap-set! actormap key dflt))])
 
-(define (make-actormap)
-  (actormap (make-weak-hasheq)))
+(define (make-actormap [parent (make-weak-hasheq)])
+  (actormap parent))
 (define (actormap-ref actormap key [dflt #f])
   (define val
     (hash-ref (actormap-wht actormap) key #f))
