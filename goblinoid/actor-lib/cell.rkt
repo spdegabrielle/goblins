@@ -6,7 +6,7 @@
   (case-lambda
     [() val]
     [(new-val)
-     (values val (make-cell new-val))]))
+     (values (void) (make-cell new-val))]))
 
 (module+ test
   (require rackunit
