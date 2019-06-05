@@ -5,8 +5,8 @@
 (define (make-cell [val #f])
   (case-lambda
     [() val]
-    [(val)
-     (values (void) (make-cell val))]))
+    [(new-val)
+     (values val (make-cell new-val))]))
 
 (module+ test
   (require rackunit
