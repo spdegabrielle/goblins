@@ -1,8 +1,8 @@
 #lang racket
 
 ;; Add a "ticking" object, where objects can register to be ticked
-;; eg on a game loop.  If the 'tick method responds with 'die
-;; the actor will not be queued for ticking again.
+;; eg on a game loop.  If the called 'tick method responds with
+;; 'die the actor will not be queued for ticking again.
 
 (require "../main.rkt"
          "cell.rkt"
