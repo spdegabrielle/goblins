@@ -3,7 +3,8 @@
 ;; An environment that multiple entities can read/write to,
 ;; inspired by DOS/Win and later DOS/Hurd
 
-(provide make-env)
+(provide make-env
+         spawn-env-pair)
 
 (require "../utils/simple-sealers.rkt"
          "../main.rkt"
@@ -103,25 +104,26 @@
   (define rw-facet
     (spawn (facet this-env 'new-key 'read 'write)))
   (define reset-facet
-    (spawn (facet this-env 'reset)))
+    (spawn (lambda ()
+             (call this-env 'reset))))
   (list rw-facet reset-facet))
 
 (module+ test
   (require rackunit
            racket/contract)
   (define am (make-actormap))
-  (match-define (list rw-facet reset-facet)
+  (match-define (list env reset-env)
     (actormap-run! am spawn-env-pair))
   (define foo-rw-key
-    (actormap-poke! am rw-facet 'new-key))
+    (actormap-poke! am env 'new-key))
   (test-equal?
    "empty read to foo"
-   (actormap-poke! am rw-facet 'read foo-rw-key)
+   (actormap-poke! am env 'read foo-rw-key)
    '())
-  (actormap-poke! am rw-facet 'write foo-rw-key 'foo-1)
+  (actormap-poke! am env 'write foo-rw-key 'foo-1)
   (test-equal?
    "one write to foo"
-   (actormap-poke! am rw-facet 'read foo-rw-key)
+   (actormap-poke! am env 'read foo-rw-key)
    '(foo-1))
   (define foo-read-key
     (rw->read-key foo-rw-key))
@@ -131,24 +133,24 @@
    "write-keys can't read"
    any/c
    (lambda ()
-     (actormap-poke! am rw-facet 'read foo-write-key)))
+     (actormap-poke! am env 'read foo-write-key)))
   (test-exn
    "read-keys can't write"
    any/c
    (lambda ()
-     (actormap-poke! am rw-facet 'write foo-read-key 'uhoh)))
-  (actormap-poke! am rw-facet 'write foo-write-key 'foo-2)
+     (actormap-poke! am env 'write foo-read-key 'uhoh)))
+  (actormap-poke! am env 'write foo-write-key 'foo-2)
   (test-equal?
    "writes to foo using separate read/write keys"
-   (actormap-poke! am rw-facet 'read foo-read-key)
+   (actormap-poke! am env 'read foo-read-key)
    '(foo-2 foo-1))
   (test-exn
-   "Can't reset through rw-facet"
+   "Can't reset through env's rw-facet"
    any/c
    (lambda ()
-     (actormap-poke! am rw-facet 'reset)))
-  (actormap-poke! am reset-facet 'reset)
+     (actormap-poke! am env 'reset)))
+  (actormap-poke! am reset-env)
   (test-equal?
    "read after reset is empty"
-   (actormap-poke! am rw-facet 'read foo-read-key)
+   (actormap-poke! am env 'read foo-read-key)
    '()))
