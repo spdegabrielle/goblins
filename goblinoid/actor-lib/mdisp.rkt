@@ -1,5 +1,11 @@
 #lang racket/base
 
+(provide mdisp
+         define-mdisp
+         spawn-mdisp)
+
+(require "../main.rkt")
+
 ;; Simple macro for method-based dispatching
 
 (define-syntax-rule (mdisp [(method-name method-args ...)
@@ -21,6 +27,9 @@
 
 (define-syntax-rule (define-mdisp id rest ...)
   (define id (mdisp rest ...)))
+
+(define-syntax-rule (spawn-mdisp rest ...)
+  (spawn (mdisp rest ...)))
 
 (module+ test
   (require rackunit
