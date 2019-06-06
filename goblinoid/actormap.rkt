@@ -24,6 +24,9 @@
          actormappable-ref
          actormappable-set!)
 
+(module+ debug
+  (provide actormap-wht))
+
 (require racket/contract
          racket/match
          racket/generic
