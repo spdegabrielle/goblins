@@ -1,8 +1,8 @@
 #lang racket/base
 
-(provide aktor
-         define-aktor
-         spawn-aktor)
+(provide symethods
+         define-symethods
+         spawn-symethods)
 
 (require "../main.rkt")
 
@@ -21,9 +21,9 @@
     [(_ [method-name proc])
      (cons (quote method-name) proc)]))
 
-(define-syntax aktor
+(define-syntax symethods
   (syntax-rules ()
-    [(aktor method-defn ...)
+    [(symethods method-defn ...)
      (let ([methods
             (make-hasheq
              (list (do-method-defn method-defn) ...))])
@@ -35,16 +35,16 @@
             (error (format "No such method ~a" method)))
           (keyword-apply method-proc kws kw-args args))))]))
 
-(define-syntax-rule (define-aktor id rest ...)
-  (define id (aktor rest ...)))
+(define-syntax-rule (define-symethods id rest ...)
+  (define id (symethods rest ...)))
 
-(define-syntax-rule (spawn-aktor rest ...)
-  (spawn (aktor rest ...)))
+(define-syntax-rule (spawn-symethods rest ...)
+  (spawn (symethods rest ...)))
 
 (module+ test
   (require rackunit
            racket/contract)
-  (define-aktor an-aktor
+  (define-symethods objekt
     [(beep)
      'beep-boop]
     [(hello name)
@@ -55,25 +55,25 @@
              singer note-str lyric note-str)])
 
   (check-eq?
-   (an-aktor 'beep)
+   (objekt 'beep)
    'beep-boop)
   (check-equal?
-   (an-aktor 'hello "george")
+   (objekt 'hello "george")
    "hello george!")
   (check-equal?
-   (an-aktor 'sing "frank")
+   (objekt 'sing "frank")
    "<frank> o/~ once upon a bonnie moon... o/~")
   (check-equal?
-   (an-aktor 'sing "george"
+   (objekt 'sing "george"
              "once upon a swingin' star..."
              #:note-str "♫")
    "<george> ♫ once upon a swingin' star... ♫")
   (check-exn
    any/c
    (lambda ()
-     (an-aktor 'nope)))
+     (objekt 'nope)))
 
   (check-equal?
-   ((aktor [(foo . bar) bar])
+   ((symethods [(foo . bar) bar])
     'foo 'bar 'baz)
    '(bar baz)))

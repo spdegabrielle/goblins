@@ -1,7 +1,7 @@
 #lang racket
 
 (require "../main.rkt"
-         "mdisp.rkt"
+         "symethods.rkt"
          "cell.rkt"
          racket/match)
 
@@ -9,7 +9,7 @@
   (define tick-set
     (spawn (make-cell (seteq))))
   (define ticker-registry
-    (spawn-mdisp
+    (spawn-symethods
      [(register . entries)
       (for ([entry entries])
         (define current-tickers
@@ -37,7 +37,7 @@
     (actormap-spawn! am (make-cell)))
   (define (malaise-sufferer name speaking-cell)
     (define (loop n)
-      (mdisp
+      (symethods
        [(tick)
         (call speaking-cell
               (format "<~a> sigh number ~a"
