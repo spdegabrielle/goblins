@@ -32,3 +32,15 @@
         (define friend
           (spawn (make-simple-actor)))
         (call friend 'oop))))))
+
+(define (call-a-lot actormap)
+  (define (simple-actor)
+    'hello)
+  (time
+   (actormap-run!
+    actormap
+    (lambda ()
+      (define friend
+        (spawn simple-actor))
+      (for ([i 1000000])
+        (call friend))))))
