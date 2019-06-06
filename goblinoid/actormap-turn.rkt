@@ -6,6 +6,7 @@
          actormap-turn-message
 
          actormap-run
+         actormap-run*
          actormap-run!
 
          actormap-spawn
@@ -182,9 +183,17 @@
 
 ;; non-committal version of actormap-run
 (define (actormap-run actormap thunk)
+  (define-values (returned-val new-actormap2)
+    (actormap-run* actormap thunk))
+  returned-val)
+
+;; like actormap-run but also returns the new actormap
+(define (actormap-run* actormap thunk)
   (define-values (actor-ref new-actormap)
     (actormap-spawn actormap thunk))
-  (actormap-peek new-actormap actor-ref))
+  (define-values (returned-val new-actormap2 _tl _tr)
+    (actormap-turn* new-actormap actor-ref '() '() '()))
+  (values returned-val new-actormap2))
 
 ;; committal version
 ;; Run, and also commit the results of, the code in the thunk
