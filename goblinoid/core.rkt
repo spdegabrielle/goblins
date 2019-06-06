@@ -3,6 +3,8 @@
 ;;; Exports
 ;;; =======
 
+(require racket/contract)
+
 ;; Refs
 (provide ref?
          (struct-out near-ref)
@@ -41,10 +43,29 @@
          actormap-run*
          actormap-run!
 
-         actormap-spawn
-         actormap-spawn!
+         ;; preventing awkwardness: we don't want actor handlers
+         ;; to be actor refs
+         (contract-out
+          [actormap-spawn
+           (-> any/c
+               (and/c procedure?
+                      (not/c ref?))
+               (or/c #f symbol? string?)
+               (values any/c any/c))]
+          [actormap-spawn!
+           (-> any/c (and/c procedure?
+                            (not/c ref?))
+               (or/c #f symbol? string?)
+               (values any/c any/c))])
 
-         call spawn <-)
+         call
+         (contract-out
+          [spawn
+           (-> (and/c procedure?
+                      (not/c ref?))
+               (or/c #f symbol? string?)
+               (values any/c any/c))])
+         <-)
 
 (module+ debug
   (provide actormap-wht))
@@ -54,7 +75,9 @@
 
 (require "message.rkt"
          "hash-contracts.rkt"
-         racket/match)
+         racket/match
+         racket/generic
+         "ref.rkt")
 
 
 ;;; Refs
@@ -92,12 +115,6 @@
 
 ;; An transactormap is a transactional structure used by the
 ;; actormap turn system
-
-(require racket/contract
-         racket/match
-         racket/generic
-         "ref.rkt"
-         "hash-contracts.rkt")
 
 ;; TODO: I don't understand ephemerons and this is probably wrong.
 
