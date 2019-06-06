@@ -1,5 +1,8 @@
 #lang racket/base
 
+;; An environment that multiple entities can read/write to,
+;; inspired by DOS/Win and later DOS/Hurd
+
 (provide make-env)
 
 (require "../utils/simple-sealers.rkt"
