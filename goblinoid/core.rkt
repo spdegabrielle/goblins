@@ -47,24 +47,24 @@
          ;; to be actor refs
          (contract-out
           [actormap-spawn
-           (-> any/c
-               (and/c procedure?
-                      (not/c ref?))
-               (or/c #f symbol? string?)
-               (values any/c any/c))]
+           (->* [any/c
+                 (and/c procedure?
+                        (not/c ref?))]
+                [(or/c #f symbol? string?)]
+                (values any/c any/c))]
           [actormap-spawn!
-           (-> any/c (and/c procedure?
-                            (not/c ref?))
-               (or/c #f symbol? string?)
-               (values any/c any/c))])
+           (->* [any/c (and/c procedure?
+                              (not/c ref?))]
+                [(or/c #f symbol? string?)]
+                any/c)])
 
          call
          (contract-out
           [spawn
-           (-> (and/c procedure?
-                      (not/c ref?))
-               (or/c #f symbol? string?)
-               (values any/c any/c))])
+           (->* [(and/c procedure?
+                        (not/c ref?))]
+                [(or/c #f symbol? string?)]
+               any/c)])
          <-)
 
 (module+ debug
