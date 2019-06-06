@@ -43,8 +43,8 @@
    (define (actormappable-set! actormap key [dflt #f])
      (actormap-set! actormap key dflt))])
 
-(define (make-actormap [parent (make-weak-hasheq)])
-  (actormap parent))
+(define (make-actormap)
+  (actormap (make-weak-hasheq)))
 (define (actormap-ref actormap key [dflt #f])
   (define val
     (hash-ref (actormap-wht actormap) key #f))
