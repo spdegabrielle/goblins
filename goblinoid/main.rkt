@@ -21,7 +21,5 @@
 
          near-ref? far-ref?)
 
-(require "actormap.rkt"
-         "core.rkt"
-         "message.rkt"
-         "ref.rkt")
+(require "core.rkt"
+         "message.rkt")

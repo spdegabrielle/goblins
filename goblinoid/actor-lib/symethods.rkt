@@ -4,7 +4,7 @@
          define-symethods
          spawn-symethods)
 
-(require "../main.rkt")
+(require "../core.rkt")
 
 ;; Simple macro for method-based dispatching
 

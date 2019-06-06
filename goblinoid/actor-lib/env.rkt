@@ -7,7 +7,7 @@
          spawn-env-pair)
 
 (require "../utils/simple-sealers.rkt"
-         "../main.rkt"
+         "../core.rkt"
          "facet.rkt"
          racket/match)
 

@@ -3,7 +3,6 @@
 (require racket/contract
          racket/set
          racket/match
-         "../ref.rkt"
          "../core.rkt")
 
 (provide facet facet*)
@@ -29,7 +28,7 @@
 
 (module+ test
   (require rackunit
-           "../main.rkt")
+           "../core.rkt")
   (define am (make-actormap))
   (define all-powerful-wizard
     (actormap-spawn! am (match-lambda*

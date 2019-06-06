@@ -4,7 +4,7 @@
 ;; eg on a game loop.  If the called 'tick method responds with
 ;; 'die the actor will not be queued for ticking again.
 
-(require "../main.rkt"
+(require "../core.rkt"
          "cell.rkt"
          racket/match)
 

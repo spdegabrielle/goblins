@@ -12,7 +12,7 @@
 
 (module+ test
   (require rackunit
-           "../main.rkt")
+           "../core.rkt")
   (define am (make-actormap))
   (define a-cell
     (actormap-spawn! am (make-cell)))
