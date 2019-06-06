@@ -14,6 +14,8 @@
          actormap-spawn
          actormap-spawn!
 
+         call spawn <-
+
          (struct-out message)
 
          near-ref? far-ref?)
