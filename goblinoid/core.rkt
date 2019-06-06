@@ -58,6 +58,9 @@
                 [(or/c #f symbol? string?)]
                 any/c)])
 
+         (rename-out [make-next next])
+         ;; next? next-return-val next-handler
+
          call
          (contract-out
           [spawn
@@ -363,15 +366,15 @@
          (transactormap-ref actormap to-ref #f))
        (unless actor-handler
          (error "Can't send message; no actor with this id"))
+       (define result
+         (keyword-apply actor-handler kws kw-args args))
+       
        (define-values (return-val new-handler)
-         (call-with-values
-          (lambda ()
-            (keyword-apply actor-handler kws kw-args args))
-          (case-lambda
-            [(return-val)
-             (values return-val #f)]
-            [(return-val new-handler)
-             (values return-val new-handler)])))
+         (match result
+           [(? next?)
+            (values (next-return-val result)
+                    (next-handler result))]
+           [_ (values result #f)]))
 
        ;; if a new handler for this actor was specified,
        ;; let's replace it
@@ -403,6 +406,20 @@
     (set! closed? #t))
 
   (values this-syscaller get-internals close-up!))
+
+
+;;; setting up next handler
+;;; =======================
+
+(struct next (handler return-val))
+(define/contract (make-next handler [return-val (void)])
+  (->* [(and/c procedure? (not/c ref?))]
+       [(not/c next?)]
+       any/c)
+  (next handler return-val))
+
+(module+ extra-next
+  (provide next next? next-handler return-val))
 
 
 ;;; syscall external functions
@@ -522,7 +539,8 @@
   (define am (make-actormap))
 
   (define ((counter n))
-    (values n (counter (add1 n))))
+    (next (counter (add1 n))
+          n))
 
   ;; can actors update themselves?
   (define ctr-ref
@@ -553,9 +571,9 @@
     (define ((a-friend [called-times 0]))
       (define new-called-times
         (add1 called-times))
-      (values (format "Hello!  My name is ~a and I've been called ~a times!"
-                      friend-name new-called-times)
-              (a-friend new-called-times)))
+      (next (a-friend new-called-times)
+            (format "Hello!  My name is ~a and I've been called ~a times!"
+                    friend-name new-called-times)))
     (spawn (a-friend) 'friend))
   (define fr-spwn (actormap-spawn! am friend-spawner))
   (define joe (actormap-poke! am fr-spwn 'joe))

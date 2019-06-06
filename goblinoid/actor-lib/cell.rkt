@@ -8,7 +8,7 @@
   (case-lambda
     [() val]
     [(new-val)
-     (values (void) (make-cell new-val))]))
+     (next (make-cell new-val))]))
 
 (module+ test
   (require rackunit

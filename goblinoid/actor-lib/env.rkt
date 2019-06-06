@@ -90,11 +90,11 @@
                    (cons val (hash-ref ht id '()))))
        (define new-env
          (env updated-ht))
-       (values (void) new-env)]
+       (next new-env)]
       [(list 'reset)
        (define new-env
          (env #hasheq()))
-       (values (void) new-env)]))
+       (next new-env)]))
   
   (env #hasheq()))
 

@@ -54,7 +54,7 @@
               (speaking-cell
                (format "<~a> sigh number ~a"
                        name n))
-              (values (void) (loop (add1 n)))))]))
+              (next (loop (add1 n)))))]))
     (loop 1))
   (define joe
     (actormap-spawn! am (malaise-sufferer "joe"
