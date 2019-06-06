@@ -4,7 +4,7 @@
          racket/set
          racket/match
          "../ref.rkt"
-         "../actormap-turn.rkt")
+         "../core.rkt")
 
 (provide facet facet*)
 
