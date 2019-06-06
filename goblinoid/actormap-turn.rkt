@@ -5,9 +5,13 @@
          actormap-peek
          actormap-turn-message
 
-         call spawn <-
+         actormap-run
+         actormap-run!
 
-         actormap-spawn!)
+         actormap-spawn
+         actormap-spawn!
+
+         call spawn <-)
 
 (require "message.rkt"
          "ref.rkt"
@@ -173,9 +177,35 @@
          (message-kw-vals message)
          (message-args)))
 
+;; The following two are utilities for when you want to check
+;; or bootstrap something within an actormap
+
+;; non-committal version of actormap-run
+(define (actormap-run actormap thunk)
+  (define-values (actor-ref new-actormap)
+    (actormap-spawn actormap thunk))
+  (actormap-peek new-actormap actor-ref))
+
+;; committal version
+;; Run, and also commit the results of, the code in the thunk
+(define (actormap-run! actormap thunk)
+  (define actor-ref
+    (actormap-spawn! actormap thunk))
+  (actormap-poke! actormap actor-ref))
+
 
 ;; Spawning
 ;; ========
+
+;; non-committal version of actormap-spawn
+(define (actormap-spawn actormap actor-handler
+                        [debug-name (object-name actor-handler)])
+  (define actor-ref
+    (make-near-ref debug-name))
+  (define new-actormap
+    (make-transactormap actormap))
+  (transactormap-set! new-actormap actor-ref actor-handler)
+  (values actor-ref new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
                          [debug-name (object-name actor-handler)])
@@ -185,7 +215,8 @@
   actor-ref)
 
 (module+ test
-  (require rackunit)
+  (require rackunit
+           racket/contract)
   (define am (make-actormap))
 
   (define ((counter n))
@@ -234,4 +265,36 @@
    "Hello!  My name is joe and I've been called 1 times!")
   (check-equal?
    (actormap-poke! am joe)
-   "Hello!  My name is joe and I've been called 2 times!"))
+   "Hello!  My name is joe and I've been called 2 times!")
+
+  (define-values (noncommital-ref noncommital-am)
+    (actormap-spawn am (lambda () 'noncommital)))
+  (check-eq?
+   (actormap-peek noncommital-am noncommital-ref)
+   'noncommital)
+  (check-exn
+   any/c
+   (lambda () (actormap-peek am noncommital-ref)))
+
+  (define who-ya-gonna-call
+    #f)
+  (define (make-and-call-friend)
+    (define new-friend-spawner
+      (spawn friend-spawner))
+    (define friend
+      (call new-friend-spawner 'brian))
+    (set! who-ya-gonna-call friend)
+    (call friend))
+  (check-equal?
+   (actormap-run am make-and-call-friend)
+   "Hello!  My name is brian and I've been called 1 times!")
+  (check-exn
+   any/c
+   (lambda () (actormap-peek am who-ya-gonna-call)))
+  ;; now run it with commitment
+  (check-equal?
+   (actormap-run! am make-and-call-friend)
+   "Hello!  My name is brian and I've been called 1 times!")
+  (check-equal?
+   (actormap-peek noncommital-am who-ya-gonna-call)
+   "Hello!  My name is brian and I've been called 2 times!"))
