@@ -5,20 +5,17 @@
 ;; the actor will not be queued for ticking again.
 
 (require "../main.rkt"
-         "symethods.rkt"
          "cell.rkt"
          racket/match)
 
 (define (spawn-ticker-pair)
   (define tick-queue
     (spawn (make-cell '())))
-  (define ticker-registry
-    (symethods
-     [(register . entries)
-      (call tick-queue
-            (for/fold ([tickers (call tick-queue)])
-                      ([entry entries])
-              (cons entry tickers)))]))
+  (define (register-ticker . entries)
+    (call tick-queue
+          (for/fold ([tickers (call tick-queue)])
+                    ([entry entries])
+            (cons entry tickers))))
   (define ticker-tick
     (lambda ()
       (define next-queue
@@ -29,13 +26,14 @@
                '()
                (call tick-queue)))
       (call tick-queue next-queue)))
-  (list (spawn ticker-registry) (spawn ticker-tick)))
+  (list (spawn register-ticker) (spawn ticker-tick)))
 
 (module+ test
-  (require rackunit)
+  (require rackunit
+           "symethods.rkt")
 
   (define am (make-actormap))
-  (match-define (list ticker-registry ticker-tick)
+  (match-define (list register-ticker ticker-tick)
     (actormap-run! am spawn-ticker-pair))
   (define joe-speaks-here
     (actormap-spawn! am (make-cell)))
@@ -65,7 +63,7 @@
     (actormap-spawn! am (malaise-sufferer "jane"
                                           jane-speaks-here
                                           2)))
-  (actormap-poke! am ticker-registry 'register joe jane)
+  (actormap-poke! am register-ticker joe jane)
   (actormap-poke! am ticker-tick)
   (check-equal?
    (actormap-peek am joe-speaks-here)
