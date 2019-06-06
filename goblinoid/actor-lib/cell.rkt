@@ -1,5 +1,7 @@
 #lang racket/base
 
+(provide make-cell)
+
 ;; A simple turn-mutable cell
 
 (define (make-cell [val #f])
