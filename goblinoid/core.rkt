@@ -71,7 +71,11 @@
          [#f "#<near-ref>"]
          ;; TODO: Do we need to do escaping?
          [debug-name (format "#<near-ref ~a>" debug-name)]))
-     (write-string str-to-write port))])
+     (write-string str-to-write port))]
+  #:property prop:procedure
+  (make-keyword-procedure
+   (lambda (kws kw-args this . args)
+     (keyword-apply call kws kw-args this args))))
 
 (struct far-ref ref (remote-vat-ref)
   #:constructor-name make-far-ref)

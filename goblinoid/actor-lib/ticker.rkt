@@ -12,20 +12,20 @@
   (define tick-queue
     (spawn (make-cell '())))
   (define (register-ticker . entries)
-    (call tick-queue
-          (for/fold ([tickers (call tick-queue)])
-                    ([entry entries])
-            (cons entry tickers))))
+    (tick-queue
+     (for/fold ([tickers (tick-queue)])
+               ([entry entries])
+       (cons entry tickers))))
   (define ticker-tick
     (lambda ()
       (define next-queue
         (foldr (lambda (tick-me next-queue)
-                 (match (call tick-me 'tick)
+                 (match (tick-me 'tick)
                    ['die next-queue]
                    [_ (cons tick-me next-queue)]))
                '()
-               (call tick-queue)))
-      (call tick-queue next-queue)))
+               (tick-queue)))
+      (tick-queue next-queue)))
   (list (spawn register-ticker) (spawn ticker-tick)))
 
 (module+ test
@@ -46,14 +46,14 @@
        [(tick)
         (if (> n maximum-suffering)
             (begin
-              (call speaking-cell
-                    (format "<~a> you know what? I'm done."
-                            name))
+              (speaking-cell
+               (format "<~a> you know what? I'm done."
+                       name))
               'die)
             (begin
-              (call speaking-cell
-                    (format "<~a> sigh number ~a"
-                            name n))
+              (speaking-cell
+               (format "<~a> sigh number ~a"
+                       name n))
               (values (void) (loop (add1 n)))))]))
     (loop 1))
   (define joe
