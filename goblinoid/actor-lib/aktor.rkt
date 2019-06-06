@@ -1,8 +1,8 @@
 #lang racket/base
 
-(provide mdisp
-         define-mdisp
-         spawn-mdisp)
+(provide aktor
+         define-aktor
+         spawn-aktor)
 
 (require "../main.rkt")
 
@@ -21,9 +21,9 @@
     [(_ [method-name proc])
      (cons (quote method-name) proc)]))
 
-(define-syntax mdisp
+(define-syntax aktor
   (syntax-rules ()
-    [(mdisp method-defn ...)
+    [(aktor method-defn ...)
      (let ([methods
             (make-hasheq
              (list (do-method-defn method-defn) ...))])
@@ -35,16 +35,16 @@
             (error (format "No such method ~a" method)))
           (keyword-apply method-proc kws kw-args args))))]))
 
-(define-syntax-rule (define-mdisp id rest ...)
-  (define id (mdisp rest ...)))
+(define-syntax-rule (define-aktor id rest ...)
+  (define id (aktor rest ...)))
 
-(define-syntax-rule (spawn-mdisp rest ...)
-  (spawn (mdisp rest ...)))
+(define-syntax-rule (spawn-aktor rest ...)
+  (spawn (aktor rest ...)))
 
 (module+ test
   (require rackunit
            racket/contract)
-  (define-mdisp an-mdisp
+  (define-aktor an-aktor
     [(beep)
      'beep-boop]
     [(hello name)
@@ -55,25 +55,25 @@
              singer note-str lyric note-str)])
 
   (check-eq?
-   (an-mdisp 'beep)
+   (an-aktor 'beep)
    'beep-boop)
   (check-equal?
-   (an-mdisp 'hello "george")
+   (an-aktor 'hello "george")
    "hello george!")
   (check-equal?
-   (an-mdisp 'sing "frank")
+   (an-aktor 'sing "frank")
    "<frank> o/~ once upon a bonnie moon... o/~")
   (check-equal?
-   (an-mdisp 'sing "george"
+   (an-aktor 'sing "george"
              "once upon a swingin' star..."
              #:note-str "♫")
    "<george> ♫ once upon a swingin' star... ♫")
   (check-exn
    any/c
    (lambda ()
-     (an-mdisp 'nope)))
+     (an-aktor 'nope)))
 
   (check-equal?
-   ((mdisp [(foo . bar) bar])
+   ((aktor [(foo . bar) bar])
     'foo 'bar 'baz)
    '(bar baz)))
