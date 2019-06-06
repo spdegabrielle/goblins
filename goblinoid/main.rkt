@@ -9,6 +9,9 @@
          actormap-poke!
          actormap-peek
          actormap-turn-message
+         actormap-run
+         actormap-run!
+         actormap-spawn
          actormap-spawn!
 
          (struct-out message)
