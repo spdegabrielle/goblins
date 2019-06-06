@@ -22,6 +22,6 @@
          near-ref? far-ref?)
 
 (require "actormap.rkt"
-         "actormap-turn.rkt"
+         "core.rkt"
          "message.rkt"
          "ref.rkt")
