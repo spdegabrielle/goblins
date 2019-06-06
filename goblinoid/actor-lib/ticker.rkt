@@ -1,29 +1,35 @@
 #lang racket
 
+;; Add a "ticking" object, where objects can register to be ticked
+;; eg on a game loop.  If the 'tick method responds with 'die
+;; the actor will not be queued for ticking again.
+
 (require "../main.rkt"
          "symethods.rkt"
          "cell.rkt"
          racket/match)
 
 (define (spawn-ticker-pair)
-  (define tick-set
-    (spawn (make-cell (seteq))))
+  (define tick-queue
+    (spawn (make-cell '())))
   (define ticker-registry
-    (spawn-symethods
+    (symethods
      [(register . entries)
-      (for ([entry entries])
-        (define current-tickers
-          (call tick-set))
-        (call tick-set (set-add current-tickers
-                                entry)))]
-     [(remove entry)
-      (call tick-set
-            (set-remove (call tick-set) entry))]))
+      (call tick-queue
+            (for/fold ([tickers (call tick-queue)])
+                      ([entry entries])
+              (cons entry tickers)))]))
   (define ticker-tick
-    (spawn (lambda ()
-             (for ([tick-me (call tick-set)])
-               (call tick-me 'tick)))))
-  (list ticker-registry ticker-tick))
+    (lambda ()
+      (define next-queue
+        (foldr (lambda (tick-me next-queue)
+                 (match (call tick-me 'tick)
+                   ['die next-queue]
+                   [_ (cons tick-me next-queue)]))
+               '()
+               (call tick-queue)))
+      (call tick-queue next-queue)))
+  (list (spawn ticker-registry) (spawn ticker-tick)))
 
 (module+ test
   (require rackunit)
@@ -35,21 +41,30 @@
     (actormap-spawn! am (make-cell)))
   (define jane-speaks-here
     (actormap-spawn! am (make-cell)))
-  (define (malaise-sufferer name speaking-cell)
+  (define (malaise-sufferer name speaking-cell
+                            [maximum-suffering 3])
     (define (loop n)
       (symethods
        [(tick)
-        (call speaking-cell
-              (format "<~a> sigh number ~a"
-                      name n))
-        (values (void) (loop (add1 n)))]))
+        (if (> n maximum-suffering)
+            (begin
+              (call speaking-cell
+                    (format "<~a> you know what? I'm done."
+                            name))
+              'die)
+            (begin
+              (call speaking-cell
+                    (format "<~a> sigh number ~a"
+                            name n))
+              (values (void) (loop (add1 n)))))]))
     (loop 1))
   (define joe
     (actormap-spawn! am (malaise-sufferer "joe"
                                           joe-speaks-here)))
   (define jane
     (actormap-spawn! am (malaise-sufferer "jane"
-                                          jane-speaks-here)))
+                                          jane-speaks-here
+                                          2)))
   (actormap-poke! am ticker-registry 'register joe jane)
   (actormap-poke! am ticker-tick)
   (check-equal?
@@ -65,4 +80,20 @@
    "<joe> sigh number 2")
   (check-equal?
    (actormap-peek am jane-speaks-here)
-   "<jane> sigh number 2"))
+   "<jane> sigh number 2")
+
+  (actormap-poke! am ticker-tick)
+  (check-equal?
+   (actormap-peek am joe-speaks-here)
+   "<joe> sigh number 3")
+  (check-equal?
+   (actormap-peek am jane-speaks-here)
+   "<jane> you know what? I'm done.")
+
+  (actormap-poke! am ticker-tick)
+  (check-equal?
+   (actormap-peek am joe-speaks-here)
+   "<joe> you know what? I'm done.")
+  (check-equal?
+   (actormap-peek am jane-speaks-here)
+   "<jane> you know what? I'm done."))
