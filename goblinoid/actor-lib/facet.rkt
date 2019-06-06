@@ -6,9 +6,9 @@
          "../ref.rkt"
          "../actormap-turn.rkt")
 
-(provide make-facet make-facet*)
+(provide facet facet*)
 
-(define/contract (make-facet* wrap-me methods)
+(define/contract (facet* wrap-me methods)
   (-> ref? (set/c symbol?
                   #:cmp 'eq
                   #:kind 'immutable)
@@ -24,8 +24,8 @@
          [_ "Requires symbol-based method dispatch"]))))
   facet)
 
-(define (make-facet wrap-me . methods)
-  (make-facet* wrap-me (apply seteq methods)))
+(define (facet wrap-me . methods)
+  (facet* wrap-me (apply seteq methods)))
 
 (module+ test
   (require rackunit
@@ -44,9 +44,9 @@
                                    level)])))
   (define faceted-wizard
     (actormap-spawn! am
-                     (make-facet all-powerful-wizard
-                                 'magic-missile
-                                 'flame-tongue)))
+                     (facet all-powerful-wizard
+                            'magic-missile
+                            'flame-tongue)))
   (check-equal?
    (actormap-peek am faceted-wizard 'magic-missile 2)
    "Casts magic missile level 2!")
