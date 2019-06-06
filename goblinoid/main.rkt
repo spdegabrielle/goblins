@@ -10,6 +10,7 @@
          actormap-peek
          actormap-turn-message
          actormap-run
+         actormap-run*
          actormap-run!
          actormap-spawn
          actormap-spawn!
