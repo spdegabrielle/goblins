@@ -15,6 +15,8 @@
          actormap-spawn
          actormap-spawn!
 
+         next
+
          call spawn <-
 
          (struct-out message)

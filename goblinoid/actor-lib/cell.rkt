@@ -1,6 +1,7 @@
 #lang racket/base
 
-(provide make-cell)
+(provide make-cell
+         "../core.rkt")
 
 ;; A simple turn-mutable cell
 
@@ -11,8 +12,7 @@
      (next (make-cell new-val))]))
 
 (module+ test
-  (require rackunit
-           "../core.rkt")
+  (require rackunit)
   (define am (make-actormap))
   (define a-cell
     (actormap-spawn! am (make-cell)))

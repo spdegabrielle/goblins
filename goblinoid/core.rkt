@@ -411,15 +411,16 @@
 ;;; setting up next handler
 ;;; =======================
 
-(struct next (handler return-val))
+(struct next (handler return-val)
+  #:constructor-name _make-next)
 (define/contract (make-next handler [return-val (void)])
   (->* [(and/c procedure? (not/c ref?))]
        [(not/c next?)]
        any/c)
-  (next handler return-val))
+  (_make-next handler return-val))
 
 (module+ extra-next
-  (provide next next? next-handler return-val))
+  (provide next next? next-handler next-return-val))
 
 
 ;;; syscall external functions
@@ -539,8 +540,8 @@
   (define am (make-actormap))
 
   (define ((counter n))
-    (next (counter (add1 n))
-          n))
+    (make-next (counter (add1 n))
+               n))
 
   ;; can actors update themselves?
   (define ctr-ref
@@ -571,9 +572,9 @@
     (define ((a-friend [called-times 0]))
       (define new-called-times
         (add1 called-times))
-      (next (a-friend new-called-times)
-            (format "Hello!  My name is ~a and I've been called ~a times!"
-                    friend-name new-called-times)))
+      (make-next (a-friend new-called-times)
+                 (format "Hello!  My name is ~a and I've been called ~a times!"
+                         friend-name new-called-times)))
     (spawn (a-friend) 'friend))
   (define fr-spwn (actormap-spawn! am friend-spawner))
   (define joe (actormap-poke! am fr-spwn 'joe))
