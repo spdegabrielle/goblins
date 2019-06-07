@@ -1,7 +1,8 @@
 #lang racket/base
 
-(provide make-cell
-         "../core.rkt")
+(provide make-cell)
+
+(require "../core.rkt")
 
 ;; A simple turn-mutable cell
 
