@@ -16,32 +16,38 @@
 
 ;; TODO: this could be optimized a lot more
 
-(define-syntax do-method-defn
+(define-syntax method-defn-sym
   (syntax-rules ()
     [(_ [(method-name method-args ...) body ...])
-     (cons (quote method-name)
-           (lambda (method-args ...)
-             body ...))]
+     (quote method-name)]
     [(_ [(method-name method-args ... . rest) body ...])
-     (cons (quote method-name)
-           (lambda (method-args ... . rest)
-             body ...))]
+     (quote method-name)]
     [(_ [method-name proc])
-     (cons (quote method-name) proc)]))
+     (quote method-name)]))
+
+(define-syntax method-defn-proc
+  (syntax-rules ()
+    [(_ [(method-name method-args ...) body ...])
+     (lambda (method-args ...)
+       body ...)]
+    [(_ [(method-name method-args ... . rest) body ...])
+     (lambda (method-args ... . rest)
+       body ...)]
+    [(_ [method-name proc])
+     proc]))
 
 (define-syntax masyme
   (syntax-rules ()
     [(masyme method-defn ...)
-     (let ([methods
-            (make-hasheq
-             (list (do-method-defn method-defn) ...))])
-       (make-keyword-procedure
-        (lambda (kws kw-args method . args)
-          (define method-proc
-            (hash-ref methods method #f))
-          (unless method-proc
-            (error (format "No such method ~a" method)))
-          (keyword-apply method-proc kws kw-args args))))]))
+     (make-keyword-procedure
+      (lambda (kws kw-args method . args)
+        (define method-proc
+          (cond
+            [(eq? method (method-defn-sym method-defn))
+             (method-defn-proc method-defn)] ...
+            [else
+             (error (format "No such method ~a" method))]))
+        (keyword-apply method-proc kws kw-args args)))]))
 
 (define-syntax-rule (define-masyme id rest ...)
   (define id (masyme rest ...)))
