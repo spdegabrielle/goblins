@@ -12,10 +12,11 @@
   (define tick-queue
     (spawn (make-cell '())))
   (define (register-ticker . entries)
-    (tick-queue
-     (for/fold ([tickers (tick-queue)])
-               ([entry entries])
-       (cons entry tickers))))
+    (define next-tickers
+      (for/fold ([tickers (tick-queue)])
+                ([entry entries])
+        (cons entry tickers)))
+    (tick-queue next-tickers))
   (define ticker-tick
     (lambda ()
       (define next-queue
