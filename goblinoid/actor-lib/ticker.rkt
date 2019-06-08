@@ -30,7 +30,7 @@
 
 (module+ test
   (require rackunit
-           "symethods.rkt")
+           "masyme.rkt")
 
   (define am (make-actormap))
   (match-define (list register-ticker ticker-tick)
@@ -42,7 +42,7 @@
   (define (malaise-sufferer name speaking-cell
                             [maximum-suffering 3])
     (define (loop n)
-      (symethods
+      (masyme
        [(tick)
         (if (> n maximum-suffering)
             (begin

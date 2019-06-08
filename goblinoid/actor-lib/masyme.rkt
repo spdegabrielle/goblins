@@ -1,12 +1,18 @@
 #lang racket/base
 
-(provide symethods
-         define-symethods
-         spawn-symethods)
+(provide masyme
+         define-masyme
+         spawn-masyme)
 
 (require "../core.rkt")
 
 ;; Simple macro for method-based dispatching
+
+;;   masyme (Macro Symbol-based Method) like the venetian/italian
+;;   feminine plural word of masimo: masime. which means maximum,
+;;   greatest, largest etc.
+;;     - mickie / alejandro
+;;       https://mastodon.host/@alejandro/102227499241736689
 
 ;; TODO: this could be optimized a lot more
 
@@ -23,9 +29,9 @@
     [(_ [method-name proc])
      (cons (quote method-name) proc)]))
 
-(define-syntax symethods
+(define-syntax masyme
   (syntax-rules ()
-    [(symethods method-defn ...)
+    [(masyme method-defn ...)
      (let ([methods
             (make-hasheq
              (list (do-method-defn method-defn) ...))])
@@ -37,16 +43,16 @@
             (error (format "No such method ~a" method)))
           (keyword-apply method-proc kws kw-args args))))]))
 
-(define-syntax-rule (define-symethods id rest ...)
-  (define id (symethods rest ...)))
+(define-syntax-rule (define-masyme id rest ...)
+  (define id (masyme rest ...)))
 
-(define-syntax-rule (spawn-symethods rest ...)
-  (spawn (symethods rest ...)))
+(define-syntax-rule (spawn-masyme rest ...)
+  (spawn (masyme rest ...)))
 
 (module+ test
   (require rackunit
            racket/contract)
-  (define-symethods objekt
+  (define-masyme objekt
     [(beep)
      'beep-boop]
     [(hello name)
@@ -76,6 +82,6 @@
      (objekt 'nope)))
 
   (check-equal?
-   ((symethods [(foo . bar) bar])
+   ((masyme [(foo . bar) bar])
     'foo 'bar 'baz)
    '(bar baz)))
