@@ -20,7 +20,7 @@
     (lambda ()
       (define next-queue
         (foldr (lambda (tick-me next-queue)
-                 (match (tick-me 'tick)
+                 (match (tick-me)
                    ['die next-queue]
                    [_ (cons tick-me next-queue)]))
                '()
@@ -29,8 +29,7 @@
   (list (spawn register-ticker) (spawn ticker-tick)))
 
 (module+ test
-  (require rackunit
-           "masyme.rkt")
+  (require rackunit)
 
   (define am (make-actormap))
   (match-define (list register-ticker ticker-tick)
@@ -41,20 +40,18 @@
     (actormap-spawn! am (make-cell)))
   (define (malaise-sufferer name speaking-cell
                             [maximum-suffering 3])
-    (define (loop n)
-      (masyme
-       [(tick)
-        (if (> n maximum-suffering)
-            (begin
-              (speaking-cell
-               (format "<~a> you know what? I'm done."
-                       name))
-              'die)
-            (begin
-              (speaking-cell
-               (format "<~a> sigh number ~a"
-                       name n))
-              (next (loop (add1 n)))))]))
+    (define ((loop n))
+      (if (> n maximum-suffering)
+          (begin
+            (speaking-cell
+             (format "<~a> you know what? I'm done."
+                     name))
+            'die)
+          (begin
+            (speaking-cell
+             (format "<~a> sigh number ~a"
+                     name n))
+            (next (loop (add1 n))))))
     (loop 1))
   (define joe
     (actormap-spawn! am (malaise-sufferer "joe"
