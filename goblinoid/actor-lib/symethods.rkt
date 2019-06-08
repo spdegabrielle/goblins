@@ -8,6 +8,8 @@
 
 ;; Simple macro for method-based dispatching
 
+;; TODO: this could be optimized a lot more
+
 (define-syntax do-method-defn
   (syntax-rules ()
     [(_ [(method-name method-args ...) body ...])
