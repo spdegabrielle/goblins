@@ -11,25 +11,31 @@
 (provide spawn-ticker-pair)
 
 (define (spawn-ticker-pair)
-  (define tick-queue
+  (define new-ticked
     (spawn (make-cell '())))
-  (define (register-ticker . entries)
+  ;; This registers new ticked objects
+  (define (tick-register . entries)
+    (new-ticked (append entries (new-ticked))))
+  ;; This runs all ticked objects
+  (define ((make-ticker current-ticked))
+    ;; Update set of tickers with any that have been
+    ;; added since when we last ran
+    (define updated-ticked
+      (append (new-ticked) current-ticked))
+    ;; reset new-ticked
+    (new-ticked '())
+    ;; Now run all ticked objects
     (define next-tickers
-      (for/fold ([tickers (tick-queue)])
-                ([entry entries])
-        (cons entry tickers)))
-    (tick-queue next-tickers))
-  (define ticker-tick
-    (lambda ()
-      (define next-queue
-        (foldr (lambda (tick-me next-queue)
-                 (match (tick-me)
-                   ['die next-queue]
-                   [_ (cons tick-me next-queue)]))
-               '()
-               (tick-queue)))
-      (tick-queue next-queue)))
-  (list (spawn register-ticker) (spawn ticker-tick)))
+      (foldr (lambda (tick-me next-queue)
+               (match (tick-me)
+                 ['die next-queue]
+                 [_ (cons tick-me next-queue)]))
+             '()
+             updated-ticked))
+    ;; update ourself
+    (next (make-ticker next-tickers)))
+  (list (spawn tick-register)
+        (spawn (make-ticker '()))))
 
 (module+ test
   (require rackunit)
