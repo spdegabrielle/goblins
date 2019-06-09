@@ -115,7 +115,7 @@
     (define drift-it
       (random -1 2))
     (max -1 (min 1 (+ drift drift-it))))
-  (define raise-delay (random 5 15))
+  (define raise-delay (random 10 30))
   (define (lp x y time-till-raise drift)
     (define time-to-live
       (- bubble-lifetime y))
@@ -160,7 +160,7 @@
   (define bubble-canvas
     (raart:blank cauldron-width bubble-max-height))
   (define (new-bubble-cooldown)
-    (random 5 30))
+    (random 15 40))
   (thunk
    (let lp ([bubble-cooldown (new-bubble-cooldown)])
      (define bubble-time? (eqv? bubble-cooldown 0))
