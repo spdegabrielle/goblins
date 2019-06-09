@@ -8,6 +8,8 @@
          "cell.rkt"
          racket/match)
 
+(provide spawn-ticker-pair)
+
 (define (spawn-ticker-pair)
   (define tick-queue
     (spawn (make-cell '())))
