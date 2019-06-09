@@ -1,7 +1,9 @@
 #lang racket/base
 
 (provide make-cell
-         spawn-cell)
+         spawn-cell
+         cell->read-only
+         cell->write-only)
 
 (require "../core.rkt")
 
@@ -15,6 +17,12 @@
 
 (define (spawn-cell [val #f])
   (spawn (make-cell val)))
+
+(define (cell->read-only cell)
+  (spawn (lambda () (cell))))
+
+(define (cell->write-only cell)
+  (spawn (lambda (new-val) (cell new-val))))
 
 (module+ test
   (require rackunit)
