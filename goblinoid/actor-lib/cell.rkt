@@ -1,6 +1,7 @@
 #lang racket/base
 
-(provide make-cell)
+(provide make-cell
+         spawn-cell)
 
 (require "../core.rkt")
 
@@ -11,6 +12,9 @@
     [() val]
     [(new-val)
      (next (make-cell new-val))]))
+
+(define (spawn-cell [val #f])
+  (spawn (make-cell val)))
 
 (module+ test
   (require rackunit)
