@@ -5,7 +5,6 @@
          racket/match)
 
 (require goblinoid
-         goblinoid/actor-lib/cell
          goblinoid/actor-lib/env
          goblinoid/actor-lib/ticker)
 

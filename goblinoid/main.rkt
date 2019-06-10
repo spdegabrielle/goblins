@@ -21,7 +21,12 @@
 
          (struct-out message)
 
-         near-ref? far-ref?)
+         near-ref? far-ref?
+
+         make-cell
+         spawn-cell
+         cell->read-only
+         cell->write-only)
 
 (require "core.rkt"
          "message.rkt")

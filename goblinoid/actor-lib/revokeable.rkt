@@ -2,8 +2,7 @@
 
 (provide spawn-revokeable)
 
-(require "../core.rkt"
-         "cell.rkt")
+(require "../core.rkt")
 
 (define (spawn-revokeable target)
   (define revoked?
