@@ -183,3 +183,56 @@ It's a bit less interesting to show off to groups that don't have
 access to parameterization though.
 This is probably the "nicest to use" design, and more or less gets
 us the api we want to use with goblins.
+* promises, on, and <-
+
+ - Need to allow a message to specify a resolver
+ - <- then spawns promise and resolver, specifies that resolver
+   on the message it sends
+ - messages, upon being handled, will send messages to resolvers
+   finalizing them.
+
+how promises and resolvers work:
+ - there's a state
+ - there's a set of observers
+
+what does on do?
+ - It registers a new observer, but how?
+ - It seems like this is in conflict with (<- promise ...)
+   because both of them require sending a message to a promise
+   but they have different behavior:
+   - (<- promise ...) appears that it will capture all args and
+     keyword args, making message dispatch difficult.  And yet
+     message dispatch appears to be necessary if we want to
+     distinguish between (<- promise ...) and (on promise ...)
+     which both appear to need to send a message to the promise.
+   - one way to resolve this could be that on uses a miranda
+     method.
+ - It seems that =on= needs to be a syscaller method.
+ - It also seems likely that messages to promises need to be
+   treated specially.
+
+what does sending a message to a promise do?
+ - Sending a message to promise A should give us promise B,
+   which is waiting on the resolution of promise A.
+
+what about remote promises?
+ - seems to throw a wrench in the works because
+   (<- remote-promise-ref foo bar) should be able to *immediately*
+   also return another promise.
+ - =on= also requires local behavior for what involves a remote
+   action.
+
+what about caching promise results?
+ - it could be that the actormap needs to be updated so that
+   refs map to actor objects.
+ - (struct actor (handler miranda-handler))
+ - next can then accept not just a handler but a full actor object,
+   including the miranda-handler
+ - Promises get some extra miranda handlers:
+   - promise-state
+   - promise-resolution
+
+I should read the E docs...
+
+Ok, the E docs have a miranda method called whenMoreResolved
+which sounds like what we want to use for on.
