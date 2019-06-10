@@ -7,9 +7,17 @@
 
 ;; Refs
 (provide ref?
-         (struct-out near-ref)
-         (struct-out far-ref)
-         (struct-out remote-vat-ref))
+         make-near-ref
+         near-ref? far-ref? remote-vat-ref?
+         near-ref-debug-name near-ref-promise?
+         
+         far-ref?
+         make-far-ref
+         far-ref-remote-vat-ref
+         far-ref-promise?
+
+         remote-vat-ref?
+         make-remote-vat-ref)
 
 ;; The making-and-modifying actormap functions
 (provide make-actormap
@@ -88,8 +96,8 @@
 
 (struct ref ())
 
-(struct near-ref ref (debug-name)
-  #:constructor-name make-near-ref
+(struct near-ref ref (debug-name promise?)
+  #:constructor-name _make-near-ref
   #:methods gen:custom-write
   [(define (write-proc ref port mode)
      (define str-to-write
@@ -103,8 +111,15 @@
    (lambda (kws kw-args this . args)
      (keyword-apply call kws kw-args this args))))
 
-(struct far-ref ref (remote-vat-ref)
-  #:constructor-name make-far-ref)
+(define (make-near-ref [debug-name #f]
+                       #:promise? [promise? #f])
+  (_make-near-ref debug-name promise?))
+
+(struct far-ref ref (remote-vat-ref promise?)
+  #:constructor-name _make-far-ref)
+
+(define (make-far-ref remote-vat-ref [promise? #f])
+  (_make-far-ref promise?))
 
 ;; TODO: Do we add location hints here or somewhere else?
 ;;   Probably at the vat level and inter-vat level?
