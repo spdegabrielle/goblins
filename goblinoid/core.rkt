@@ -3,7 +3,8 @@
 ;;; Exports
 ;;; =======
 
-(require racket/contract)
+(require racket/contract
+         racket/set)
 
 ;; Refs
 (provide ref?
@@ -438,6 +439,18 @@
 
   (define closed? #f)
 
+  (define (actormap-symlink-ref ref-id)
+    (let lp ([ref-id ref-id]
+             [seen (seteq)])
+      (when (set-member? seen ref-id)
+        (error "Cycle in mactor symlinks"))
+      (match (actormappable-ref actormap ref-id #f)
+        [(? mactor:symlink? mactor)
+         (lp (mactor:symlink-link-to-ref mactor)
+             (set-add seen ref-id))]
+        [#f (error "no actor with this id")]
+        [mactor mactor])))
+
   (define this-syscaller
     (make-keyword-procedure
      (lambda (kws kw-args method-id . args)
@@ -456,13 +469,11 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
        (define mactor
-         (transactormap-ref actormap to-ref #f))
+         (actormap-symlink-ref to-ref))
        (unless (mactor:near? mactor)
          (error "Actor immediate calls can only happen against near-refs"))
        (define actor-handler
          (mactor:near-handler mactor))
-       (unless actor-handler
-         (error "Can't send message; no actor with this id"))
        (define result
          (keyword-apply actor-handler kws kw-args args))
        
