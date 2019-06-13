@@ -7,6 +7,11 @@
 
 ;; Refs
 (provide ref?
+         live-ref?
+         sturdy-ref?)
+
+#;(provide ref?
+
          make-near-ref
          near-ref? far-ref? remote-vat-ref?
          near-ref-debug-name near-ref-promise?
@@ -102,38 +107,103 @@
 ;;; Refs
 ;;; ====
 
-(struct ref ())
-
-(struct near-ref ref (debug-name promise?)
-  #:constructor-name _make-near-ref
-  #:methods gen:custom-write
-  [(define (write-proc ref port mode)
-     (define str-to-write
-       (match (near-ref-debug-name ref)
-         [#f "#<near-ref>"]
-         ;; TODO: Do we need to do escaping?
-         [debug-name (format "#<near-ref ~a>" debug-name)]))
-     (write-string str-to-write port))]
+(struct ref ()
   #:property prop:procedure
   (make-keyword-procedure
    (lambda (kws kw-args this . args)
      (keyword-apply call kws kw-args this args))))
 
-(define (make-near-ref [debug-name #f]
-                       #:promise? [promise? #f])
-  (_make-near-ref debug-name promise?))
+(struct live-ref ref (debug-name)
+  #:constructor-name _make-live-ref
+  #:methods gen:custom-write
+  [(define (write-proc ref port mode)
+     (define str-to-write
+       (match (live-ref-debug-name ref)
+         [#f "#<live-ref>"]
+         ;; TODO: Do we need to do escaping?
+         [debug-name (format "#<live-ref ~a>" debug-name)]))
+     (write-string str-to-write port))])
 
-(struct far-ref ref (remote-vat-ref promise?)
-  #:constructor-name _make-far-ref)
+(define (make-live-ref [debug-name #f])
+  (_make-live-ref debug-name))
 
-(define (make-far-ref remote-vat-ref [promise? #f])
-  (_make-far-ref promise?))
+(struct sturdy-ref ref (swiss-num vat-id conn-hints))
 
-;; TODO: Do we add location hints here or somewhere else?
-;;   Probably at the vat level and inter-vat level?
-;; NOTE: not derived from ref, maybe needs a new name?
-(struct remote-vat-ref ()
-  #:constructor-name make-remote-vat-ref)
+(struct vat-connid ()
+  #:constructor-name make-vat-connid)
+
+;;; Meta-actors and miranda methods
+;;; ===============================
+
+;; Most of these are the same as E's "miranda rights":
+;; http://www.erights.org/elang/blocks/miranda.html
+
+;; Here's the real challenge with these generics, specifically
+;; mactor-call and mactor-<-, though somewhat for the when-resolved
+;; and when-broken too.
+;; They'll be responding to the syscaller with one of several
+;; "instructions" about new state.
+;; How do we codify those instructions without too much new work?
+;; One way we could do it... pass in mini-syscallers:
+;;  - replace-self!
+;;  - queue-message!
+
+;; An alternate, but maybe less clean, route would be to have the
+;; syscaller itself do all the case analysis.
+
+(define-generics mactor
+  (mactor-call mactor)
+  (mactor-<- mactor)
+  (mactor-print mactor)
+  (mactor-when-resolved mactor)
+  (mactor-when-broken mactor)
+  #:fallbacks
+  [(define mactor-call
+     (make-keyword-procedure
+      (lambda _
+        (error "Only live-ref actors can be immediately called."))))
+   (define mactor-<-
+     (make-keyword-procedure
+      (lambda (kws kw-args mactor replace-self! queue-message! . args)
+        'TODO)))])
+
+;;; Mactors fall into two general categories:
+;;;  - eventual
+;;;  - resolved
+
+#;(struct mactor ())
+
+;;; Resolved things
+;; once a near ref, always a near ref.
+(struct mactor:near (handler)
+  #:methods gen:mactor
+  [])
+;; Once encased, always encased.
+;; TODO: Write "extract" procedure.
+;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
+;;   not a mactor is basically "encased"?  But having an official
+;;   mactor type gives us a clearer answer I guess.
+(struct mactor:encased (val)
+  #:methods gen:mactor
+  [])
+(struct mactor:far (vat-connid)
+  #:methods gen:mactor
+  [])
+(struct mactor:symlink (link-to-ref)
+  #:methods gen:mactor
+  [])
+;; Once broken, always broken.
+(struct mactor:broken (problem)
+  #:methods gen:mactor
+  [])
+
+;; Eventual things
+(struct mactor:near-promise (on-resolved on-broken)
+  #:methods gen:mactor
+  [])
+(struct mactor:far-promise (vat-connid)
+  #:methods gen:mactor
+  [])
 
 
 ;;; Actormaps and transactormaps
@@ -215,7 +285,7 @@
       dflt))
 
 (define/contract (transactormap-set! transactormap key val)
-  (-> transactormap? near-ref? any/c any/c)
+  (-> transactormap? live-ref? any/c any/c)
   (when (transactormap-merged? transactormap)
     (error "Can't use transactormap-set! on merged transactormap"))
   (hash-set! (transactormap-delta transactormap)
@@ -250,22 +320,22 @@
 
   ;; set up actormap base with beeper and booper
   (define actormap-base (make-actormap))
-  (define beeper-ref (make-near-ref 'beeper))
+  (define beeper-ref (make-live-ref 'beeper))
   (define (beeper-proc . args)
     'beep)
   (actormap-set! actormap-base beeper-ref beeper-proc)
-  (define booper-ref (make-near-ref 'booper))
+  (define booper-ref (make-live-ref 'booper))
   (define (booper-proc . args)
     'boop)
   (actormap-set! actormap-base booper-ref booper-proc)
-  (define blepper-ref (make-near-ref 'blepper))
+  (define blepper-ref (make-live-ref 'blepper))
   (define (blepper-proc . args)
     'blep)
   (actormap-set! actormap-base blepper-ref blepper-proc)
 
   (define tam1
     (make-transactormap actormap-base))
-  (define bipper-ref (make-near-ref 'bipper))
+  (define bipper-ref (make-live-ref 'bipper))
   (define (bipper-proc . args)
     'bippity)
   (transactormap-set! tam1 bipper-ref bipper-proc)
@@ -290,7 +360,7 @@
   (define tam2
     (make-transactormap tam1))
 
-  (define boppiter-ref (make-near-ref 'boppiter))
+  (define boppiter-ref (make-live-ref 'boppiter))
   (define (boppiter-proc . args)
     'boppitty)
   (transactormap-set! tam2 boppiter-ref boppiter-proc)
@@ -417,7 +487,7 @@
        (define new-message
          (message actor-ref kws kw-args args))
        (match actor-ref
-         [(? near-ref?)
+         [(? live-ref?)
           (set! to-local (cons new-message to-local))]
          [(? far-ref?)
           (set! to-remote (cons new-message to-remote))]))))
@@ -505,7 +575,7 @@
 
 (define (actormap-turn-message actormap message)
   (define to (message-to message))
-  (unless (near-ref? to)
+  (unless (live-ref? to)
     (error "Can only perform a turn on a message to local actors"))
   (actormap-turn* actormap to
                   (message-kws message)
@@ -544,7 +614,7 @@
 (define (actormap-spawn actormap actor-handler
                         [debug-name (object-name actor-handler)])
   (define actor-ref
-    (make-near-ref debug-name))
+    (make-live-ref debug-name))
   (define new-actormap
     (make-transactormap actormap))
   (transactormap-set! new-actormap actor-ref actor-handler)
@@ -553,7 +623,7 @@
 (define (actormap-spawn! actormap actor-handler
                          [debug-name (object-name actor-handler)])
   (define actor-ref
-    (make-near-ref debug-name))
+    (make-live-ref debug-name))
   (actormappable-set! actormap actor-ref actor-handler)
   actor-ref)
 
