@@ -236,3 +236,29 @@ I should read the E docs...
 
 Ok, the E docs have a miranda method called whenMoreResolved
 which sounds like what we want to use for on.
+
+OK ok I'm reading some more.  So we have two "primary" ref categories:
+ - near-ref (immediate calls OR eventual sends)
+ - eventual-ref (includes everything else, eventual sends only)
+
+Nope!  Instead, we have
+
+ - live-ref
+ - sturdy-ref
+
+And THOSE are the two ref categories.  However, the actormap should
+only care about life-refs!
+
+live-refs map to meta-actor types:
+ - mactor:near
+ - mactor:far
+ - mactor:near-promise
+ - mactor:far-promise
+ - mactor:symlink <- in case we have a promise resolve to some
+   existing object but we want to just rely on that object's value
+   Symlinks should also collapse where possible; if we observe somehow
+   that we've got a symlink to a symlink to an object, we should
+   simply remap to a symlink to an object.
+ - mactor:encased <- for non-actor values like integers, strings, etc
+
+to remove from encasing, we run (extract <encased-ref>)
