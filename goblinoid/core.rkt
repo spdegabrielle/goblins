@@ -455,9 +455,12 @@
   (define call
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
+       (define mactor
+         (transactormap-ref actormap to-ref #f))
+       (unless (mactor:near? mactor)
+         (error "Actor immediate calls can only happen against near-refs"))
        (define actor-handler
-         (mactor:near-handler
-          (transactormap-ref actormap to-ref #f)))
+         (mactor:near-handler mactor))
        (unless actor-handler
          (error "Can't send message; no actor with this id"))
        (define result
