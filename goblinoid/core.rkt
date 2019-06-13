@@ -456,7 +456,8 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
        (define actor-handler
-         (transactormap-ref actormap to-ref #f))
+         (mactor:near-handler
+          (transactormap-ref actormap to-ref #f)))
        (unless actor-handler
          (error "Can't send message; no actor with this id"))
        (define result
@@ -472,7 +473,8 @@
        ;; if a new handler for this actor was specified,
        ;; let's replace it
        (when new-handler
-         (transactormap-set! actormap to-ref new-handler))
+         (transactormap-set! actormap to-ref
+                             (mactor:near new-handler)))
 
        return-val)))
 
@@ -617,14 +619,16 @@
     (make-live-ref debug-name))
   (define new-actormap
     (make-transactormap actormap))
-  (transactormap-set! new-actormap actor-ref actor-handler)
+  (transactormap-set! new-actormap actor-ref
+                      (mactor:near actor-handler))
   (values actor-ref new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
                          [debug-name (object-name actor-handler)])
   (define actor-ref
     (make-live-ref debug-name))
-  (actormappable-set! actormap actor-ref actor-handler)
+  (actormappable-set! actormap actor-ref
+                      (mactor:near actor-handler))
   actor-ref)
 
 (module+ test
