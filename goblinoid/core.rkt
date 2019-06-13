@@ -260,7 +260,7 @@
   #:constructor-name _make-transactormap
   #:methods gen:actormappable
   [(define (actormappable-ref transactormap key [dflt #f])
-     (transactormap-ref key dflt))
+     (transactormap-ref transactormap key dflt))
    (define (actormappable-set! transactormap key val)
      (transactormap-set! transactormap key val))])
 
