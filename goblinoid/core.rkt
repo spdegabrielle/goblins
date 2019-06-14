@@ -52,6 +52,7 @@
 (provide actormap-turn
          actormap-poke!
          actormap-peek
+         actormap-extract
          actormap-turn-message
 
          actormap-run
@@ -413,9 +414,8 @@
 
 ;;; Syscaller internals
 ;;; ===================
-;;;
-;;; NEVER export these.
 
+;; NEVER export this.
 (define current-syscaller
   (make-parameter #f))
 
