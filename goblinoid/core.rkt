@@ -656,6 +656,12 @@
        (actormap-turn* actormap to-ref kws kw-args args))
      returned-val)))
 
+(define (actormap-extract actormap ref-id)
+  (match (actormap-ref actormap ref-id)
+    [(? mactor:encased? mactor)
+     (mactor:encased-val mactor)]
+    [mactor (error "Not an encased val" mactor)]))
+
 (define (actormap-turn-message actormap message)
   (define to (message-to message))
   (unless (live-ref? to)
@@ -894,6 +900,20 @@
    "Hi, I'm bobby!")
 
   ;; TODO: Tests for encased values
+  (match-define (list encase-me-promise encase-me-resolver)
+    (actormap-run! am spawn-promise-pair))
+  (actormap-poke! am encase-me-resolver 'fulfill 'encase-me)
+  (test-eq?
+   "actormap-extract on encased value"
+   (actormap-extract am encase-me-promise)
+   'encase-me)
+  (test-exn
+   "actormap-extract on non-encased value throws exception"
+   #rx"^Not an encased val"
+   (lambda ()
+     (actormap-extract am bob)))
+
   ;; TODO: Tests for propagation of resolutions
 
+  ;; TODO: Tests for promise contagion
   )
