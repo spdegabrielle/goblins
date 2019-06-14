@@ -462,8 +462,8 @@
            ['call call]
            ['spawn _spawn]
            ['spawn-mactor spawn-mactor]
-           ['promise-fulfill promise-fulfill]
-           ['promise-break promise-break]
+           ['fulfill-promise promise-fulfill]
+           ['break-promise promise-break]
            ['<- <-]
            [_ (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
@@ -847,7 +847,7 @@
 
 (define (spawn-promise-pair)
   (define-values (sealer unsealer tm?)
-    (make-sealer-triplet 'resolve-promise))
+    (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
@@ -857,17 +857,17 @@
   ;;  - throw an error
   ;;  - just return void regardless
   (define already-resolved
-    (const #f))
+    (lambda () #f))
   (define resolver
     (spawn
      (match-lambda*
-       [(list 'resolve val)
+       [(list 'fulfill val)
         (define sys (get-syscaller-or-die))
-        (sys 'promise-fulfill promise (sealer val))
+        (sys 'fulfill-promise promise (sealer val))
         (make-next already-resolved)]
        [(list 'break problem)
         (define sys (get-syscaller-or-die))
-        (sys 'promise-break promise (sealer problem))
+        (sys 'break-promise promise (sealer problem))
         (make-next already-resolved)])))
   (list promise resolver))
 
@@ -877,7 +877,7 @@
     (actormap-run! am spawn-promise-pair))
   (check-not-exn
    (lambda ()
-     (actormap-poke! am bob-resolver 'resolve bob)))
+     (actormap-poke! am bob-resolver 'fulfill bob)))
   (test-true
    "Promise resolves to symlink"
    (mactor:symlink? (actormap-ref am bob-promise)))
@@ -891,4 +891,9 @@
   (test-equal?
    "Resolved symlink can change original"
    (actormap-peek am bob)
-   "Hi, I'm bobby!"))
+   "Hi, I'm bobby!")
+
+  ;; TODO: Tests for encased values
+  ;; TODO: Tests for propagation of resolutions
+
+  )
