@@ -4,7 +4,8 @@
 ;;; =======
 
 (require racket/contract
-         racket/set)
+         racket/set
+         "utils/simple-sealers.rkt")
 
 ;; Refs
 (provide ref?
@@ -199,7 +200,7 @@
   [])
 
 ;; Eventual things
-(struct mactor:near-promise (on-resolved on-broken)
+(struct mactor:near-promise (listeners resolver-unsealer resolver-tm?)
   #:methods gen:mactor
   [])
 (struct mactor:far-promise (vat-connid)
@@ -460,6 +461,9 @@
          (match method-id
            ['call call]
            ['spawn _spawn]
+           ['spawn-mactor spawn-mactor]
+           ['promise-fulfill promise-fulfill]
+           ['promise-break promise-break]
            ['<- <-]
            [_ (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
@@ -496,6 +500,69 @@
   (define (_spawn actor-handler
                   [debug-name (object-name actor-handler)])
     (actormap-spawn! actormap actor-handler debug-name))
+
+  (define (spawn-mactor mactor [debug-name #f])
+    (actormap-spawn-mactor! actormap mactor debug-name))
+
+  (define (promise-fulfill promise-id sealed-val)
+    (match (actormappable-ref actormap promise-id #f)
+      [(? mactor:near-promise? promise-mactor)
+       (define resolver-tm?
+         (mactor:near-promise-resolver-tm? promise-mactor))
+       (define resolver-unsealer
+         (mactor:near-promise-resolver-unsealer promise-mactor))
+       ;; Is this a valid resolution?
+       (unless (resolver-tm? sealed-val)
+         (error "Resolution sealed with wrong trademark!"))
+       (define val
+         (resolver-unsealer sealed-val))
+
+       ;; Now we "become" that value!
+       (match val
+         ;; It's a reference now, so let's set up a symlink
+         [(? ref?)
+          ;; for efficiency, let's make it as direct of a symlink
+          ;; as possible
+          (define link-to
+            (let lp ([ref-id val]
+                     [seen (seteq)])
+              (when (set-member? seen ref-id)
+                (error "Cycle in mactor symlinks"))
+              (if (near-ref? ref-id)
+                  (match (actormappable-ref actormap ref-id)
+                    [(? mactor:symlink? mactor)
+                     (lp (mactor:symlink-link-to-ref mactor)
+                         (set-add seen ref-id))]
+                    [#f (error "no actor with this id")]
+                    ;; ok we found a non-symlink ref
+                    [_ ref-id])
+                  ref-id)))
+          (actormappable-set! actormap promise-id
+                              (mactor:symlink link-to))]
+         ;; Must be something else then.  Guess we'd better
+         ;; encase it.
+         [_ (actormappable-set! actormap promise-id
+                                (mactor:encased val))])
+
+       ;; Inform all listeners of the resolution
+       (for ([listener (mactor:near-promise-listeners promise-mactor)])
+         (<- listener 'fulfill val))]
+      [#f (error "no actor with this id")]
+      [_ (error "can only resolve a near-promise")]))
+
+  (define (promise-break promise-id problem)
+    (match (actormappable-ref actormap promise-id #f)
+      ;; TODO: Not just near-promise, anything that can
+      ;;   break
+      [(? mactor:near-promise? promise-mactor)
+       ;; Now we "become" broken with that problem
+       (actormappable-set! actormap promise-id
+                           (mactor:broken problem))
+       ;; Inform all listeners of the resolution
+       (for ([listener (mactor:near-promise-listeners promise-mactor)])
+         (<- listener 'break problem))]
+      [#f (error "no actor with this id")]
+      [_ (error "can only resolve a near-promise")]))
 
   (define <-
     (make-keyword-procedure
@@ -645,6 +712,12 @@
                       (mactor:near actor-handler))
   actor-ref)
 
+(define (actormap-spawn-mactor! actormap mactor [debug-name #f])
+  (define actor-ref
+    (make-live-ref debug-name))
+  (actormappable-set! actormap actor-ref mactor)
+  actor-ref)
+
 (module+ test
   (require rackunit
            racket/contract)
@@ -768,3 +841,47 @@
    "cell default values"
    (actormap-peek am (actormap-spawn! am (make-cell 'hello)))
    'hello))
+
+;;; Promises
+;;; ========
+
+(define (spawn-promise-pair)
+  (define-values (sealer unsealer tm?)
+    (make-sealer-triplet 'resolve-promise))
+  (define sys (get-syscaller-or-die))
+  (define promise
+    (sys 'spawn-mactor
+         (mactor:near-promise '() unsealer tm?)))
+  (define already-resolved
+    (lambda _
+      #f))
+  (define resolver
+    (spawn
+     (match-lambda*
+       [(list 'resolve val)
+        (define sys (get-syscaller-or-die))
+        (sys 'promise-fulfill promise (sealer val))
+        (make-next already-resolved #t)]
+       [(list 'break problem)
+        (define sys (get-syscaller-or-die))
+        (sys 'promise-break promise (sealer problem))
+        (make-next already-resolved #t)])))
+  (list promise resolver))
+
+(module+ test
+  (define bob (actormap-spawn! am (make-cell "Hi, I'm bob!")))
+  (match-define (list bob-promise bob-resolver)
+    (actormap-run! am spawn-promise-pair))
+  (actormap-poke! am bob-resolver 'resolve bob)
+  (test-true
+   "Promise resolves to symlink"
+   (mactor:symlink? (actormap-ref am bob-promise)))
+  (test-equal?
+   "Resolved symlink acts as what it resolves to"
+   (actormap-peek am bob-promise)
+   "Hi, I'm bob!")
+  (actormap-poke! am bob-promise "Hi, I'm bobby!")
+  (test-equal?
+   "Resolved symlink can change original"
+   (actormap-peek am bob)
+   "Hi, I'm bobby!"))
