@@ -450,7 +450,7 @@
          (lp (mactor:symlink-link-to-ref mactor)
              (set-add seen ref-id))]
         [#f (error "no actor with this id")]
-        [mactor mactor])))
+        [mactor (values ref-id mactor)])))
 
   (define this-syscaller
     (make-keyword-procedure
@@ -472,7 +472,7 @@
   (define call
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
-       (define mactor
+       (define-values (update-ref mactor)
          (actormap-symlink-ref to-ref))
        (unless (mactor:near? mactor)
          (error "Actor immediate calls can only happen against near-refs"))
@@ -491,7 +491,7 @@
        ;; if a new handler for this actor was specified,
        ;; let's replace it
        (when new-handler
-         (transactormap-set! actormap to-ref
+         (transactormap-set! actormap update-ref
                              (mactor:near new-handler)))
 
        return-val)))
@@ -852,27 +852,32 @@
   (define promise
     (sys 'spawn-mactor
          (mactor:near-promise '() unsealer tm?)))
+  ;; I guess the alternatives to responding with false on
+  ;; attempting to re-resolve are:
+  ;;  - throw an error
+  ;;  - just return void regardless
   (define already-resolved
-    (lambda _
-      #f))
+    (const #f))
   (define resolver
     (spawn
      (match-lambda*
        [(list 'resolve val)
         (define sys (get-syscaller-or-die))
         (sys 'promise-fulfill promise (sealer val))
-        (make-next already-resolved #t)]
+        (make-next already-resolved)]
        [(list 'break problem)
         (define sys (get-syscaller-or-die))
         (sys 'promise-break promise (sealer problem))
-        (make-next already-resolved #t)])))
+        (make-next already-resolved)])))
   (list promise resolver))
 
 (module+ test
   (define bob (actormap-spawn! am (make-cell "Hi, I'm bob!")))
   (match-define (list bob-promise bob-resolver)
     (actormap-run! am spawn-promise-pair))
-  (actormap-poke! am bob-resolver 'resolve bob)
+  (check-not-exn
+   (lambda ()
+     (actormap-poke! am bob-resolver 'resolve bob)))
   (test-true
    "Promise resolves to symlink"
    (mactor:symlink? (actormap-ref am bob-promise)))
@@ -880,7 +885,9 @@
    "Resolved symlink acts as what it resolves to"
    (actormap-peek am bob-promise)
    "Hi, I'm bob!")
-  (actormap-poke! am bob-promise "Hi, I'm bobby!")
+  (check-not-exn
+   (lambda ()
+     (actormap-poke! am bob-promise "Hi, I'm bobby!")))
   (test-equal?
    "Resolved symlink can change original"
    (actormap-peek am bob)
