@@ -415,7 +415,7 @@
 ;;; Syscaller internals
 ;;; ===================
 
-;; NEVER export this.
+;; NEVER export this.  That would break our security paradigm.
 (define current-syscaller
   (make-parameter #f))
 
