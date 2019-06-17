@@ -8,6 +8,7 @@
          "utils/simple-sealers.rkt")
 
 ;; Refs
+;; TODO: We might want to rename these to ids
 (provide ref?
          live-ref?
          sturdy-ref?)
@@ -83,8 +84,15 @@
            (->* [(and/c procedure?
                         (not/c ref?))]
                 [(or/c #f symbol? string?)]
-               any/c)])
-         <-)
+                any/c)]
+          #;[on
+             (->* [near-ref?]
+                  [(or/c #f procedure?)
+                   #:catch (or/c #f procedure?)
+                   #:finally (or/c #f procedure?)
+                   #:promise? boolean?]
+                  any/c)])
+         on <-)
 
 ;; Cells
 
@@ -465,6 +473,8 @@
            ['fulfill-promise promise-fulfill]
            ['break-promise promise-break]
            ['<- <-]
+           ['<-p <-p]
+           ['on _on]
            [_ (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
 
@@ -575,6 +585,67 @@
          [(? far-ref?)
           (set! to-remote (cons new-message to-remote))]))))
 
+  (define <-p
+    'TODO)
+
+  (define (_on id-ref [on-fulfilled #f]
+               #:catch [on-broken #f]
+               #:finally [on-finally #f]
+               ; #:return-promise? [return-promise? #f]
+               )
+    (unless (near-ref? id-ref)
+      (error "on only works for near-refs"))
+    (define-values (subscribe-ref mactor)
+      (actormap-symlink-ref id-ref))
+    (define (call-on-fulfilled val)
+      (when on-fulfilled
+        (<- (_spawn
+             (lambda ()
+               ;; TODO: Here's what we need to hook up the value
+               ;; of the promise up to.  Seems like the right place
+               ;; but seems unclear how to do it.
+               ;; Do we need to use <-p here?
+               (on-fulfilled val))
+             'on-fulfilled))))
+    (define (call-on-broken problem)
+      (when on-broken
+        (<- (_spawn on-broken 'on-broken)
+            problem)))
+    (define (call-on-finally)
+      (when on-finally
+        (<- (_spawn on-finally 'on-finally))))
+    (match mactor
+      [(mactor:near-promise listeners r-unsealer r-tm?)
+       (define on-listener
+         (_spawn
+          (match-lambda*
+            [(list 'fulfill val)
+             (call-on-fulfilled val)
+             (call-on-finally)]
+            [(list 'break problem)
+             (call-on-broken problem)
+             (call-on-finally)])))
+       (define new-listeners
+         (cons on-listener listeners))
+       (actormappable-set! actormap id-ref
+                           (mactor:near-promise new-listeners
+                                                r-unsealer r-tm?))
+       ;; TODO: return the promise here
+       (void)]
+      [(? mactor:broken? mactor)
+       (call-on-broken (mactor:broken-problem mactor))
+       (call-on-finally)]
+      [(? mactor:encased? mactor)
+       (call-on-fulfilled (mactor:encased-val mactor))
+       (call-on-finally)]
+      [(? mactor:far? mactor)
+       (call-on-fulfilled subscribe-ref)
+       (call-on-finally)]
+      ;; This involves invoking a vat-level method of the remote
+      ;; machine, right?
+      [(? mactor:far-promise? mactor)
+       'TODO]))
+
   (define (get-internals)
     (list actormap to-local to-remote))
 
@@ -618,6 +689,18 @@
                [debug-name (object-name actor-handler)])
   (define sys (get-syscaller-or-die))
   (sys 'spawn actor-handler debug-name))
+
+(define (on id-ref [on-fulfilled #f]
+            #:catch [on-broken #f]
+            #:finally [on-finally #f]
+            ;#:return-promise? [return-promise? #f]
+            )
+  (define sys (get-syscaller-or-die))
+  (sys 'on id-ref on-fulfilled
+       #:catch on-broken
+       #:finally on-finally
+       ;#:return-promise? return-promise?
+       ))
 
 
 ;;; actormap turning and utils
@@ -676,17 +759,17 @@
 
 ;; non-committal version of actormap-run
 (define (actormap-run actormap thunk)
-  (define-values (returned-val new-actormap2)
+  (define-values (returned-val _am _tl _tr)
     (actormap-run* actormap thunk))
   returned-val)
 
-;; like actormap-run but also returns the new actormap
+;; like actormap-run but also returns the new actormap, to-local, to-remote
 (define (actormap-run* actormap thunk)
   (define-values (actor-ref new-actormap)
     (actormap-spawn actormap thunk))
-  (define-values (returned-val new-actormap2 _tl _tr)
+  (define-values (returned-val new-actormap2 to-local to-remote)
     (actormap-turn* new-actormap actor-ref '() '() '()))
-  (values returned-val new-actormap2))
+  (values returned-val new-actormap2 to-local to-remote))
 
 ;; committal version
 ;; Run, and also commit the results of, the code in the thunk
@@ -694,6 +777,37 @@
   (define actor-ref
     (actormap-spawn! actormap thunk))
   (actormap-poke! actormap actor-ref))
+
+
+;; Returns a new tree of local messages
+;; TODO: Note this pretty much throws out remote messages, for better or
+;; almost certainly for worse.
+;; (-> actormappable? (treeof message?)
+;;     (values actormap (treeof message?) (treeof message?)))
+(define (actormap-churn actormap messages)
+  (match messages
+    [(? message? message)
+     (define-values (_val new-am to-local to-remote)
+       (actormap-turn-message actormap messages))
+     (values new-am to-local to-remote)]
+    ['()
+     (values actormap '() '())]
+    [(? pair? message-list)
+     (for/fold ([actormap actormap]
+                [to-local '()]
+                [to-remote '()])
+               ([msg messages])
+       (define-values (new-actormap new-to-local new-to-remote)
+         (actormap-churn actormap msg))
+       (values actormap
+               (cons new-to-local to-local)
+               (cons new-to-remote to-remote)))]))
+
+;; Start up an actormap and run until no more messages are left.
+;; Not really used in combination with hives.
+(define (actormap-full-run! actormap)
+  #;(let lp ([next-messages '()]))
+  'TODO)
 
 
 ;; Spawning
@@ -879,33 +993,33 @@
 
 (module+ test
   (define bob (actormap-spawn! am (make-cell "Hi, I'm bob!")))
-  (match-define (list bob-promise bob-resolver)
+  (match-define (list bob-vow bob-resolver)
     (actormap-run! am spawn-promise-pair))
   (check-not-exn
    (lambda ()
      (actormap-poke! am bob-resolver 'fulfill bob)))
   (test-true
    "Promise resolves to symlink"
-   (mactor:symlink? (actormap-ref am bob-promise)))
+   (mactor:symlink? (actormap-ref am bob-vow)))
   (test-equal?
    "Resolved symlink acts as what it resolves to"
-   (actormap-peek am bob-promise)
+   (actormap-peek am bob-vow)
    "Hi, I'm bob!")
   (check-not-exn
    (lambda ()
-     (actormap-poke! am bob-promise "Hi, I'm bobby!")))
+     (actormap-poke! am bob-vow "Hi, I'm bobby!")))
   (test-equal?
    "Resolved symlink can change original"
    (actormap-peek am bob)
    "Hi, I'm bobby!")
 
   ;; TODO: Tests for encased values
-  (match-define (list encase-me-promise encase-me-resolver)
+  (match-define (list encase-me-vow encase-me-resolver)
     (actormap-run! am spawn-promise-pair))
   (actormap-poke! am encase-me-resolver 'fulfill 'encase-me)
   (test-eq?
    "actormap-extract on encased value"
-   (actormap-extract am encase-me-promise)
+   (actormap-extract am encase-me-vow)
    'encase-me)
   (test-exn
    "actormap-extract on non-encased value throws exception"
