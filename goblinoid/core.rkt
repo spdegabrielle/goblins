@@ -467,19 +467,19 @@
          (error "Sorry, this syscaller is closed for business!"))
        (define method
          (match method-id
-           ['call call]
+           ['call _call]
            ['spawn _spawn]
            ['spawn-mactor spawn-mactor]
            ['fulfill-promise promise-fulfill]
            ['break-promise promise-break]
-           ['<- <-]
-           ['<-p <-p]
+           ['<- _<-]
+           ['<-p _<-p]
            ['on _on]
            [_ (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
 
   ;; call actor's handler
-  (define call
+  (define _call
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
        (define-values (update-ref mactor)
@@ -538,15 +538,14 @@
                      [seen (seteq)])
               (when (set-member? seen ref-id)
                 (error "Cycle in mactor symlinks"))
-              (if (near-ref? ref-id)
-                  (match (actormappable-ref actormap ref-id)
-                    [(? mactor:symlink? mactor)
-                     (lp (mactor:symlink-link-to-ref mactor)
-                         (set-add seen ref-id))]
-                    [#f (error "no actor with this id")]
-                    ;; ok we found a non-symlink ref
-                    [_ ref-id])
-                  ref-id)))
+              ;; TODO: deal with far refs
+              (match (actormappable-ref actormap ref-id)
+                [(? mactor:symlink? mactor)
+                 (lp (mactor:symlink-link-to-ref mactor)
+                     (set-add seen ref-id))]
+                [#f (error "no actor with this id")]
+                ;; ok we found a non-symlink ref
+                [_ ref-id])))
           (actormappable-set! actormap promise-id
                               (mactor:symlink link-to))]
          ;; Must be something else then.  Guess we'd better
@@ -574,7 +573,7 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a near-promise")]))
 
-  (define <-
+  (define _<-
     (make-keyword-procedure
      (lambda (kws kw-args actor-ref . args)
        (define new-message
@@ -585,7 +584,7 @@
          [(? far-ref?)
           (set! to-remote (cons new-message to-remote))]))))
 
-  (define <-p
+  (define _<-p
     'TODO)
 
   (define (_on id-ref [on-fulfilled #f]
@@ -593,13 +592,13 @@
                #:finally [on-finally #f]
                ; #:return-promise? [return-promise? #f]
                )
-    (unless (near-ref? id-ref)
-      (error "on only works for near-refs"))
+    #;(unless (near? id-ref)
+      (error "on only works for near objects"))
     (define-values (subscribe-ref mactor)
       (actormap-symlink-ref id-ref))
     (define (call-on-fulfilled val)
       (when on-fulfilled
-        (<- (_spawn
+        (<- (spawn
              (lambda ()
                ;; TODO: Here's what we need to hook up the value
                ;; of the promise up to.  Seems like the right place
@@ -609,14 +608,17 @@
              'on-fulfilled))))
     (define (call-on-broken problem)
       (when on-broken
-        (<- (_spawn on-broken 'on-broken)
+        (<- (spawn on-broken 'on-broken)
             problem)))
     (define (call-on-finally)
       (when on-finally
-        (<- (_spawn on-finally 'on-finally))))
+        (<- (spawn on-finally 'on-finally))))
     (match mactor
       [(mactor:near-promise listeners r-unsealer r-tm?)
        (define on-listener
+         ;; using _spawn here saves a very minor round
+         ;; trip which we can't do in the on-fulfilled
+         ;; ones because they'll be in a new syscaller
          (_spawn
           (match-lambda*
             [(list 'fulfill val)
@@ -805,8 +807,7 @@
 
 ;; Start up an actormap and run until no more messages are left.
 ;; Not really used in combination with hives.
-(define (actormap-full-run! actormap)
-  #;(let lp ([next-messages '()]))
+(define (actormap-full-run! actormap thunk)
   'TODO)
 
 
@@ -936,7 +937,7 @@
      (make-next (make-cell new-val))]))
 
 (define (spawn-cell [val #f])
-  (spawn (make-cell val)))
+  (spawn (make-cell val) 'cell))
 
 (define (cell->read-only cell)
   (spawn (lambda () (cell))))
@@ -1028,6 +1029,7 @@
      (actormap-extract am bob)))
 
   ;; TODO: Tests for propagation of resolutions
+  
 
   ;; TODO: Tests for promise contagion
   )
