@@ -559,11 +559,20 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a near-promise")]))
 
-  (define (promise-break promise-id problem)
+  (define (promise-break promise-id sealed-problem)
     (match (actormappable-ref actormap promise-id #f)
       ;; TODO: Not just near-promise, anything that can
       ;;   break
       [(? mactor:near-promise? promise-mactor)
+       (define resolver-tm?
+         (mactor:near-promise-resolver-tm? promise-mactor))
+       (define resolver-unsealer
+         (mactor:near-promise-resolver-unsealer promise-mactor))
+       ;; Is this a valid resolution?
+       (unless (resolver-tm? sealed-problem)
+         (error "Resolution sealed with wrong trademark!"))
+       (define problem
+         (resolver-unsealer sealed-problem))
        ;; Now we "become" broken with that problem
        (actormappable-set! actormap promise-id
                            (mactor:broken problem))
