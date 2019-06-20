@@ -796,6 +796,11 @@
 ;; (-> actormappable? (treeof message?)
 ;;     (values actormap (treeof message?) (treeof message?)))
 (define (actormap-churn actormap messages)
+  (define (cons-if-non-empty a d)
+    (cond
+      [(null? a) d]
+      [(null? d) a]
+      [else (cons a d)]))
   (match messages
     [(? message? message)
      (define-values (_val new-am to-local to-remote)
@@ -807,17 +812,29 @@
      (for/fold ([actormap actormap]
                 [to-local '()]
                 [to-remote '()])
-               ([msg messages])
+               ([msg (reverse messages)])
        (define-values (new-actormap new-to-local new-to-remote)
          (actormap-churn actormap msg))
-       (values actormap
-               (cons new-to-local to-local)
-               (cons new-to-remote to-remote)))]))
+       (values new-actormap
+               (cons-if-non-empty new-to-local to-local)
+               (cons-if-non-empty new-to-remote to-remote)))]))
 
 ;; Start up an actormap and run until no more messages are left.
-;; Not really used in combination with hives.
+;; Not really used in combination with hives; this is mainly
+;; to make some simpler patterns easier to test.
 (define (actormap-full-run! actormap thunk)
-  'TODO)
+  (define-values (_val new-am to-local to-remote)
+    (actormap-run* actormap thunk))
+  (transactormap-merge! new-am)
+  (let lp ([messages to-local])
+    (define-values (new-am to-local to-remote)
+      (actormap-churn actormap messages))
+    (when (transactormap? new-am)
+      (transactormap-merge! new-am))
+    (if (null? to-local)
+        (void)
+        (lp to-local)))
+  _val)
 
 
 ;; Spawning
