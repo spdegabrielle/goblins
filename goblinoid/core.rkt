@@ -491,6 +491,9 @@
        (define result
          (keyword-apply actor-handler kws kw-args args))
        
+       ;; I guess watching for this guarantees that an immediate call
+       ;; against a local actor will not be tail recursive.
+       ;; TODO: We need to document that.
        (define-values (return-val new-handler)
          (match result
            [(? next?)
@@ -605,23 +608,28 @@
       (error "on only works for near objects"))
     (define-values (subscribe-ref mactor)
       (actormap-symlink-ref id-ref))
+    ;; Alternate design for these (and the first I implemented) is to
+    ;; actually spawn on-finally and on-fulfilled actors and call
+    ;; them.  That might be better if we did add coroutines.
+    ;; More on this issue and dynamic-wind:
+    ;; https://groups.google.com/d/msg/racket-users/-NHDOdo6DAk/4NcTa89sIpMJ
     (define (call-on-fulfilled val)
-      (when on-fulfilled
-        (<- (spawn
-             (lambda ()
-               ;; TODO: Here's what we need to hook up the value
-               ;; of the promise up to.  Seems like the right place
-               ;; but seems unclear how to do it.
-               ;; Do we need to use <-p here?
-               (on-fulfilled val))
-             'on-fulfilled))))
+      (dynamic-wind
+        (lambda () #f)
+        (lambda ()
+          (when on-fulfilled
+            (on-fulfilled val)))
+        call-on-finally))
     (define (call-on-broken problem)
-      (when on-broken
-        (<- (spawn on-broken 'on-broken)
-            problem)))
+      (dynamic-wind
+        (lambda () #f)
+        (lambda ()
+          (when on-broken
+            (on-broken problem)))
+        call-on-finally))
     (define (call-on-finally)
       (when on-finally
-        (<- (spawn on-finally 'on-finally))))
+        (on-finally)))
     (match mactor
       [(mactor:near-promise listeners r-unsealer r-tm?)
        (define on-listener
@@ -631,11 +639,9 @@
          (_spawn
           (match-lambda*
             [(list 'fulfill val)
-             (call-on-fulfilled val)
-             (call-on-finally)]
+             (call-on-fulfilled val)]
             [(list 'break problem)
-             (call-on-broken problem)
-             (call-on-finally)])))
+             (call-on-broken problem)])))
        (define new-listeners
          (cons on-listener listeners))
        (actormappable-set! actormap id-ref
