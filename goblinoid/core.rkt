@@ -822,6 +822,8 @@
 ;; Start up an actormap and run until no more messages are left.
 ;; Not really used in combination with hives; this is mainly
 ;; to make some simpler patterns easier to test.
+;; TODO: Can we generalize/parameterize this in such a way that
+;; vats and other designs can be built on top of it?
 (define (actormap-full-run! actormap thunk)
   (define-values (_val new-am to-local to-remote)
     (actormap-run* actormap thunk))
@@ -1054,8 +1056,45 @@
    (lambda ()
      (actormap-extract am bob)))
 
-  ;; TODO: Tests for propagation of resolutions
-  
+  ;; Tests for propagation of resolutions
+  (define (try-out-on actormap . resolve-args)
+    ;; Run on against a promise, store the results
+    ;; in the following cells
+    (define resolved-cells
+      (actormap-full-run!
+       actormap
+       (lambda ()
+         (define fulfilled-cell (spawn-cell #f))
+         (define broken-cell (spawn-cell #f))
+         (define finally-cell (spawn-cell #f))
+         (match-define (list a-vow a-resolver)
+           (spawn-promise-pair))
+         (on a-vow
+             (lambda args
+               (fulfilled-cell args))
+             #:catch
+             (lambda args
+               (broken-cell args))
+             #:finally
+             (lambda ()
+               (finally-cell #t)))
+         (apply <- a-resolver resolve-args)
+         (list fulfilled-cell broken-cell finally-cell))))
+    (map (lambda (cell)
+           (actormap-peek actormap cell))
+         resolved-cells))
+
+  (test-equal?
+   "Fulfilling a promise with on"
+   (try-out-on am 'fulfill 'how-fulfilling)
+   '((how-fulfilling) #f #t))
+
+  (test-equal?
+   "Breaking a promise with on"
+   (try-out-on am 'break 'i-am-broken)
+   '(#f (i-am-broken) #t))
 
   ;; TODO: Tests for promise contagion
+  ;; TODO: Hm, does promise contagion require something like
+  ;;   a vat?
   )
