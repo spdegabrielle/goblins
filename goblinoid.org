@@ -262,3 +262,43 @@ live-refs map to meta-actor types:
  - mactor:encased <- for non-actor values like integers, strings, etc
 
 to remove from encasing, we run (extract <encased-ref>)
+
+So, now we could theoretically set up promises.
+Attaching listeners: not so hard.
+
+The problem: the resolver!  How do we resolve it?
+
+Different ways to solve it:
+ - Have the promise and resolver both be facades for the "real"
+   promise object, which has the following methods:
+    - get-state
+    - fulfill
+    - smash
+    - on-fulfilled
+    - on-broken
+
+   Advantage: it's easy
+   Disadvantage: an extra object and indirection
+
+ - Have both the state, and fulfill and break observers/listeners
+   be their own separate cells.
+
+ - Have the resolver get a special sealer and the promise get an
+   associated unsealer (and brand).
+   Only an object sealed by that sealer will correctly be "opened"
+   by the promise, kicking off the appropriate fulfill/smash action.
+   Actually I like this quite a bit...
+   Keep in mind that there's no need for a "handler"; only mactor:near
+   needs a handler, so this is clean to implement.
+   Instead, there can be a "miranda method" just for near promises
+   which is this kind of resolver.
+
+Okay I like this last one.  Also, I think that resolvers should work
+the same way as all other observers.  We don't need separate observers
+for fulfilled / broken; we just have one that can accept *either*
+'resolve/'smash as methods.  The nice thing then is that for an "on"
+statement, we don't need two separate listeners, we just need one that
+can respond to either potential method.
+
+So we can make a new special miranda method:
+ - resolve
