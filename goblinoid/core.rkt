@@ -146,75 +146,35 @@
 ;;; Meta-actors and miranda methods
 ;;; ===============================
 
-;; Most of these are the same as E's "miranda rights":
+;; We need these to have different behavior, equivalent to E's
+;; "miranda rights":
 ;; http://www.erights.org/elang/blocks/miranda.html
-
-;; Here's the real challenge with these generics, specifically
-;; mactor-call and mactor-<-, though somewhat for the when-resolved
-;; and when-broken too.
-;; They'll be responding to the syscaller with one of several
-;; "instructions" about new state.
-;; How do we codify those instructions without too much new work?
-;; One way we could do it... pass in mini-syscallers:
-;;  - replace-self!
-;;  - queue-message!
-
-;; An alternate, but maybe less clean, route would be to have the
-;; syscaller itself do all the case analysis.
-
-(define-generics mactor
-  (mactor-call mactor)
-  (mactor-<- mactor)
-  (mactor-print mactor)
-  (mactor-when-resolved mactor)
-  (mactor-when-broken mactor)
-  #:fallbacks
-  [(define mactor-call
-     (make-keyword-procedure
-      (lambda _
-        (error "Only live-ref actors can be immediately called."))))
-   (define mactor-<-
-     (make-keyword-procedure
-      (lambda (kws kw-args mactor replace-self! queue-message! . args)
-        'TODO)))])
+;;
+;; However we haven't implemented all that functionality *quite* yet.
 
 ;;; Mactors fall into two general categories:
 ;;;  - eventual
 ;;;  - resolved
 
-#;(struct mactor ())
+(struct mactor ())
 
 ;;; Resolved things
 ;; once a near ref, always a near ref.
-(struct mactor:near (handler)
-  #:methods gen:mactor
-  [])
+(struct mactor:near mactor (handler))
 ;; Once encased, always encased.
 ;; TODO: Write "extract" procedure.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
 ;;   not a mactor is basically "encased"?  But having an official
 ;;   mactor type gives us a clearer answer I guess.
-(struct mactor:encased (val)
-  #:methods gen:mactor
-  [])
-(struct mactor:far (vat-connid)
-  #:methods gen:mactor
-  [])
-(struct mactor:symlink (link-to-ref)
-  #:methods gen:mactor
-  [])
+(struct mactor:encased mactor (val))
+(struct mactor:far mactor (vat-connid))
+(struct mactor:symlink mactor (link-to-ref))
 ;; Once broken, always broken.
-(struct mactor:broken (problem)
-  #:methods gen:mactor
-  [])
+(struct mactor:broken mactor (problem))
 
 ;; Eventual things
-(struct mactor:near-promise (listeners resolver-unsealer resolver-tm?)
-  #:methods gen:mactor
-  [])
-(struct mactor:far-promise (vat-connid)
-  #:methods gen:mactor
-  [])
+(struct mactor:near-promise mactor (listeners resolver-unsealer resolver-tm?))
+(struct mactor:far-promise mactor (vat-connid))
 
 
 ;;; Actormaps and transactormaps
@@ -1099,6 +1059,9 @@
    "Breaking a promise with on"
    (try-out-on am 'break 'i-am-broken)
    '(#f (i-am-broken) #t))
+
+  ;; Calling `on' on a promise that has resolved
+  
 
   ;; TODO: Tests for promise contagion
   ;; TODO: Hm, does promise contagion require something like
