@@ -92,7 +92,8 @@
                    #:finally (or/c #f procedure?)
                    #:promise? boolean?]
                   any/c)])
-         on <- <-p)
+         on <- <-p
+         extract)
 
 ;; Cells
 
