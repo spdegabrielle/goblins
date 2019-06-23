@@ -1198,8 +1198,4 @@
      "basic promise contagion"
      (car what-i-got)
      'oh-no))
-
-  ;; TODO: Tests for promise contagion
-  ;; TODO: Hm, does promise contagion require something like
-  ;;   a vat?
   )
