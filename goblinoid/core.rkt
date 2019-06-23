@@ -625,7 +625,7 @@
       [(? mactor:encased? mactor)
        (call-on-fulfilled (mactor:encased-val mactor))
        (call-on-finally)]
-      [(? mactor:far? mactor)
+      [(? (or/c mactor:far? mactor:near?) mactor)
        (call-on-fulfilled subscribe-ref)
        (call-on-finally)]
       ;; This involves invoking a vat-level method of the remote
