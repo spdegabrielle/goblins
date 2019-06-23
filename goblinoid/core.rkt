@@ -92,7 +92,7 @@
                    #:finally (or/c #f procedure?)
                    #:promise? boolean?]
                   any/c)])
-         on <-)
+         on <- <-p)
 
 ;; Cells
 
@@ -545,19 +545,29 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a near-promise")]))
 
+  ;; helper to the next two methods
+  (define (_send-message kws kw-args actor-ref resolve-me args)
+    (define new-message
+      (message actor-ref resolve-me kws kw-args args))
+    (match actor-ref
+      [(? live-ref?)
+       (set! to-local (cons new-message to-local))]
+      [(? far-ref?)
+       (set! to-remote (cons new-message to-remote))]))
+
   (define _<-
     (make-keyword-procedure
      (lambda (kws kw-args actor-ref . args)
-       (define new-message
-         (message actor-ref kws kw-args args))
-       (match actor-ref
-         [(? live-ref?)
-          (set! to-local (cons new-message to-local))]
-         [(? far-ref?)
-          (set! to-remote (cons new-message to-remote))]))))
+       (_send-message kws kw-args actor-ref #f args)
+       (void))))
 
   (define _<-p
-    'TODO)
+    (make-keyword-procedure
+     (lambda (kws kw-args actor-ref . args)
+       (match-define (list promise resolver)
+         (spawn-promise-pair))
+       (_send-message kws kw-args actor-ref resolver args)
+       promise)))
 
   (define (_on id-ref [on-fulfilled #f]
                #:catch [on-broken #f]
@@ -656,6 +666,12 @@
      (define sys (get-syscaller-or-die))
      (keyword-apply sys kws kw-args '<- to-ref args))))
 
+(define <-p
+  (make-keyword-procedure
+   (lambda (kws kw-args to-ref . args)
+     (define sys (get-syscaller-or-die))
+     (keyword-apply sys kws kw-args '<-p to-ref args))))
+
 (define call
   (make-keyword-procedure
    (lambda (kws kw-args to-ref . args)
@@ -690,7 +706,7 @@
      (define result-val
        (keyword-apply sys kws kw-args 'call to-ref args))
      (apply values result-val
-            (get-sys-internals)))))
+            (get-sys-internals)))))  ; actormap to-local to-remote
 
 (define actormap-turn
   (make-keyword-procedure
@@ -722,14 +738,49 @@
      (mactor:encased-val mactor)]
     [mactor (error "Not an encased val" mactor)]))
 
-(define (actormap-turn-message actormap message)
-  (define to (message-to message))
-  (unless (live-ref? to)
-    (error "Can only perform a turn on a message to local actors"))
-  (actormap-turn* actormap to
-                  (message-kws message)
-                  (message-kw-vals message)
-                  (message-args message)))
+;; TODO: We might want to return one of the following:
+;;   (values ('call-success val) ('resolve-success val)
+;;           actormap to-local to-remote)
+;;   (values ('call-fail problem) ('resolve-fail problem)
+;;           actormap to-local to-remote)
+;;   (values ('call-success val) #f  ; there was nothing to resolve
+;;           actormap to-local to-remote)
+;; Mix and match the fail/success
+(define (actormap-turn-message actormap msg)
+  ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
+  ;; there's some opportunity to combine things, dunno.
+  (call-with-fresh-syscaller
+   actormap
+   (lambda (sys get-sys-internals)
+     (match-define (message to resolve-me kws kw-vals args)
+       msg)
+     (unless (live-ref? to)
+       (error "Can only perform a turn on a message to local actors"))
+     (define call-result #f)
+     (define result-val (void))
+     (with-handlers ([exn:fail?
+                      (lambda (err)
+                        (set! call-result
+                              `(fail ,err)))])
+       (set! result-val
+             (keyword-apply sys kws kw-vals 'call to args))
+       (set! call-result
+             `(success ,result-val)))
+     (define resolve-result #f)
+     (when resolve-me
+       (with-handlers ([exn:fail?
+                        (lambda (err)
+                          (set! resolve-result
+                                `(fail ,err)))])
+         (match call-result
+           [(list 'success val)
+            (keyword-apply sys resolve-me 'fulfill val)]
+           [(list 'failed err)
+            (keyword-apply sys resolve-me 'break err)])))
+     (apply values
+            call-result resolve-result
+            result-val
+            (get-sys-internals)))))  ; actormap to-local to-remote
 
 ;; The following two are utilities for when you want to check
 ;; or bootstrap something within an actormap
@@ -769,7 +820,7 @@
       [else (cons a d)]))
   (match messages
     [(? message? message)
-     (define-values (_val new-am to-local to-remote)
+     (define-values (call-result resolve-result _val new-am to-local to-remote)
        (actormap-turn-message actormap messages))
      (values new-am to-local to-remote)]
     ['()
@@ -960,13 +1011,17 @@
 ;;; Promises
 ;;; ========
 
+;; TODO: Should this return multiple values to its continuation
+;;   or do so as a list?  We might be able to speed things up
+;;   by not doing the destructuring.
 (define (spawn-promise-pair)
   (define-values (sealer unsealer tm?)
     (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (mactor:near-promise '() unsealer tm?)))
+         (mactor:near-promise '() unsealer tm?)
+         'promise))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
   ;;  - throw an error
@@ -983,7 +1038,8 @@
        [(list 'break problem)
         (define sys (get-syscaller-or-die))
         (sys 'break-promise promise (sealer problem))
-        (make-next already-resolved)])))
+        (make-next already-resolved)])
+     'resolver))
   (list promise resolver))
 
 (module+ test
