@@ -766,6 +766,7 @@
              (keyword-apply sys kws kw-vals 'call to args))
        (set! call-result
              `(success ,result-val)))
+
      (define resolve-result #f)
      (when resolve-me
        (with-handlers ([exn:fail?
@@ -774,9 +775,12 @@
                                 `(fail ,err)))])
          (match call-result
            [(list 'success val)
-            (keyword-apply sys resolve-me 'fulfill val)]
-           [(list 'failed err)
-            (keyword-apply sys resolve-me 'break err)])))
+            (keyword-apply sys '() '() 'call
+                           resolve-me 'fulfill (list val))]
+           [(list 'fail err)
+            (keyword-apply sys '() '() 'call
+                           resolve-me 'break (list err))])))
+
      (apply values
             call-result resolve-result
             result-val
@@ -1137,8 +1141,63 @@
    (try-out-on am 'break 'i-am-broken)
    '(#f (i-am-broken) #t))
 
-  ;; Calling `on' on a promise that has resolved
+  (let ([what-i-got #f])
+    (actormap-full-run!
+     am (lambda ()
+          (on (<-p (spawn (lambda _ 'i-am-foo)))
+              (lambda (v)
+                (set! what-i-got `(yeah ,v)))
+              #:catch
+              (lambda (e)
+                (set! what-i-got `(oh-no ,e))))))
+    (test-equal?
+     "<-p returns a listen'able promise"
+     what-i-got
+     '(yeah i-am-foo)))
+
+  (let ([what-i-got #f])
+    (actormap-full-run!
+     am (lambda ()
+          (on (<-p (spawn (lambda _ (error "I am error"))))
+              (lambda (v)
+                (set! what-i-got `(yeah ,v)))
+              #:catch
+              (lambda (e)
+                (set! what-i-got `(oh-no ,e))))))
+    (test-equal?
+     "<-p promise breaks as expected"
+     (car what-i-got)
+     'oh-no))
   
+  (let ([what-i-got #f])
+    (actormap-full-run!
+     am (lambda ()
+          (define foo (spawn (lambda _ 'i-am-foo)))
+          (on (<-p (<-p (spawn (lambda _ foo))))
+              (lambda (v)
+                (set! what-i-got `(yeah ,v)))
+              #:catch
+              (lambda (e)
+                (set! what-i-got `(oh-no ,e))))))
+    (test-equal?
+     "basic promise pipelining"
+     what-i-got
+     '(yeah i-am-foo)))
+
+  (let ([what-i-got #f])
+    (actormap-full-run!
+     am (lambda ()
+          (define fatal-foo (spawn (lambda _ (error "I am error"))))
+          (on (<-p (<-p (spawn (lambda _ fatal-foo))))
+              (lambda (v)
+                (set! what-i-got `(yeah ,v)))
+              #:catch
+              (lambda (e)
+                (set! what-i-got `(oh-no ,e))))))
+    (test-equal?
+     "basic promise contagion"
+     (car what-i-got)
+     'oh-no))
 
   ;; TODO: Tests for promise contagion
   ;; TODO: Hm, does promise contagion require something like
