@@ -1064,7 +1064,17 @@
    (actormap-peek am bob)
    "Hi, I'm bobby!")
 
-  ;; TODO: Tests for encased values
+  (define on-resolved-bob-arg #f)
+  (actormap-full-run!
+   am (lambda ()
+        (on bob-vow
+            (lambda (v)
+              (set! on-resolved-bob-arg v)))))
+  (test-equal?
+   "Using `on' against a resolved ref returns that ref"
+   on-resolved-bob-arg bob)
+
+
   (match-define (list encase-me-vow encase-me-resolver)
     (actormap-run! am spawn-promise-pair))
   (actormap-poke! am encase-me-resolver 'fulfill 'encase-me)
@@ -1077,6 +1087,17 @@
    #rx"^Not an encased val"
    (lambda ()
      (actormap-extract am bob)))
+
+  (define on-resolved-encased-arg #f)
+  (actormap-full-run!
+   am (lambda ()
+        (on encase-me-vow
+            (lambda (v)
+              (set! on-resolved-encased-arg v)))))
+  (test-equal?
+   "Using `on' against a resolved ref returns that ref"
+   on-resolved-encased-arg 'encase-me)
+
 
   ;; Tests for propagation of resolutions
   (define (try-out-on actormap . resolve-args)
