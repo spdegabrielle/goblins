@@ -400,6 +400,18 @@
             (proc sys get-sys-internals))
     (close-up!)))
 
+(define (actormap-symlink-ref actormap ref-id)
+  (let lp ([ref-id ref-id]
+           [seen (seteq)])
+    (when (set-member? seen ref-id)
+      (error "Cycle in mactor symlinks"))
+    (match (actormappable-ref actormap ref-id #f)
+      [(? mactor:symlink? mactor)
+       (lp (mactor:symlink-link-to-ref mactor)
+           (set-add seen ref-id))]
+      [#f (error "no actor with this id")]
+      [mactor (values ref-id mactor)])))
+
 (define (fresh-syscaller prev-actormap)
   (define actormap
     (make-transactormap prev-actormap))
@@ -407,18 +419,6 @@
   (define to-remote '())
 
   (define closed? #f)
-
-  (define (actormap-symlink-ref ref-id)
-    (let lp ([ref-id ref-id]
-             [seen (seteq)])
-      (when (set-member? seen ref-id)
-        (error "Cycle in mactor symlinks"))
-      (match (actormappable-ref actormap ref-id #f)
-        [(? mactor:symlink? mactor)
-         (lp (mactor:symlink-link-to-ref mactor)
-             (set-add seen ref-id))]
-        [#f (error "no actor with this id")]
-        [mactor (values ref-id mactor)])))
 
   (define this-syscaller
     (make-keyword-procedure
@@ -435,6 +435,7 @@
            ['<- _<-]
            ['<-p _<-p]
            ['on _on]
+           ['extract _extract]
            [_ (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
 
@@ -443,7 +444,7 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-ref . args)
        (define-values (update-ref mactor)
-         (actormap-symlink-ref to-ref))
+         (actormap-symlink-ref actormap to-ref))
        (unless (mactor:near? mactor)
          (error "Actor immediate calls can only happen against near-refs"))
        (define actor-handler
@@ -577,7 +578,7 @@
     #;(unless (near? id-ref)
       (error "on only works for near objects"))
     (define-values (subscribe-ref mactor)
-      (actormap-symlink-ref id-ref))
+      (actormap-symlink-ref actormap id-ref))
     ;; Alternate design for these (and the first I implemented) is to
     ;; actually spawn on-finally and on-fulfilled actors and call
     ;; them.  That might be better if we did add coroutines.
@@ -632,6 +633,9 @@
       ;; machine, right?
       [(? mactor:far-promise? mactor)
        'TODO]))
+
+  (define (_extract id-ref)
+    (actormap-extract actormap id-ref))
 
   (define (get-internals)
     (list actormap to-local to-remote))
@@ -695,6 +699,10 @@
        ;#:return-promise? return-promise?
        ))
 
+(define (extract id-ref)
+  (define sys (get-syscaller-or-die))
+  (sys 'extract id-ref))
+
 
 ;;; actormap turning and utils
 ;;; ==========================
@@ -732,8 +740,10 @@
        (actormap-turn* actormap to-ref kws kw-args args))
      returned-val)))
 
-(define (actormap-extract actormap ref-id)
-  (match (actormap-ref actormap ref-id)
+(define (actormap-extract actormap id-ref)
+  (define-values (_ref mactor)
+    (actormap-symlink-ref actormap id-ref))
+  (match mactor
     [(? mactor:encased? mactor)
      (mactor:encased-val mactor)]
     [mactor (error "Not an encased val" mactor)]))
