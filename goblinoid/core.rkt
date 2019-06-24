@@ -84,15 +84,15 @@
            (->* [(and/c procedure?
                         (not/c ref?))]
                 [(or/c #f symbol? string?)]
-                any/c)]
-          #;[on
-             (->* [near-ref?]
-                  [(or/c #f procedure?)
-                   #:catch (or/c #f procedure?)
-                   #:finally (or/c #f procedure?)
-                   #:promise? boolean?]
-                  any/c)])
-         on <- <-p
+                any/c)])
+         (contract-out
+          [on
+           (->* [live-ref?]
+                [(or/c #f live-ref? procedure?)
+                 #:catch (or/c #f live-ref? procedure?)
+                 #:return-promise? boolean?]
+                any/c)])
+         <- <-p
          extract)
 
 ;; Cells
@@ -573,8 +573,7 @@
   (define (_on id-ref [on-fulfilled #f]
                #:catch [on-broken #f]
                #:finally [on-finally #f]
-               ; #:return-promise? [return-promise? #f]
-               )
+               #:return-promise? [return-promise? #f])
     #;(unless (near? id-ref)
       (error "on only works for near objects"))
     (define-values (subscribe-ref mactor)
@@ -603,6 +602,10 @@
         (on-finally)))
     (match mactor
       [(mactor:near-promise listeners r-unsealer r-tm?)
+       (match-define (list return-promise return-p-resolver)
+         (if return-promise?
+             (spawn-promise-pair)
+             (list #f #f)))
        (define on-listener
          ;; using _spawn here saves a very minor round
          ;; trip which we can't do in the on-fulfilled
@@ -610,16 +613,26 @@
          (_spawn
           (match-lambda*
             [(list 'fulfill val)
-             (call-on-fulfilled val)]
+             (define fulfilled-response-val
+               (call-on-fulfilled val))
+             (when return-promise?
+               (<- return-p-resolver 'fulfill fulfilled-response-val))
+             ;; Not sure if we do need to, or it is useful to,
+             ;; return this, or if we should just return void.
+             ;; I don't think it hurts?
+             fulfilled-response-val]
             [(list 'break problem)
+             (when return-promise?
+               (<- return-p-resolver 'break problem))
              (call-on-broken problem)])))
        (define new-listeners
          (cons on-listener listeners))
        (actormappable-set! actormap id-ref
                            (mactor:near-promise new-listeners
                                                 r-unsealer r-tm?))
-       ;; TODO: return the promise here
-       (void)]
+       (if return-promise?
+           return-promise
+           (void))]
       [(? mactor:broken? mactor)
        (call-on-broken (mactor:broken-problem mactor))
        (call-on-finally)]
@@ -690,14 +703,12 @@
 (define (on id-ref [on-fulfilled #f]
             #:catch [on-broken #f]
             #:finally [on-finally #f]
-            ;#:return-promise? [return-promise? #f]
-            )
+            #:return-promise? [return-promise? #f])
   (define sys (get-syscaller-or-die))
   (sys 'on id-ref on-fulfilled
        #:catch on-broken
        #:finally on-finally
-       ;#:return-promise? return-promise?
-       ))
+       #:return-promise? return-promise?))
 
 (define (extract id-ref)
   (define sys (get-syscaller-or-die))
@@ -1035,7 +1046,7 @@
   (define promise
     (sys 'spawn-mactor
          (mactor:near-promise '() unsealer tm?)
-         'promise))
+         'promised))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
   ;;  - throw an error
@@ -1212,4 +1223,21 @@
      "basic promise contagion"
      (car what-i-got)
      'oh-no))
-  )
+
+  (test-equal?
+   "Passing #:return-promise? to `on` returns a promise that is resolved"
+   (actormap-extract
+    am
+    (actormap-full-run!
+     am (lambda ()
+          (define doubler (spawn (lambda (x) (* x 2))))
+          (define the-on-promise
+            (on (<-p doubler 3)
+                (lambda (x)
+                  (format "got: ~a" x))
+                #:catch
+                (lambda (e)
+                  "uhoh")
+                #:return-promise? #t))
+          the-on-promise)))
+   "got: 6"))
