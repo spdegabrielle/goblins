@@ -163,7 +163,6 @@
 ;; once a near ref, always a near ref.
 (struct mactor:near mactor (handler))
 ;; Once encased, always encased.
-;; TODO: Write "extract" procedure.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
 ;;   not a mactor is basically "encased"?  But having an official
 ;;   mactor type gives us a clearer answer I guess.
@@ -184,8 +183,8 @@
 ;; An transactormap is a transactional structure used by the
 ;; actormap turn system
 
-;; TODO: I don't understand ephemerons and this is probably wrong.
-
+;; Uses ephemerons to allow for self-referencing collection...
+;; hopefully works right.
 (define-generics actormappable
   (actormappable-ref actormappable key [dflt])
   (actormappable-set! actormappable key val))
