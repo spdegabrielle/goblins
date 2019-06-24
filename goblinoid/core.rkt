@@ -445,30 +445,34 @@
      (lambda (kws kw-args to-ref . args)
        (define-values (update-ref mactor)
          (actormap-symlink-ref actormap to-ref))
-       (unless (mactor:near? mactor)
-         (error "Actor immediate calls can only happen against near-refs"))
-       (define actor-handler
-         (mactor:near-handler mactor))
-       (define result
-         (keyword-apply actor-handler kws kw-args args))
-       
-       ;; I guess watching for this guarantees that an immediate call
-       ;; against a local actor will not be tail recursive.
-       ;; TODO: We need to document that.
-       (define-values (return-val new-handler)
-         (match result
-           [(? next?)
-            (values (next-return-val result)
-                    (next-handler result))]
-           [_ (values result #f)]))
+       (match mactor
+         [(? mactor:near?)
+          (define actor-handler
+            (mactor:near-handler mactor))
+          (define result
+            (keyword-apply actor-handler kws kw-args args))
 
-       ;; if a new handler for this actor was specified,
-       ;; let's replace it
-       (when new-handler
-         (transactormap-set! actormap update-ref
-                             (mactor:near new-handler)))
+          ;; I guess watching for this guarantees that an immediate call
+          ;; against a local actor will not be tail recursive.
+          ;; TODO: We need to document that.
+          (define-values (return-val new-handler)
+            (match result
+              [(? next?)
+               (values (next-return-val result)
+                       (next-handler result))]
+              [_ (values result #f)]))
 
-       return-val)))
+          ;; if a new handler for this actor was specified,
+          ;; let's replace it
+          (when new-handler
+            (transactormap-set! actormap update-ref
+                                (mactor:near new-handler)))
+
+          return-val]
+         [(? mactor:encased?)
+          (mactor:encased-val mactor)]
+         [_
+          (error "Actor immediate calls restricted to near-refs and encased values")]))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
