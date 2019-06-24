@@ -789,6 +789,7 @@
                         (when display-errors?
                           (displayln "=== While attempting to send message: ==="
                                      (current-error-port))
+                          ;; TODO: Display the message here
                           ((error-display-handler) (exn-message err) err))
                         (set! call-result
                               `(fail ,err)))])
@@ -804,6 +805,7 @@
                           (when display-errors?
                             (displayln "=== While attempting to resolve promise: ==="
                                        (current-error-port))
+                            ;; TODO: Display the message here
                             ((error-display-handler) (exn-message err) err))
                           (set! resolve-result
                                 `(fail ,err)))])
