@@ -767,7 +767,8 @@
 ;;   (values ('call-success val) #f  ; there was nothing to resolve
 ;;           actormap to-local to-remote)
 ;; Mix and match the fail/success
-(define (actormap-turn-message actormap msg)
+(define (actormap-turn-message actormap msg
+                               #:display-errors? [display-errors? #t])
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
   (call-with-fresh-syscaller
@@ -781,6 +782,10 @@
      (define result-val (void))
      (with-handlers ([exn:fail?
                       (lambda (err)
+                        (when display-errors?
+                          (displayln "=== While attempting to send message: ==="
+                                     (current-error-port))
+                          ((error-display-handler) (exn-message err) err))
                         (set! call-result
                               `(fail ,err)))])
        (set! result-val
@@ -792,6 +797,10 @@
      (when resolve-me
        (with-handlers ([exn:fail?
                         (lambda (err)
+                          (when display-errors?
+                            (displayln "=== While attempting to resolve promise: ==="
+                                       (current-error-port))
+                            ((error-display-handler) (exn-message err) err))
                           (set! resolve-result
                                 `(fail ,err)))])
          (match call-result
@@ -837,7 +846,8 @@
 ;; almost certainly for worse.
 ;; (-> actormappable? (treeof message?)
 ;;     (values actormap (treeof message?) (treeof message?)))
-(define (actormap-churn actormap messages)
+(define (actormap-churn actormap messages
+                        #:display-errors? [display-errors? #t])
   (define (cons-if-non-empty a d)
     (cond
       [(null? a) d]
@@ -846,7 +856,8 @@
   (match messages
     [(? message? message)
      (define-values (call-result resolve-result _val new-am to-local to-remote)
-       (actormap-turn-message actormap messages))
+       (actormap-turn-message actormap messages
+                              #:display-errors? display-errors?))
      (values new-am to-local to-remote)]
     ['()
      (values actormap '() '())]
@@ -856,7 +867,8 @@
                 [to-remote '()])
                ([msg (reverse messages)])
        (define-values (new-actormap new-to-local new-to-remote)
-         (actormap-churn actormap msg))
+         (actormap-churn actormap msg
+                         #:display-errors? display-errors?))
        (values new-actormap
                (cons-if-non-empty new-to-local to-local)
                (cons-if-non-empty new-to-remote to-remote)))]))
@@ -866,13 +878,15 @@
 ;; to make some simpler patterns easier to test.
 ;; TODO: Can we generalize/parameterize this in such a way that
 ;; vats and other designs can be built on top of it?
-(define (actormap-full-run! actormap thunk)
+(define (actormap-full-run! actormap thunk
+                            #:display-errors? [display-errors? #t])
   (define-values (_val new-am to-local to-remote)
     (actormap-run* actormap thunk))
   (transactormap-merge! new-am)
   (let lp ([messages to-local])
     (define-values (new-am to-local to-remote)
-      (actormap-churn actormap messages))
+      (actormap-churn actormap messages
+                      #:display-errors? display-errors?))
     (when (transactormap? new-am)
       (transactormap-merge! new-am))
     (if (null? to-local)
@@ -1188,7 +1202,8 @@
                 (set! what-i-got `(yeah ,v)))
               #:catch
               (lambda (e)
-                (set! what-i-got `(oh-no ,e))))))
+                (set! what-i-got `(oh-no ,e)))))
+     #:display-errors? #f)
     (test-equal?
      "<-p promise breaks as expected"
      (car what-i-got)
@@ -1218,7 +1233,8 @@
                 (set! what-i-got `(yeah ,v)))
               #:catch
               (lambda (e)
-                (set! what-i-got `(oh-no ,e))))))
+                (set! what-i-got `(oh-no ,e)))))
+     #:display-errors? #f)
     (test-equal?
      "basic promise contagion"
      (car what-i-got)
