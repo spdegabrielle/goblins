@@ -1101,6 +1101,10 @@
    #rx"^Not an encased val"
    (lambda ()
      (actormap-extract am bob)))
+  (test-eq?
+   "extract procedure works"
+   (actormap-run am (lambda () (extract encase-me-vow)))
+   'encase-me)
 
   (define on-resolved-encased-arg #f)
   (actormap-full-run!
