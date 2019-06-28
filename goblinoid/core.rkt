@@ -13,20 +13,6 @@
          live-ref?
          sturdy-ref?)
 
-#;(provide ref?
-
-         make-near-ref
-         near-ref? far-ref? remote-vat-ref?
-         near-ref-debug-name near-ref-promise?
-         
-         far-ref?
-         make-far-ref
-         far-ref-remote-vat-ref
-         far-ref-promise?
-
-         remote-vat-ref?
-         make-remote-vat-ref)
-
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
          ;; alias of make-actormap
@@ -558,7 +544,7 @@
     (match actor-ref
       [(? live-ref?)
        (set! to-local (cons new-message to-local))]
-      [(? far-ref?)
+      #;[(? far-ref?)
        (set! to-remote (cons new-message to-remote))]))
 
   (define _<-
