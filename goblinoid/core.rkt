@@ -541,6 +541,8 @@
   (define (_send-message kws kw-args actor-ref resolve-me args)
     (define new-message
       (message actor-ref resolve-me kws kw-args args))
+    ;; TODO: This is really a matter of dispatching on mactors
+    ;;   mostly now
     (match actor-ref
       [(? live-ref?)
        (set! to-local (cons new-message to-local))]
