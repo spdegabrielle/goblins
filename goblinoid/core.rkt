@@ -29,6 +29,8 @@
 
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
+         ;; alias of make-actormap
+         (rename-out [make-whactormap make-actormap])
          whactormap?
          whactormap-ref
          whactormap-set!
@@ -44,10 +46,10 @@
          transactormap-merged?
          transactormap-merge!
 
-         actormappable?
+         actormap?
 
-         actormappable-ref
-         actormappable-set!)
+         actormap-ref
+         actormap-set!)
 
 ;; The operating-on-actormap main functions
 (provide actormap-turn
@@ -185,15 +187,15 @@
 
 ;; Uses ephemerons to allow for self-referencing collection...
 ;; hopefully works right.
-(define-generics actormappable
-  (actormappable-ref actormappable key [dflt])
-  (actormappable-set! actormappable key val))
+(define-generics actormap
+  (actormap-ref actormap key [dflt])
+  (actormap-set! actormap key val))
 
 (struct whactormap (wht) ; weak hash table
-  #:methods gen:actormappable
-  [(define (actormappable-ref whactormap key [dflt #f])
+  #:methods gen:actormap
+  [(define (actormap-ref whactormap key [dflt #f])
      (whactormap-ref whactormap key dflt))
-   (define (actormappable-set! whactormap key [dflt #f])
+   (define (actormap-set! whactormap key [dflt #f])
      (whactormap-set! whactormap key dflt))])
 
 (define (make-whactormap)
@@ -229,17 +231,17 @@
 
 (struct transactormap (parent delta [merged? #:mutable])
   #:constructor-name _make-transactormap
-  #:methods gen:actormappable
-  [(define (actormappable-ref transactormap key [dflt #f])
+  #:methods gen:actormap
+  [(define (actormap-ref transactormap key [dflt #f])
      (transactormap-ref transactormap key dflt))
-   (define (actormappable-set! transactormap key val)
+   (define (actormap-set! transactormap key val)
      (transactormap-set! transactormap key val))])
 
-#;(define actormappable?
+#;(define actormap?
   (or/c transactormap? actormap?))
 
 (define/contract (make-transactormap parent)
-  (-> actormappable? any/c)
+  (-> actormap? any/c)
   (_make-transactormap parent (make-hasheq) #f))
 
 (define (transactormap-ref transactormap key [dflt #f])
@@ -405,7 +407,7 @@
            [seen (seteq)])
     (when (set-member? seen ref-id)
       (error "Cycle in mactor symlinks"))
-    (match (actormappable-ref actormap ref-id #f)
+    (match (actormap-ref actormap ref-id #f)
       [(? mactor:symlink? mactor)
        (lp (mactor:symlink-link-to-ref mactor)
            (set-add seen ref-id))]
@@ -483,7 +485,7 @@
     (actormap-spawn-mactor! actormap mactor debug-name))
 
   (define (promise-fulfill promise-id sealed-val)
-    (match (actormappable-ref actormap promise-id #f)
+    (match (actormap-ref actormap promise-id #f)
       [(? mactor:near-promise? promise-mactor)
        (define resolver-tm?
          (mactor:near-promise-resolver-tm? promise-mactor))
@@ -507,18 +509,18 @@
               (when (set-member? seen ref-id)
                 (error "Cycle in mactor symlinks"))
               ;; TODO: deal with far refs
-              (match (actormappable-ref actormap ref-id)
+              (match (actormap-ref actormap ref-id)
                 [(? mactor:symlink? mactor)
                  (lp (mactor:symlink-link-to-ref mactor)
                      (set-add seen ref-id))]
                 [#f (error "no actor with this id")]
                 ;; ok we found a non-symlink ref
                 [_ ref-id])))
-          (actormappable-set! actormap promise-id
+          (actormap-set! actormap promise-id
                               (mactor:symlink link-to))]
          ;; Must be something else then.  Guess we'd better
          ;; encase it.
-         [_ (actormappable-set! actormap promise-id
+         [_ (actormap-set! actormap promise-id
                                 (mactor:encased val))])
 
        ;; Inform all listeners of the resolution
@@ -528,7 +530,7 @@
       [_ (error "can only resolve a near-promise")]))
 
   (define (promise-break promise-id sealed-problem)
-    (match (actormappable-ref actormap promise-id #f)
+    (match (actormap-ref actormap promise-id #f)
       ;; TODO: Not just near-promise, anything that can
       ;;   break
       [(? mactor:near-promise? promise-mactor)
@@ -542,7 +544,7 @@
        (define problem
          (resolver-unsealer sealed-problem))
        ;; Now we "become" broken with that problem
-       (actormappable-set! actormap promise-id
+       (actormap-set! actormap promise-id
                            (mactor:broken problem))
        ;; Inform all listeners of the resolution
        (for ([listener (mactor:near-promise-listeners promise-mactor)])
@@ -631,7 +633,7 @@
              (call-on-broken problem)])))
        (define new-listeners
          (cons on-listener listeners))
-       (actormappable-set! actormap id-ref
+       (actormap-set! actormap id-ref
                            (mactor:near-promise new-listeners
                                                 r-unsealer r-tm?))
        (if return-promise?
@@ -850,7 +852,7 @@
 ;; Returns a new tree of local messages
 ;; TODO: Note this pretty much throws out remote messages, for better or
 ;; almost certainly for worse.
-;; (-> actormappable? (treeof message?)
+;; (-> actormap? (treeof message?)
 ;;     (values actormap (treeof message?) (treeof message?)))
 (define (actormap-churn actormap messages
                         #:display-errors? [display-errors? #t])
@@ -919,14 +921,14 @@
                          [debug-name (object-name actor-handler)])
   (define actor-ref
     (make-live-ref debug-name))
-  (actormappable-set! actormap actor-ref
+  (actormap-set! actormap actor-ref
                       (mactor:near actor-handler))
   actor-ref)
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f])
   (define actor-ref
     (make-live-ref debug-name))
-  (actormappable-set! actormap actor-ref mactor)
+  (actormap-set! actormap actor-ref mactor)
   actor-ref)
 
 (module+ test
