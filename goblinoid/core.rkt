@@ -114,8 +114,7 @@
 (require "message.rkt"
          "hash-contracts.rkt"
          racket/match
-         racket/generic
-         "ref.rkt")
+         racket/generic)
 
 
 ;;; Refs
