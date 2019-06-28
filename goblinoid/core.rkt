@@ -28,12 +28,12 @@
          make-remote-vat-ref)
 
 ;; The making-and-modifying actormap functions
-(provide make-actormap
-         actormap?
-         actormap-ref
-         actormap-set!
+(provide make-whactormap
+         whactormap?
+         whactormap-ref
+         whactormap-set!
 
-         snapshot-actormap hasheq->actormap
+         snapshot-whactormap hasheq->whactormap
 
          transactormap-set! transactormap-ref
 
@@ -103,7 +103,7 @@
          cell->write-only)
 
 (module+ debug
-  (provide actormap-wht))
+  (provide whactormap-wht))
 
 
 ;;; Imports
@@ -177,8 +177,8 @@
 (struct mactor:far-promise mactor (vat-connid))
 
 
-;;; Actormaps and transactormaps
-;;; ============================
+;;; Actormaps, whactormaps and transactormaps
+;;; =========================================
 
 ;; An transactormap is a transactional structure used by the
 ;; actormap turn system
@@ -189,18 +189,18 @@
   (actormappable-ref actormappable key [dflt])
   (actormappable-set! actormappable key val))
 
-(struct actormap (wht) ; weak hash table
+(struct whactormap (wht) ; weak hash table
   #:methods gen:actormappable
-  [(define (actormappable-ref actormap key [dflt #f])
-     (actormap-ref actormap key dflt))
-   (define (actormappable-set! actormap key [dflt #f])
-     (actormap-set! actormap key dflt))])
+  [(define (actormappable-ref whactormap key [dflt #f])
+     (whactormap-ref whactormap key dflt))
+   (define (actormappable-set! whactormap key [dflt #f])
+     (whactormap-set! whactormap key dflt))])
 
-(define (make-actormap)
-  (actormap (make-weak-hasheq)))
-(define (actormap-ref actormap key [dflt #f])
+(define (make-whactormap)
+  (whactormap (make-weak-hasheq)))
+(define (whactormap-ref whactormap key [dflt #f])
   (define val
-    (hash-ref (actormap-wht actormap) key #f))
+    (hash-ref (whactormap-wht whactormap) key #f))
   ;; TODO: we should use the retain argument instead, once that becomes available
   ;;   https://github.com/racket/racket/commit/99feebf070d0dd3e62c697814e0a42508f7995ee
   (or (and val (match (ephemeron-value val key)
@@ -210,20 +210,20 @@
                  [result result]))
       dflt))
 
-(define (actormap-set! actormap key val)
-  (hash-set! (actormap-wht actormap)
+(define (whactormap-set! whactormap key val)
+  (hash-set! (whactormap-wht whactormap)
              key (make-ephemeron key val)))
 
-(define (snapshot-actormap actormap)
+(define (snapshot-whactormap whactormap)
   (for/fold ([new-hasheq #hasheq()])
-            ([(key val) (actormap-wht actormap)])
+            ([(key val) (whactormap-wht whactormap)])
     (hash-set new-hasheq key val)))
 
-(define (hasheq->actormap ht)
-  (define actormap (make-actormap))
+(define (hasheq->whactormap ht)
+  (define whactormap (make-whactormap))
   (for ([(key val) ht])
-    (actormap-set! actormap key val))
-  actormap)
+    (whactormap-set! whactormap key val))
+  whactormap)
 
 ;;; Now the transactional stuff
 
@@ -251,8 +251,8 @@
         (match parent
           [(? transactormap?)
            (transactormap-ref parent key #f)]
-          [(? actormap?)
-           (actormap-ref parent key #f)]))
+          [(? whactormap?)
+           (whactormap-ref parent key #f)]))
       dflt))
 
 (define/contract (transactormap-set! transactormap key val)
@@ -276,11 +276,11 @@
       (match parent
         [(? transactormap?)
          (do-merge! parent)]
-        [(? actormap?)
+        [(? whactormap?)
          parent]))
     (unless (transactormap-merged? transactormap)
       (for ([(key val) (transactormap-delta transactormap)])
-        (actormap-set! root-actormap key val))
+        (whactormap-set! root-actormap key val))
       (set-transactormap-merged?! transactormap #t))
     root-actormap)
   (do-merge! transactormap)
@@ -290,19 +290,19 @@
   (require rackunit)
 
   ;; set up actormap base with beeper and booper
-  (define actormap-base (make-actormap))
+  (define actormap-base (make-whactormap))
   (define beeper-ref (make-live-ref 'beeper))
   (define (beeper-proc . args)
     'beep)
-  (actormap-set! actormap-base beeper-ref beeper-proc)
+  (whactormap-set! actormap-base beeper-ref beeper-proc)
   (define booper-ref (make-live-ref 'booper))
   (define (booper-proc . args)
     'boop)
-  (actormap-set! actormap-base booper-ref booper-proc)
+  (whactormap-set! actormap-base booper-ref booper-proc)
   (define blepper-ref (make-live-ref 'blepper))
   (define (blepper-proc . args)
     'blep)
-  (actormap-set! actormap-base blepper-ref blepper-proc)
+  (whactormap-set! actormap-base blepper-ref blepper-proc)
 
   (define tam1
     (make-transactormap actormap-base))
@@ -324,7 +324,7 @@
              booper-proc2)
   (check-eq? (transactormap-ref tam1 blepper-ref)
              blepper-proc2)
-  (check-eq? (actormap-ref actormap-base booper-ref #f)
+  (check-eq? (whactormap-ref actormap-base booper-ref #f)
              booper-proc)
   (check-false (transactormap-merged? tam1))
 
@@ -349,9 +349,9 @@
              boppiter-proc)
   (check-eq? (transactormap-ref tam2 blepper-ref)
              blepper-proc2)
-  (check-eq? (actormap-ref actormap-base booper-ref #f)
+  (check-eq? (whactormap-ref actormap-base booper-ref #f)
              booper-proc)
-  (check-eq? (actormap-ref actormap-base boppiter-ref #f)
+  (check-eq? (whactormap-ref actormap-base boppiter-ref #f)
              #f)
   (check-false (transactormap-merged? tam2))
 
@@ -369,15 +369,15 @@
                (transactormap-set! tam1 beeper-ref
                                    (lambda _ 'whatever))))
 
-  (check-eq? (actormap-ref actormap-base beeper-ref)
+  (check-eq? (whactormap-ref actormap-base beeper-ref)
              beeper-proc)
-  (check-eq? (actormap-ref actormap-base booper-ref)
+  (check-eq? (whactormap-ref actormap-base booper-ref)
              booper-proc3)
-  (check-eq? (actormap-ref actormap-base bipper-ref)
+  (check-eq? (whactormap-ref actormap-base bipper-ref)
              bipper-proc)
-  (check-eq? (actormap-ref actormap-base boppiter-ref)
+  (check-eq? (whactormap-ref actormap-base boppiter-ref)
              boppiter-proc)
-  (check-eq? (actormap-ref actormap-base blepper-ref)
+  (check-eq? (whactormap-ref actormap-base blepper-ref)
              blepper-proc2))
 
 ;;; Syscaller internals
@@ -932,7 +932,7 @@
 (module+ test
   (require rackunit
            racket/contract)
-  (define am (make-actormap))
+  (define am (make-whactormap))
 
   (define ((counter n))
     (make-next (counter (add1 n))
@@ -1096,7 +1096,7 @@
      (actormap-poke! am bob-resolver 'fulfill bob)))
   (test-true
    "Promise resolves to symlink"
-   (mactor:symlink? (actormap-ref am bob-vow)))
+   (mactor:symlink? (whactormap-ref am bob-vow)))
   (test-equal?
    "Resolved symlink acts as what it resolves to"
    (actormap-peek am bob-vow)
