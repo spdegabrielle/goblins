@@ -7,11 +7,11 @@
          racket/set
          "utils/simple-sealers.rkt")
 
-;; Refs
-;; TODO: We might want to rename these to ids
-(provide ref?
-         live-ref?
-         sturdy-ref?)
+;; Refrs
+;; Same as E refs, but -ref is already meaningful in scheme
+(provide refr?
+         live-refr?
+         sturdy-refr?)
 
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
@@ -49,17 +49,17 @@
          actormap-run!
 
          ;; preventing awkwardness: we don't want actor handlers
-         ;; to be actor refs
+         ;; to be actor refrs
          (contract-out
           [actormap-spawn
            (->* [any/c
                  (and/c procedure?
-                        (not/c ref?))]
+                        (not/c refr?))]
                 [(or/c #f symbol? string?)]
                 (values any/c any/c))]
           [actormap-spawn!
            (->* [any/c (and/c procedure?
-                              (not/c ref?))]
+                              (not/c refr?))]
                 [(or/c #f symbol? string?)]
                 any/c)])
 
@@ -70,14 +70,14 @@
          (contract-out
           [spawn
            (->* [(and/c procedure?
-                        (not/c ref?))]
+                        (not/c refr?))]
                 [(or/c #f symbol? string?)]
                 any/c)])
          (contract-out
           [on
-           (->* [live-ref?]
-                [(or/c #f live-ref? procedure?)
-                 #:catch (or/c #f live-ref? procedure?)
+           (->* [live-refr?]
+                [(or/c #f live-refr? procedure?)
+                 #:catch (or/c #f live-refr? procedure?)
                  #:return-promise? boolean?]
                 any/c)])
          <- <-p
@@ -103,30 +103,30 @@
          racket/generic)
 
 
-;;; Refs
-;;; ====
+;;; Refrs
+;;; =====
 
-(struct ref ()
+(struct refr ()
   #:property prop:procedure
   (make-keyword-procedure
    (lambda (kws kw-args this . args)
      (keyword-apply call kws kw-args this args))))
 
-(struct live-ref ref (debug-name)
-  #:constructor-name _make-live-ref
+(struct live-refr refr (debug-name)
+  #:constructor-name _make-live-refr
   #:methods gen:custom-write
-  [(define (write-proc ref port mode)
+  [(define (write-proc refr port mode)
      (define str-to-write
-       (match (live-ref-debug-name ref)
-         [#f "#<live-ref>"]
+       (match (live-refr-debug-name refr)
+         [#f "#<live-refr>"]
          ;; TODO: Do we need to do escaping?
-         [debug-name (format "#<live-ref ~a>" debug-name)]))
+         [debug-name (format "#<live-refr ~a>" debug-name)]))
      (write-string str-to-write port))])
 
-(define (make-live-ref [debug-name #f])
-  (_make-live-ref debug-name))
+(define (make-live-refr [debug-name #f])
+  (_make-live-refr debug-name))
 
-(struct sturdy-ref ref (swiss-num vat-id conn-hints))
+(struct sturdy-refr refr (swiss-num vat-id conn-hints))
 
 (struct vat-connid ()
   #:constructor-name make-vat-connid)
@@ -147,7 +147,7 @@
 (struct mactor ())
 
 ;;; Resolved things
-;; once a near ref, always a near ref.
+;; once a near refr, always a near refr.
 (struct mactor:near mactor (handler))
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
@@ -155,7 +155,7 @@
 ;;   mactor type gives us a clearer answer I guess.
 (struct mactor:encased mactor (val))
 (struct mactor:far mactor (vat-connid))
-(struct mactor:symlink mactor (link-to-ref))
+(struct mactor:symlink mactor (link-to-refr))
 ;; Once broken, always broken.
 (struct mactor:broken mactor (problem))
 
@@ -243,7 +243,7 @@
       dflt))
 
 (define/contract (transactormap-set! transactormap key val)
-  (-> transactormap? live-ref? any/c any/c)
+  (-> transactormap? live-refr? any/c any/c)
   (when (transactormap-merged? transactormap)
     (error "Can't use transactormap-set! on merged transactormap"))
   (hash-set! (transactormap-delta transactormap)
@@ -278,67 +278,67 @@
 
   ;; set up actormap base with beeper and booper
   (define actormap-base (make-whactormap))
-  (define beeper-ref (make-live-ref 'beeper))
+  (define beeper-refr (make-live-refr 'beeper))
   (define (beeper-proc . args)
     'beep)
-  (whactormap-set! actormap-base beeper-ref beeper-proc)
-  (define booper-ref (make-live-ref 'booper))
+  (whactormap-set! actormap-base beeper-refr beeper-proc)
+  (define booper-refr (make-live-refr 'booper))
   (define (booper-proc . args)
     'boop)
-  (whactormap-set! actormap-base booper-ref booper-proc)
-  (define blepper-ref (make-live-ref 'blepper))
+  (whactormap-set! actormap-base booper-refr booper-proc)
+  (define blepper-refr (make-live-refr 'blepper))
   (define (blepper-proc . args)
     'blep)
-  (whactormap-set! actormap-base blepper-ref blepper-proc)
+  (whactormap-set! actormap-base blepper-refr blepper-proc)
 
   (define tam1
     (make-transactormap actormap-base))
-  (define bipper-ref (make-live-ref 'bipper))
+  (define bipper-refr (make-live-refr 'bipper))
   (define (bipper-proc . args)
     'bippity)
-  (transactormap-set! tam1 bipper-ref bipper-proc)
+  (transactormap-set! tam1 bipper-refr bipper-proc)
   (define (booper-proc2 . args)
     'boop2)
-  (transactormap-set! tam1 booper-ref booper-proc2)
+  (transactormap-set! tam1 booper-refr booper-proc2)
   (define (blepper-proc2 . args)
     'blep2)
-  (transactormap-set! tam1 blepper-ref blepper-proc2)
-  (check-eq? (transactormap-ref tam1 bipper-ref)
+  (transactormap-set! tam1 blepper-refr blepper-proc2)
+  (check-eq? (transactormap-ref tam1 bipper-refr)
              bipper-proc)
-  (check-eq? (transactormap-ref tam1 beeper-ref)
+  (check-eq? (transactormap-ref tam1 beeper-refr)
              beeper-proc)
-  (check-eq? (transactormap-ref tam1 booper-ref)
+  (check-eq? (transactormap-ref tam1 booper-refr)
              booper-proc2)
-  (check-eq? (transactormap-ref tam1 blepper-ref)
+  (check-eq? (transactormap-ref tam1 blepper-refr)
              blepper-proc2)
-  (check-eq? (whactormap-ref actormap-base booper-ref #f)
+  (check-eq? (whactormap-ref actormap-base booper-refr #f)
              booper-proc)
   (check-false (transactormap-merged? tam1))
 
   (define tam2
     (make-transactormap tam1))
 
-  (define boppiter-ref (make-live-ref 'boppiter))
+  (define boppiter-refr (make-live-refr 'boppiter))
   (define (boppiter-proc . args)
     'boppitty)
-  (transactormap-set! tam2 boppiter-ref boppiter-proc)
+  (transactormap-set! tam2 boppiter-refr boppiter-proc)
   (define (booper-proc3 . args)
     'boop3)
-  (transactormap-set! tam2 booper-ref booper-proc3)
+  (transactormap-set! tam2 booper-refr booper-proc3)
 
-  (check-eq? (transactormap-ref tam2 beeper-ref)
+  (check-eq? (transactormap-ref tam2 beeper-refr)
              beeper-proc)
-  (check-eq? (transactormap-ref tam2 booper-ref)
+  (check-eq? (transactormap-ref tam2 booper-refr)
              booper-proc3)
-  (check-eq? (transactormap-ref tam2 bipper-ref)
+  (check-eq? (transactormap-ref tam2 bipper-refr)
              bipper-proc)
-  (check-eq? (transactormap-ref tam2 boppiter-ref)
+  (check-eq? (transactormap-ref tam2 boppiter-refr)
              boppiter-proc)
-  (check-eq? (transactormap-ref tam2 blepper-ref)
+  (check-eq? (transactormap-ref tam2 blepper-refr)
              blepper-proc2)
-  (check-eq? (whactormap-ref actormap-base booper-ref #f)
+  (check-eq? (whactormap-ref actormap-base booper-refr #f)
              booper-proc)
-  (check-eq? (whactormap-ref actormap-base boppiter-ref #f)
+  (check-eq? (whactormap-ref actormap-base boppiter-refr #f)
              #f)
   (check-false (transactormap-merged? tam2))
 
@@ -347,24 +347,24 @@
   (check-true (transactormap-merged? tam1))
   (check-exn any/c
              (lambda ()
-               (transactormap-ref tam2 beeper-ref)))
+               (transactormap-ref tam2 beeper-refr)))
   (check-exn any/c
              (lambda ()
-               (transactormap-ref tam1 beeper-ref)))
+               (transactormap-ref tam1 beeper-refr)))
   (check-exn any/c
              (lambda ()
-               (transactormap-set! tam1 beeper-ref
+               (transactormap-set! tam1 beeper-refr
                                    (lambda _ 'whatever))))
 
-  (check-eq? (whactormap-ref actormap-base beeper-ref)
+  (check-eq? (whactormap-ref actormap-base beeper-refr)
              beeper-proc)
-  (check-eq? (whactormap-ref actormap-base booper-ref)
+  (check-eq? (whactormap-ref actormap-base booper-refr)
              booper-proc3)
-  (check-eq? (whactormap-ref actormap-base bipper-ref)
+  (check-eq? (whactormap-ref actormap-base bipper-refr)
              bipper-proc)
-  (check-eq? (whactormap-ref actormap-base boppiter-ref)
+  (check-eq? (whactormap-ref actormap-base boppiter-refr)
              boppiter-proc)
-  (check-eq? (whactormap-ref actormap-base blepper-ref)
+  (check-eq? (whactormap-ref actormap-base blepper-refr)
              blepper-proc2))
 
 ;;; Syscaller internals
@@ -387,17 +387,17 @@
             (proc sys get-sys-internals))
     (close-up!)))
 
-(define (actormap-symlink-ref actormap ref-id)
-  (let lp ([ref-id ref-id]
+(define (actormap-symlink-ref actormap refr-id)
+  (let lp ([refr-id refr-id]
            [seen (seteq)])
-    (when (set-member? seen ref-id)
+    (when (set-member? seen refr-id)
       (error "Cycle in mactor symlinks"))
-    (match (actormap-ref actormap ref-id #f)
+    (match (actormap-ref actormap refr-id #f)
       [(? mactor:symlink? mactor)
-       (lp (mactor:symlink-link-to-ref mactor)
-           (set-add seen ref-id))]
+       (lp (mactor:symlink-link-to-refr mactor)
+           (set-add seen refr-id))]
       [#f (error "no actor with this id")]
-      [mactor (values ref-id mactor)])))
+      [mactor (values refr-id mactor)])))
 
 (define (fresh-syscaller prev-actormap)
   (define actormap
@@ -429,9 +429,9 @@
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
-     (lambda (kws kw-args to-ref . args)
-       (define-values (update-ref mactor)
-         (actormap-symlink-ref actormap to-ref))
+     (lambda (kws kw-args to-refr . args)
+       (define-values (update-refr mactor)
+         (actormap-symlink-ref actormap to-refr))
        (match mactor
          [(? mactor:near?)
           (define actor-handler
@@ -452,14 +452,14 @@
           ;; if a new handler for this actor was specified,
           ;; let's replace it
           (when new-handler
-            (transactormap-set! actormap update-ref
+            (transactormap-set! actormap update-refr
                                 (mactor:near new-handler)))
 
           return-val]
          [(? mactor:encased?)
           (mactor:encased-val mactor)]
          [_
-          (error "Actor immediate calls restricted to near-refs and encased values")]))))
+          (error "Actor immediate calls restricted to near-refrs and encased values")]))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
@@ -485,22 +485,22 @@
        ;; Now we "become" that value!
        (match val
          ;; It's a reference now, so let's set up a symlink
-         [(? ref?)
+         [(? refr?)
           ;; for efficiency, let's make it as direct of a symlink
           ;; as possible
           (define link-to
-            (let lp ([ref-id val]
+            (let lp ([refr-id val]
                      [seen (seteq)])
-              (when (set-member? seen ref-id)
+              (when (set-member? seen refr-id)
                 (error "Cycle in mactor symlinks"))
-              ;; TODO: deal with far refs
-              (match (actormap-ref actormap ref-id)
+              ;; TODO: deal with far refrs
+              (match (actormap-ref actormap refr-id)
                 [(? mactor:symlink? mactor)
-                 (lp (mactor:symlink-link-to-ref mactor)
-                     (set-add seen ref-id))]
+                 (lp (mactor:symlink-link-to-refr mactor)
+                     (set-add seen refr-id))]
                 [#f (error "no actor with this id")]
-                ;; ok we found a non-symlink ref
-                [_ ref-id])))
+                ;; ok we found a non-symlink refr
+                [_ refr-id])))
           (actormap-set! actormap promise-id
                               (mactor:symlink link-to))]
          ;; Must be something else then.  Guess we'd better
@@ -538,39 +538,39 @@
       [_ (error "can only resolve a near-promise")]))
 
   ;; helper to the next two methods
-  (define (_send-message kws kw-args actor-ref resolve-me args)
+  (define (_send-message kws kw-args actor-refr resolve-me args)
     (define new-message
-      (message actor-ref resolve-me kws kw-args args))
+      (message actor-refr resolve-me kws kw-args args))
     ;; TODO: This is really a matter of dispatching on mactors
     ;;   mostly now
-    (match actor-ref
-      [(? live-ref?)
+    (match actor-refr
+      [(? live-refr?)
        (set! to-local (cons new-message to-local))]
-      #;[(? far-ref?)
+      #;[(? far-refr?)
        (set! to-remote (cons new-message to-remote))]))
 
   (define _<-
     (make-keyword-procedure
-     (lambda (kws kw-args actor-ref . args)
-       (_send-message kws kw-args actor-ref #f args)
+     (lambda (kws kw-args actor-refr . args)
+       (_send-message kws kw-args actor-refr #f args)
        (void))))
 
   (define _<-p
     (make-keyword-procedure
-     (lambda (kws kw-args actor-ref . args)
+     (lambda (kws kw-args actor-refr . args)
        (match-define (list promise resolver)
          (spawn-promise-pair))
-       (_send-message kws kw-args actor-ref resolver args)
+       (_send-message kws kw-args actor-refr resolver args)
        promise)))
 
-  (define (_on id-ref [on-fulfilled #f]
+  (define (_on id-refr [on-fulfilled #f]
                #:catch [on-broken #f]
                #:finally [on-finally #f]
                #:return-promise? [return-promise? #f])
-    #;(unless (near? id-ref)
+    #;(unless (near? id-refr)
       (error "on only works for near objects"))
-    (define-values (subscribe-ref mactor)
-      (actormap-symlink-ref actormap id-ref))
+    (define-values (subscribe-refr mactor)
+      (actormap-symlink-ref actormap id-refr))
     ;; Alternate design for these (and the first I implemented) is to
     ;; actually spawn on-finally and on-fulfilled actors and call
     ;; them.  That might be better if we did add coroutines.
@@ -620,7 +620,7 @@
              (call-on-broken problem)])))
        (define new-listeners
          (cons on-listener listeners))
-       (actormap-set! actormap id-ref
+       (actormap-set! actormap id-refr
                            (mactor:near-promise new-listeners
                                                 r-unsealer r-tm?))
        (if return-promise?
@@ -633,15 +633,15 @@
        (call-on-fulfilled (mactor:encased-val mactor))
        (call-on-finally)]
       [(? (or/c mactor:far? mactor:near?) mactor)
-       (call-on-fulfilled subscribe-ref)
+       (call-on-fulfilled subscribe-refr)
        (call-on-finally)]
       ;; This involves invoking a vat-level method of the remote
       ;; machine, right?
       [(? mactor:far-promise? mactor)
        'TODO]))
 
-  (define (_extract id-ref)
-    (actormap-extract actormap id-ref))
+  (define (_extract id-refr)
+    (actormap-extract actormap id-refr))
 
   (define (get-internals)
     (list actormap to-local to-remote))
@@ -658,7 +658,7 @@
 (struct next (handler return-val)
   #:constructor-name _make-next)
 (define/contract (make-next handler [return-val (void)])
-  (->* [(and/c procedure? (not/c ref?))]
+  (->* [(and/c procedure? (not/c refr?))]
        [(not/c next?)]
        any/c)
   (_make-next handler return-val))
@@ -672,65 +672,65 @@
 
 (define <-
   (make-keyword-procedure
-   (lambda (kws kw-args to-ref . args)
+   (lambda (kws kw-args to-refr . args)
      (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args '<- to-ref args))))
+     (keyword-apply sys kws kw-args '<- to-refr args))))
 
 (define <-p
   (make-keyword-procedure
-   (lambda (kws kw-args to-ref . args)
+   (lambda (kws kw-args to-refr . args)
      (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args '<-p to-ref args))))
+     (keyword-apply sys kws kw-args '<-p to-refr args))))
 
 (define call
   (make-keyword-procedure
-   (lambda (kws kw-args to-ref . args)
+   (lambda (kws kw-args to-refr . args)
      (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args 'call to-ref args))))
+     (keyword-apply sys kws kw-args 'call to-refr args))))
 
 (define (spawn actor-handler
                [debug-name (object-name actor-handler)])
   (define sys (get-syscaller-or-die))
   (sys 'spawn actor-handler debug-name))
 
-(define (on id-ref [on-fulfilled #f]
+(define (on id-refr [on-fulfilled #f]
             #:catch [on-broken #f]
             #:finally [on-finally #f]
             #:return-promise? [return-promise? #f])
   (define sys (get-syscaller-or-die))
-  (sys 'on id-ref on-fulfilled
+  (sys 'on id-refr on-fulfilled
        #:catch on-broken
        #:finally on-finally
        #:return-promise? return-promise?))
 
-(define (extract id-ref)
+(define (extract id-refr)
   (define sys (get-syscaller-or-die))
-  (sys 'extract id-ref))
+  (sys 'extract id-refr))
 
 
 ;;; actormap turning and utils
 ;;; ==========================
 
-(define (actormap-turn* actormap to-ref kws kw-args args)
+(define (actormap-turn* actormap to-refr kws kw-args args)
   (call-with-fresh-syscaller
    actormap
    (lambda (sys get-sys-internals)
      (define result-val
-       (keyword-apply sys kws kw-args 'call to-ref args))
+       (keyword-apply sys kws kw-args 'call to-refr args))
      (apply values result-val
             (get-sys-internals)))))  ; actormap to-local to-remote
 
 (define actormap-turn
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-ref . args)
-     (actormap-turn* actormap to-ref kws kw-args args))))
+   (lambda (kws kw-args actormap to-refr . args)
+     (actormap-turn* actormap to-refr kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
 (define actormap-poke!
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-ref . args)
+   (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
-       (actormap-turn* actormap to-ref kws kw-args args))
+       (actormap-turn* actormap to-refr kws kw-args args))
      (transactormap-merge! transactormap)
      returned-val)))
 
@@ -739,14 +739,14 @@
 ;; so we discard everything but the result.
 (define actormap-peek
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-ref . args)
+   (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val _am _tl _tr)
-       (actormap-turn* actormap to-ref kws kw-args args))
+       (actormap-turn* actormap to-refr kws kw-args args))
      returned-val)))
 
-(define (actormap-extract actormap id-ref)
-  (define-values (_ref mactor)
-    (actormap-symlink-ref actormap id-ref))
+(define (actormap-extract actormap id-refr)
+  (define-values (_refr mactor)
+    (actormap-symlink-ref actormap id-refr))
   (match mactor
     [(? mactor:encased? mactor)
      (mactor:encased-val mactor)]
@@ -769,7 +769,7 @@
    (lambda (sys get-sys-internals)
      (match-define (message to resolve-me kws kw-vals args)
        msg)
-     (unless (live-ref? to)
+     (unless (live-refr? to)
        (error "Can only perform a turn on a message to local actors"))
      (define call-result #f)
      (define result-val (void))
@@ -822,18 +822,18 @@
 
 ;; like actormap-run but also returns the new actormap, to-local, to-remote
 (define (actormap-run* actormap thunk)
-  (define-values (actor-ref new-actormap)
+  (define-values (actor-refr new-actormap)
     (actormap-spawn actormap thunk))
   (define-values (returned-val new-actormap2 to-local to-remote)
-    (actormap-turn* new-actormap actor-ref '() '() '()))
+    (actormap-turn* new-actormap actor-refr '() '() '()))
   (values returned-val new-actormap2 to-local to-remote))
 
 ;; committal version
 ;; Run, and also commit the results of, the code in the thunk
 (define (actormap-run! actormap thunk)
-  (define actor-ref
+  (define actor-refr
     (actormap-spawn! actormap thunk))
-  (actormap-poke! actormap actor-ref))
+  (actormap-poke! actormap actor-refr))
 
 
 ;; Returns a new tree of local messages
@@ -896,27 +896,27 @@
 ;; non-committal version of actormap-spawn
 (define (actormap-spawn actormap actor-handler
                         [debug-name (object-name actor-handler)])
-  (define actor-ref
-    (make-live-ref debug-name))
+  (define actor-refr
+    (make-live-refr debug-name))
   (define new-actormap
     (make-transactormap actormap))
-  (transactormap-set! new-actormap actor-ref
+  (transactormap-set! new-actormap actor-refr
                       (mactor:near actor-handler))
-  (values actor-ref new-actormap))
+  (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
                          [debug-name (object-name actor-handler)])
-  (define actor-ref
-    (make-live-ref debug-name))
-  (actormap-set! actormap actor-ref
+  (define actor-refr
+    (make-live-refr debug-name))
+  (actormap-set! actormap actor-refr
                       (mactor:near actor-handler))
-  actor-ref)
+  actor-refr)
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f])
-  (define actor-ref
-    (make-live-ref debug-name))
-  (actormap-set! actormap actor-ref mactor)
-  actor-ref)
+  (define actor-refr
+    (make-live-refr debug-name))
+  (actormap-set! actormap actor-refr mactor)
+  actor-refr)
 
 (module+ test
   (require rackunit
@@ -928,20 +928,20 @@
                n))
 
   ;; can actors update themselves?
-  (define ctr-ref
+  (define ctr-refr
     (actormap-spawn! am (counter 1) 'ctr))
   (define-values (turned-val1 am+ctr1 _to-local _to-remote)
-    (actormap-turn am ctr-ref))
+    (actormap-turn am ctr-refr))
   (check-eqv? turned-val1 1)
   (define-values (turned-val2 am+ctr2 _to-local2 _to-remote2)
-    (actormap-turn am+ctr1 ctr-ref))
+    (actormap-turn am+ctr1 ctr-refr))
   (check-eqv? turned-val2 2)
 
   ;; transaction shouldn't be applied yet
   (define-values (turned-val1-again
                   am+ctr1-again
                   _to-local-again _to-remote-again)
-    (actormap-turn am ctr-ref))
+    (actormap-turn am ctr-refr))
   (check-eqv? turned-val1-again 1)
 
   ;; but now it should be
@@ -949,7 +949,7 @@
   (define-values (turned-val3 am+ctr3 _to-local3 _to-remote3)
     ;; observe that we're turning using the "original"
     ;; actormap though!  It should have committed.
-    (actormap-turn am ctr-ref))
+    (actormap-turn am ctr-refr))
   (check-eqv? turned-val3 3)
 
   (define (friend-spawner friend-name)
@@ -972,14 +972,14 @@
    (actormap-poke! am joe)
    "Hello!  My name is joe and I've been called 2 times!")
 
-  (define-values (noncommital-ref noncommital-am)
+  (define-values (noncommital-refr noncommital-am)
     (actormap-spawn am (lambda () 'noncommital)))
   (check-eq?
-   (actormap-peek noncommital-am noncommital-ref)
+   (actormap-peek noncommital-am noncommital-refr)
    'noncommital)
   (check-exn
    any/c
-   (lambda () (actormap-peek am noncommital-ref)))
+   (lambda () (actormap-peek am noncommital-refr)))
 
   (define who-ya-gonna-call
     #f)
@@ -1105,7 +1105,7 @@
             (lambda (v)
               (set! on-resolved-bob-arg v)))))
   (test-equal?
-   "Using `on' against a resolved ref returns that ref"
+   "Using `on' against a resolved refr returns that refr"
    on-resolved-bob-arg bob)
 
 
@@ -1133,7 +1133,7 @@
             (lambda (v)
               (set! on-resolved-encased-arg v)))))
   (test-equal?
-   "Using `on' against a resolved ref returns that ref"
+   "Using `on' against a resolved refr returns that refr"
    on-resolved-encased-arg 'encase-me)
 
 
