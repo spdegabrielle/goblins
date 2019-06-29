@@ -8,9 +8,9 @@
 (provide facet facet*)
 
 (define/contract (facet* wrap-me methods)
-  (-> ref? (set/c symbol?
-                  #:cmp 'eq
-                  #:kind 'immutable)
+  (-> refr? (set/c symbol?
+                   #:cmp 'eq
+                   #:kind 'immutable)
       any/c)
   (define facet
     (make-keyword-procedure
