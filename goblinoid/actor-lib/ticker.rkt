@@ -32,7 +32,7 @@
              '()
              updated-ticked))
     ;; update ourself
-    (next (make-ticker next-tickers)))
+    (become (make-ticker next-tickers)))
   (list (spawn tick-register)
         (spawn (make-ticker '()))))
 
@@ -59,7 +59,7 @@
             (speaking-cell
              (format "<~a> sigh number ~a"
                      name n))
-            (next (loop (add1 n))))))
+            (become (loop (add1 n))))))
     (loop 1))
   (define joe
     (actormap-spawn! am (malaise-sufferer "joe"

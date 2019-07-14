@@ -17,8 +17,8 @@
                     (raart:blank 0 0)))
     0 0)))
 
-(define-syntax-rule (next-thunk body ...)
-  (next (thunk body ...)))
+(define-syntax-rule (become-thunk body ...)
+  (become (thunk body ...)))
 
 (struct game
   (;; actormap of participants
@@ -139,7 +139,7 @@
            ;; o/~ I tried so hard... and went so far... o/~
            'die
            ;; Time to move and adjust
-           (next-thunk
+           (become-thunk
             (lp (max 0        ; drift, but stay within confines
                      (min (+ x drift)
                           (sub1 cauldron-width))) 
@@ -148,7 +148,7 @@
                 (modify-drift drift))))]
       ;; stay the same..
       [else
-       (next-thunk
+       (become-thunk
         (lp x y (sub1 time-till-raise) drift))]))
   (thunk (lp (random 2 (- cauldron-width 2))
              0 raise-delay 0)))
@@ -185,7 +185,7 @@
         (raart:fg 'yellow
                   cauldron-raart)))
      (display-cell do-display)
-     (next-thunk
+     (become-thunk
       (lp (if bubble-time?
               (new-bubble-cooldown)
               (sub1 bubble-cooldown)))))))

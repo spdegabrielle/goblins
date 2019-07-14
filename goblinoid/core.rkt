@@ -63,8 +63,8 @@
                 [(or/c #f symbol? string?)]
                 any/c)])
 
-         (rename-out [make-next next])
-         ;; next? next-return-val next-handler
+         (rename-out [make-become become])
+         ;; become? become-return-val become-handler
 
          call
          (contract-out
@@ -444,9 +444,9 @@
           ;; TODO: We need to document that.
           (define-values (return-val new-handler)
             (match result
-              [(? next?)
-               (values (next-return-val result)
-                       (next-handler result))]
+              [(? become?)
+               (values (become-return-val result)
+                       (become-handler result))]
               [_ (values result #f)]))
 
           ;; if a new handler for this actor was specified,
@@ -537,7 +537,7 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a near-promise")]))
 
-  ;; helper to the next two methods
+  ;; helper to the become two methods
   (define (_send-message kws kw-args actor-refr resolve-me args)
     (define new-message
       (message actor-refr resolve-me kws kw-args args))
@@ -652,19 +652,19 @@
   (values this-syscaller get-internals close-up!))
 
 
-;;; setting up next handler
+;;; setting up become handler
 ;;; =======================
 
-(struct next (handler return-val)
-  #:constructor-name _make-next)
-(define/contract (make-next handler [return-val (void)])
+(struct become (handler return-val)
+  #:constructor-name _make-become)
+(define/contract (make-become handler [return-val (void)])
   (->* [(and/c procedure? (not/c refr?))]
-       [(not/c next?)]
+       [(not/c become?)]
        any/c)
-  (_make-next handler return-val))
+  (_make-become handler return-val))
 
-(module+ extra-next
-  (provide next next? next-handler next-return-val))
+(module+ extra-become
+  (provide become become? become-handler become-return-val))
 
 
 ;;; syscall external functions
@@ -924,7 +924,7 @@
   (define am (make-whactormap))
 
   (define ((counter n))
-    (make-next (counter (add1 n))
+    (make-become (counter (add1 n))
                n))
 
   ;; can actors update themselves?
@@ -956,7 +956,7 @@
     (define ((a-friend [called-times 0]))
       (define new-called-times
         (add1 called-times))
-      (make-next (a-friend new-called-times)
+      (make-become (a-friend new-called-times)
                  (format "Hello!  My name is ~a and I've been called ~a times!"
                          friend-name new-called-times)))
     (spawn (a-friend) 'friend))
@@ -1013,7 +1013,7 @@
   (case-lambda
     [() val]
     [(new-val)
-     (make-next (make-cell new-val))]))
+     (make-become (make-cell new-val))]))
 
 (define (spawn-cell [val #f])
   (spawn (make-cell val) 'cell))
@@ -1068,11 +1068,11 @@
        [(list 'fulfill val)
         (define sys (get-syscaller-or-die))
         (sys 'fulfill-promise promise (sealer val))
-        (make-next already-resolved)]
+        (make-become already-resolved)]
        [(list 'break problem)
         (define sys (get-syscaller-or-die))
         (sys 'break-promise promise (sealer problem))
-        (make-next already-resolved)])
+        (make-become already-resolved)])
      'resolver))
   (list promise resolver))
 
