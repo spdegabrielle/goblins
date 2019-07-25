@@ -63,8 +63,7 @@
                 [(or/c #f symbol? string?)]
                 any/c)])
 
-         (rename-out [make-become become])
-         ;; become? become-return-val become-handler
+         become
 
          call
          (contract-out
@@ -444,9 +443,9 @@
           ;; TODO: We need to document that.
           (define-values (return-val new-handler)
             (match result
-              [(? become?)
-               (values (become-return-val result)
-                       (become-handler result))]
+              [(? becoming?)
+               (values (becoming-return-val result)
+                       (becoming-handler result))]
               [_ (values result #f)]))
 
           ;; if a new handler for this actor was specified,
@@ -655,16 +654,16 @@
 ;;; setting up become handler
 ;;; =======================
 
-(struct become (handler return-val)
-  #:constructor-name _make-become)
-(define/contract (make-become handler [return-val (void)])
+(struct becoming (handler return-val)
+  #:constructor-name _make-becoming)
+(define/contract (become handler [return-val (void)])
   (->* [(and/c procedure? (not/c refr?))]
-       [(not/c become?)]
+       [(not/c becoming?)]
        any/c)
-  (_make-become handler return-val))
+  (_make-becoming handler return-val))
 
-(module+ extra-become
-  (provide become become? become-handler become-return-val))
+(module+ extra-becoming
+  (provide becoming becoming? becoming-handler becoming-return-val))
 
 
 ;;; syscall external functions
@@ -924,7 +923,7 @@
   (define am (make-whactormap))
 
   (define ((counter n))
-    (make-become (counter (add1 n))
+    (become (counter (add1 n))
                n))
 
   ;; can actors update themselves?
@@ -956,9 +955,9 @@
     (define ((a-friend [called-times 0]))
       (define new-called-times
         (add1 called-times))
-      (make-become (a-friend new-called-times)
-                 (format "Hello!  My name is ~a and I've been called ~a times!"
-                         friend-name new-called-times)))
+      (become (a-friend new-called-times)
+              (format "Hello!  My name is ~a and I've been called ~a times!"
+                      friend-name new-called-times)))
     (spawn (a-friend) 'friend))
   (define fr-spwn (actormap-spawn! am friend-spawner))
   (define joe (actormap-poke! am fr-spwn 'joe))
@@ -1013,7 +1012,7 @@
   (case-lambda
     [() val]
     [(new-val)
-     (make-become (make-cell new-val))]))
+     (become (make-cell new-val))]))
 
 (define (spawn-cell [val #f])
   (spawn (make-cell val) 'cell))
@@ -1068,11 +1067,11 @@
        [(list 'fulfill val)
         (define sys (get-syscaller-or-die))
         (sys 'fulfill-promise promise (sealer val))
-        (make-become already-resolved)]
+        (become already-resolved)]
        [(list 'break problem)
         (define sys (get-syscaller-or-die))
         (sys 'break-promise promise (sealer problem))
-        (make-become already-resolved)])
+        (become already-resolved)])
      'resolver))
   (list promise resolver))
 
