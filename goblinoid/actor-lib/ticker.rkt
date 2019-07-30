@@ -13,10 +13,10 @@
   (define new-ticked
     (spawn (make-cell '())))
   ;; This registers new ticked objects
-  (define (tick-register . entries)
+  (define (tick-register bcom . entries)
     (new-ticked (append entries (new-ticked))))
   ;; This runs all ticked objects
-  (define ((make-ticker current-ticked))
+  (define ((make-ticker current-ticked) bcom)
     ;; Update set of tickers with any that have been
     ;; added since when we last ran
     (define updated-ticked
@@ -32,7 +32,7 @@
              '()
              updated-ticked))
     ;; update ourself
-    (become (make-ticker next-tickers)))
+    (bcom (make-ticker next-tickers)))
   (list (spawn tick-register)
         (spawn (make-ticker '()))))
 
@@ -48,7 +48,7 @@
     (actormap-spawn! am (make-cell)))
   (define (malaise-sufferer name speaking-cell
                             [maximum-suffering 3])
-    (define ((loop n))
+    (define ((loop n) bcom)
       (if (> n maximum-suffering)
           (begin
             (speaking-cell
@@ -59,7 +59,7 @@
             (speaking-cell
              (format "<~a> sigh number ~a"
                      name n))
-            (become (loop (add1 n))))))
+            (bcom (loop (add1 n))))))
     (loop 1))
   (define joe
     (actormap-spawn! am (malaise-sufferer "joe"

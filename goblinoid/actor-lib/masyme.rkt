@@ -18,20 +18,20 @@
 
 (define-syntax method-defn-sym
   (syntax-rules ()
-    [(_ [(method-name method-args ...) body ...])
+    [(_ [(method-name bcom method-args ...) body ...])
      (quote method-name)]
-    [(_ [(method-name method-args ... . rest) body ...])
+    [(_ [(method-name bcom method-args ... . rest) body ...])
      (quote method-name)]
     [(_ [method-name proc])
      (quote method-name)]))
 
 (define-syntax method-defn-proc
   (syntax-rules ()
-    [(_ [(method-name method-args ...) body ...])
-     (lambda (method-args ...)
+    [(_ [(method-name bcom method-args ...) body ...])
+     (lambda (bcom method-args ...)
        body ...)]
-    [(_ [(method-name method-args ... . rest) body ...])
-     (lambda (method-args ... . rest)
+    [(_ [(method-name bcom method-args ... . rest) body ...])
+     (lambda (bcom method-args ... . rest)
        body ...)]
     [(_ [method-name proc])
      proc]))
@@ -40,14 +40,14 @@
   (syntax-rules ()
     [(masyme method-defn ...)
      (make-keyword-procedure
-      (lambda (kws kw-args method . args)
+      (lambda (kws kw-args become method . args)
         (define method-proc
           (cond
             [(eq? method (method-defn-sym method-defn))
              (method-defn-proc method-defn)] ...
             [else
              (error (format "No such method ~a" method))]))
-        (keyword-apply method-proc kws kw-args args)))]))
+        (keyword-apply method-proc kws kw-args become args)))]))
 
 (define-syntax-rule (define-masyme id rest ...)
   (define id (masyme rest ...)))
@@ -59,35 +59,35 @@
   (require rackunit
            racket/contract)
   (define-masyme objekt
-    [(beep)
+    [(beep _)
      'beep-boop]
-    [(hello name)
+    [(hello _ name)
      (format "hello ~a!" name)]
-    [(sing singer [lyric "once upon a bonnie moon..."]
+    [(sing _ singer [lyric "once upon a bonnie moon..."]
            #:note-str [note-str "o/~"])
      (format "<~a> ~a ~a ~a"
              singer note-str lyric note-str)])
 
   (check-eq?
-   (objekt 'beep)
+   (objekt 'become-goes-here 'beep)
    'beep-boop)
   (check-equal?
-   (objekt 'hello "george")
+   (objekt 'become-goes-here 'hello "george")
    "hello george!")
   (check-equal?
-   (objekt 'sing "frank")
+   (objekt 'become-goes-here 'sing "frank")
    "<frank> o/~ once upon a bonnie moon... o/~")
   (check-equal?
-   (objekt 'sing "george"
+   (objekt 'become-goes-here 'sing "george"
              "once upon a swingin' star..."
              #:note-str "♫")
    "<george> ♫ once upon a swingin' star... ♫")
   (check-exn
    any/c
    (lambda ()
-     (objekt 'nope)))
+     (objekt 'become-goes-here 'nope)))
 
   (check-equal?
-   ((masyme [(foo . bar) bar])
-    'foo 'bar 'baz)
+   ((masyme [(foo bcom . bar) bar])
+    'become-goes-here 'foo 'bar 'baz)
    '(bar baz)))

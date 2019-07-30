@@ -14,7 +14,7 @@
       any/c)
   (define facet
     (make-keyword-procedure
-     (lambda (kws kw-args . args)
+     (lambda (kws kw-args become . args)
        (match args
          [(list (? symbol? method) args ...)
           (unless (set-member? methods method)
@@ -28,19 +28,21 @@
 
 (module+ test
   (require rackunit
-           "../core.rkt")
+           "../core.rkt"
+           "match-methods.rkt")
   (define am (make-actormap))
   (define all-powerful-wizard
-    (actormap-spawn! am (match-lambda*
-                          [(list 'magic-missile level)
-                           (format "Casts magic missile level ~a!"
-                                   level)]
-                          [(list 'flame-tongue level)
-                           (format "Casts flame tongue level ~a!"
-                                   level)]
-                          [(list 'world-ender level)
-                           (format "Casts world ender level ~a!"
-                                   level)])))
+    (actormap-spawn! am (match-methods
+                         become
+                         [(magic-missile level)
+                          (format "Casts magic missile level ~a!"
+                                  level)]
+                         [(flame-tongue level)
+                          (format "Casts flame tongue level ~a!"
+                                  level)]
+                         [(world-ender level)
+                          (format "Casts world ender level ~a!"
+                                  level)])))
   (define faceted-wizard
     (actormap-spawn! am
                      (facet all-powerful-wizard

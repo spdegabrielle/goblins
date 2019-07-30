@@ -63,8 +63,6 @@
                 [(or/c #f symbol? string?)]
                 any/c)])
 
-         become
-
          call
          (contract-out
           [spawn
@@ -147,7 +145,8 @@
 
 ;;; Resolved things
 ;; once a near refr, always a near refr.
-(struct mactor:near mactor (handler))
+(struct mactor:near mactor (handler
+                            become become-unsealer become?))
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
 ;;   not a mactor is basically "encased"?  But having an official
@@ -162,6 +161,23 @@
 (struct mactor:near-promise mactor (listeners resolver-unsealer resolver-tm?))
 (struct mactor:far-promise mactor (vat-connid))
 
+
+;;; "Become" special sealers
+;;; ========================
+
+(define (make-become-sealer-triplet)
+  (define-values (struct:seal make-seal sealed? seal-ref seal-set!)
+    (make-struct-type 'become #f 2 0))
+  (define (become handler [return-val (void)])
+    (make-seal handler return-val))
+  (define unseal-handler
+    (make-struct-field-accessor seal-ref 0))
+  (define unseal-return-val
+    (make-struct-field-accessor seal-ref 1))
+  (define (unseal sealed-become)
+    (values (unseal-handler sealed-become)
+            (unseal-return-val sealed-become)))
+  (values become unseal sealed?))
 
 ;;; Actormaps, whactormaps and transactormaps
 ;;; =========================================
@@ -436,23 +452,26 @@
           (define actor-handler
             (mactor:near-handler mactor))
           (define result
-            (keyword-apply actor-handler kws kw-args args))
+            (keyword-apply actor-handler kws kw-args
+                           (mactor:near-become mactor) args))
 
           ;; I guess watching for this guarantees that an immediate call
           ;; against a local actor will not be tail recursive.
           ;; TODO: We need to document that.
-          (define-values (return-val new-handler)
+          (define-values (new-handler return-val)
             (match result
-              [(? becoming?)
-               (values (becoming-return-val result)
-                       (becoming-handler result))]
-              [_ (values result #f)]))
+              [(? (mactor:near-become? mactor))
+               ((mactor:near-become-unsealer mactor) result)]
+              [_ (values #f result)]))
 
           ;; if a new handler for this actor was specified,
           ;; let's replace it
           (when new-handler
             (transactormap-set! actormap update-refr
-                                (mactor:near new-handler)))
+                                (mactor:near new-handler
+                                             (mactor:near-become mactor)
+                                             (mactor:near-become-unsealer mactor)
+                                             (mactor:near-become? mactor))))
 
           return-val]
          [(? mactor:encased?)
@@ -604,7 +623,7 @@
          ;; ones because they'll be in a new syscaller
          (_spawn
           (match-lambda*
-            [(list 'fulfill val)
+            [(list bcom 'fulfill val)
              (define fulfilled-response-val
                (call-on-fulfilled val))
              (when return-promise?
@@ -613,7 +632,7 @@
              ;; return this, or if we should just return void.
              ;; I don't think it hurts?
              fulfilled-response-val]
-            [(list 'break problem)
+            [(list bcom 'break problem)
              (when return-promise?
                (<- return-p-resolver 'break problem))
              (call-on-broken problem)])))
@@ -649,21 +668,6 @@
     (set! closed? #t))
 
   (values this-syscaller get-internals close-up!))
-
-
-;;; setting up become handler
-;;; =======================
-
-(struct becoming (handler return-val)
-  #:constructor-name _make-becoming)
-(define/contract (become handler [return-val (void)])
-  (->* [(and/c procedure? (not/c refr?))]
-       [(not/c becoming?)]
-       any/c)
-  (_make-becoming handler return-val))
-
-(module+ extra-becoming
-  (provide becoming becoming? becoming-handler becoming-return-val))
 
 
 ;;; syscall external functions
@@ -822,7 +826,7 @@
 ;; like actormap-run but also returns the new actormap, to-local, to-remote
 (define (actormap-run* actormap thunk)
   (define-values (actor-refr new-actormap)
-    (actormap-spawn actormap thunk))
+    (actormap-spawn actormap (lambda (become) (thunk))))
   (define-values (returned-val new-actormap2 to-local to-remote)
     (actormap-turn* new-actormap actor-refr '() '() '()))
   (values returned-val new-actormap2 to-local to-remote))
@@ -831,7 +835,7 @@
 ;; Run, and also commit the results of, the code in the thunk
 (define (actormap-run! actormap thunk)
   (define actor-refr
-    (actormap-spawn! actormap thunk))
+    (actormap-spawn! actormap (lambda (become) (thunk))))
   (actormap-poke! actormap actor-refr))
 
 
@@ -899,16 +903,23 @@
     (make-live-refr debug-name))
   (define new-actormap
     (make-transactormap actormap))
+  (define-values (become become-unseal become?)
+    (make-become-sealer-triplet))
+
   (transactormap-set! new-actormap actor-refr
-                      (mactor:near actor-handler))
+                      (mactor:near actor-handler
+                                   become become-unseal become?))
   (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
                          [debug-name (object-name actor-handler)])
   (define actor-refr
     (make-live-refr debug-name))
+  (define-values (become become-unseal become?)
+    (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
-                      (mactor:near actor-handler))
+                 (mactor:near actor-handler
+                              become become-unseal become?))
   actor-refr)
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f])
@@ -922,9 +933,9 @@
            racket/contract)
   (define am (make-whactormap))
 
-  (define ((counter n))
-    (become (counter (add1 n))
-               n))
+  (define ((counter n) bcom)
+    (bcom (counter (add1 n))
+            n))
 
   ;; can actors update themselves?
   (define ctr-refr
@@ -951,13 +962,13 @@
     (actormap-turn am ctr-refr))
   (check-eqv? turned-val3 3)
 
-  (define (friend-spawner friend-name)
-    (define ((a-friend [called-times 0]))
+  (define (friend-spawner bcom friend-name)
+    (define ((a-friend [called-times 0]) bcom)
       (define new-called-times
         (add1 called-times))
-      (become (a-friend new-called-times)
-              (format "Hello!  My name is ~a and I've been called ~a times!"
-                      friend-name new-called-times)))
+      (bcom (a-friend new-called-times)
+            (format "Hello!  My name is ~a and I've been called ~a times!"
+                    friend-name new-called-times)))
     (spawn (a-friend) 'friend))
   (define fr-spwn (actormap-spawn! am friend-spawner))
   (define joe (actormap-poke! am fr-spwn 'joe))
@@ -972,7 +983,7 @@
    "Hello!  My name is joe and I've been called 2 times!")
 
   (define-values (noncommital-refr noncommital-am)
-    (actormap-spawn am (lambda () 'noncommital)))
+    (actormap-spawn am (lambda (bcom) 'noncommital)))
   (check-eq?
    (actormap-peek noncommital-am noncommital-refr)
    'noncommital)
@@ -1010,9 +1021,9 @@
 
 (define (make-cell [val #f])
   (case-lambda
-    [() val]
-    [(new-val)
-     (become (make-cell new-val))]))
+    [(bcom) val]
+    [(bcom new-val)
+     (bcom (make-cell new-val))]))
 
 (define (spawn-cell [val #f])
   (spawn (make-cell val) 'cell))
@@ -1064,14 +1075,14 @@
   (define resolver
     (spawn
      (match-lambda*
-       [(list 'fulfill val)
+       [(list bcom 'fulfill val)
         (define sys (get-syscaller-or-die))
         (sys 'fulfill-promise promise (sealer val))
-        (become already-resolved)]
-       [(list 'break problem)
+        (bcom already-resolved)]
+       [(list bcom 'break problem)
         (define sys (get-syscaller-or-die))
         (sys 'break-promise promise (sealer problem))
-        (become already-resolved)])
+        (bcom already-resolved)])
      'resolver))
   (list promise resolver))
 
@@ -1240,7 +1251,8 @@
     am
     (actormap-full-run!
      am (lambda ()
-          (define doubler (spawn (lambda (x) (* x 2))))
+          (define doubler (spawn (lambda (bcom x)
+                                   (* x 2))))
           (define the-on-promise
             (on (<-p doubler 3)
                 (lambda (x)

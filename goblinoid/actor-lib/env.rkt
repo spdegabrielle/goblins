@@ -9,6 +9,7 @@
 (require "../utils/simple-sealers.rkt"
          "../core.rkt"
          "facet.rkt"
+         "match-methods.rkt"
          racket/match)
 
 (define (rw->read-key rw-key)
@@ -66,8 +67,9 @@
           id])]))
 
   (define (env ht)
-    (match-lambda*
-      [(list 'new-key)
+    (match-methods
+     bcom
+      [(new-key)
        ;; unique by eq?
        (define id
          (cons 'tick 'key))
@@ -78,11 +80,11 @@
        (define rw-key
          `(rw-key ,read-key ,write-key))
        rw-key]
-      [(list 'read readable-key)
+      [(read readable-key)
        (define id
          (extract/verify-read-id readable-key))
        (hash-ref ht id '())]
-      [(list 'write writeable-key val)
+      [(write writeable-key val)
        (define id
          (extract/verify-write-id writeable-key))
        (define updated-ht
@@ -90,11 +92,11 @@
                    (cons val (hash-ref ht id '()))))
        (define new-env
          (env updated-ht))
-       (become new-env)]
-      [(list 'reset)
+       (bcom new-env)]
+      [(reset)
        (define new-env
          (env #hasheq()))
-       (become new-env)]))
+       (bcom new-env)]))
   
   (env #hasheq()))
 
@@ -104,7 +106,7 @@
   (define rw-facet
     (spawn (facet this-env 'new-key 'read 'write)))
   (define reset-facet
-    (spawn (lambda ()
+    (spawn (lambda (bcom)
              (call this-env 'reset))))
   (list rw-facet reset-facet))
 

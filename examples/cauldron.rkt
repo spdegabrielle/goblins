@@ -17,9 +17,6 @@
                     (raart:blank 0 0)))
     0 0)))
 
-(define-syntax-rule (become-thunk body ...)
-  (become (thunk body ...)))
-
 (struct game
   (;; actormap of participants
    actormap
@@ -115,7 +112,7 @@
       (random -1 2))
     (max -1 (min 1 (+ drift drift-it))))
   (define raise-delay (random 10 30))
-  (define (lp x y time-till-raise drift)
+  (define ((lp x y time-till-raise drift) bcom)
     (define time-to-live
       (- bubble-lifetime y))
     (define bubble-shape
@@ -139,7 +136,7 @@
            ;; o/~ I tried so hard... and went so far... o/~
            'die
            ;; Time to move and adjust
-           (become-thunk
+           (bcom
             (lp (max 0        ; drift, but stay within confines
                      (min (+ x drift)
                           (sub1 cauldron-width))) 
@@ -148,10 +145,10 @@
                 (modify-drift drift))))]
       ;; stay the same..
       [else
-       (become-thunk
+       (bcom
         (lp x y (sub1 time-till-raise) drift))]))
-  (thunk (lp (random 2 (- cauldron-width 2))
-             0 raise-delay 0)))
+  (lp (random 2 (- cauldron-width 2))
+      0 raise-delay 0))
 
 (define (cauldron spawn-ticked display-cell env)
   (define bubble-display-key
@@ -160,35 +157,36 @@
     (raart:blank cauldron-width bubble-max-height))
   (define (new-bubble-cooldown)
     (random 15 40))
-  (thunk
-   (let lp ([bubble-cooldown (new-bubble-cooldown)])
-     (define bubble-time? (eqv? bubble-cooldown 0))
-     (when bubble-time?
-       (spawn-ticked (make-bubble env bubble-display-key)))
-     (define (do-display)
-       (define all-bubbles
-         (env 'read bubble-display-key))
-       (define bubbled-canvas
-         (for/fold ([canvas bubble-canvas])
-                   ([bubble-info all-bubbles])
-           (match bubble-info
-             [(list col row char)
-              (raart:place-at canvas
-                              (sub1 (- bubble-max-height row))
-                              col (raart:char char))])))
-       (raart:vappend
-        #:halign 'center
-        ;; green
-        (raart:fg 'green
-                  bubbled-canvas)
-        ;; yellow
-        (raart:fg 'yellow
-                  cauldron-raart)))
-     (display-cell do-display)
-     (become-thunk
-      (lp (if bubble-time?
-              (new-bubble-cooldown)
-              (sub1 bubble-cooldown)))))))
+  (lambda (bcom)
+    (let lp ([bubble-cooldown (new-bubble-cooldown)])
+      (define bubble-time? (eqv? bubble-cooldown 0))
+      (when bubble-time?
+        (spawn-ticked (make-bubble env bubble-display-key)))
+      (define (do-display)
+        (define all-bubbles
+          (env 'read bubble-display-key))
+        (define bubbled-canvas
+          (for/fold ([canvas bubble-canvas])
+                    ([bubble-info all-bubbles])
+            (match bubble-info
+              [(list col row char)
+               (raart:place-at canvas
+                               (sub1 (- bubble-max-height row))
+                               col (raart:char char))])))
+        (raart:vappend
+         #:halign 'center
+         ;; green
+         (raart:fg 'green
+                   bubbled-canvas)
+         ;; yellow
+         (raart:fg 'yellow
+                   cauldron-raart)))
+      (display-cell do-display)
+      (bcom
+       (lambda _
+         (lp (if bubble-time?
+                 (new-bubble-cooldown)
+                 (sub1 bubble-cooldown))))))))
 
 (define (val->raart val)
   (match val

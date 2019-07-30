@@ -6,17 +6,17 @@
 
 (define (spawn-revokeable target)
   (define revoked?
-    (make-cell #f))
+    (spawn-cell #f))
   (define forwarder
     (spawn
      (make-keyword-procedure
-      (lambda (kws kw-args . args)
+      (lambda (kws kw-args become . args)
         (when (revoked?)
           (error "Access revoked!"))
-        (keyword-apply target kws kw-args args)))))
+        (keyword-apply call kws kw-args target args)))))
   (define revoker
     (spawn
-     (lambda ()
+     (lambda (bcom)
        (revoked? #t))))
   (list forwarder revoker))
 
@@ -27,7 +27,7 @@
   (define am (make-actormap))
   (define royal-admission
     (actormap-spawn!
-     am (lambda ()
+     am (lambda (bcom)
           "The Queen will see you now.")))
   (match-define (list royal-forwarder royal-revoker)
     (actormap-run! am (lambda ()
