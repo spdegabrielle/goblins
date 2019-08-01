@@ -1,14 +1,14 @@
 #lang racket/base
 
-(provide masyme
-         define-masyme
-         spawn-masyme)
+(provide mactor
+         define-mactor
+         spawn-mactor)
 
 (require "../core.rkt")
 
 ;; Simple macro for method-based dispatching
 
-;;   masyme (Macro Symbol-based Method) like the venetian/italian
+;;   mactor (Macro Symbol-based Method) like the venetian/italian
 ;;   feminine plural word of masimo: masime. which means maximum,
 ;;   greatest, largest etc.
 ;;     - mickie / alejandro
@@ -36,9 +36,9 @@
     [(_ [method-name proc])
      proc]))
 
-(define-syntax masyme
+(define-syntax mactor
   (syntax-rules ()
-    [(masyme method-defn ...)
+    [(mactor method-defn ...)
      (make-keyword-procedure
       (lambda (kws kw-args become method . args)
         (define method-proc
@@ -49,16 +49,16 @@
              (error (format "No such method ~a" method))]))
         (keyword-apply method-proc kws kw-args become args)))]))
 
-(define-syntax-rule (define-masyme id rest ...)
-  (define id (masyme rest ...)))
+(define-syntax-rule (define-mactor id rest ...)
+  (define id (mactor rest ...)))
 
-(define-syntax-rule (spawn-masyme rest ...)
-  (spawn (masyme rest ...)))
+(define-syntax-rule (spawn-mactor rest ...)
+  (spawn (mactor rest ...)))
 
 (module+ test
   (require rackunit
            racket/contract)
-  (define-masyme objekt
+  (define-mactor objekt
     [(beep _)
      'beep-boop]
     [(hello _ name)
@@ -88,6 +88,6 @@
      (objekt 'become-goes-here 'nope)))
 
   (check-equal?
-   ((masyme [(foo bcom . bar) bar])
+   ((mactor [(foo bcom . bar) bar])
     'become-goes-here 'foo 'bar 'baz)
    '(bar baz)))
