@@ -1,0 +1,6 @@
+Goblins is an actor model implementation written as a Racket library.
+It was originally written for use in Spritely, but is fairly general.
+
+* License
+
+Released under Apache v2.

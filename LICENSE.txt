@@ -1,1 +1,1 @@
-goblinoid/LICENSE.txt
+goblins/LICENSE.txt
