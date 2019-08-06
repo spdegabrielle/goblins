@@ -13,4 +13,4 @@
                          (submod crystal/crystal-server main)
                          "Run a crystal registry as a server"
                          #f)))
-#;(define scribblings '(("scribblings/crystal.scrbl")))
+(define scribblings '(("scribblings/goblins.scrbl")))
