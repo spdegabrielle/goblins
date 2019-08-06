@@ -20,5 +20,5 @@
 
 @title{Goblins: a lightweight actor library}
 
-Sorry!  There's been a massive rewrite and all these docs need a
+Sorry!  There's been a massive rewrite and all these docs also need a
 rewrite. :)
