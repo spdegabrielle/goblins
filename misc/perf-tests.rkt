@@ -1,6 +1,6 @@
 #lang racket
 
-(require goblinoid
+(require goblins
          racket/match)
 
 (define (do-actors-gc actormap)

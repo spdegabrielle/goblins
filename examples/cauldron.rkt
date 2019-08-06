@@ -4,9 +4,9 @@
          (prefix-in raart: raart)
          racket/match)
 
-(require goblinoid
-         goblinoid/actor-lib/env
-         goblinoid/actor-lib/ticker)
+(require goblins
+         goblins/actor-lib/env
+         goblins/actor-lib/ticker)
 
 (define (raart-render-game get-game-display
                            [width 80] [height 24])
