@@ -89,8 +89,8 @@
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
                 (define-values (returned-val transactormap to-local to-remote)
-                  (keyword-apply actormap-turn actormap
-                                 to-refr kws kw-args args))
+                  (keyword-apply actormap-turn kws kw-args
+                                 actormap to-refr args))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
@@ -103,8 +103,8 @@
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define-values (returned-val transactormap to-local to-remote)
-                    (keyword-apply actormap-turn actormap
-                                   to-refr kws kw-args args))
+                    (keyword-apply actormap-turn kws kw-args
+                                   actormap to-refr args))
                   (transactormap-merge! transactormap)
                   (schedule-local-messages to-local)
                   (schedule-remote-messages to-remote)
