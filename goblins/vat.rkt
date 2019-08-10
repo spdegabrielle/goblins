@@ -83,6 +83,8 @@
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
                 (lp)]
+               ;; TODO: Actually these should probably handle errors similar
+               ;;   to cmd-call?
                [(cmd-external-spawn actor-handler return-ch)
                 (define refr
                   (actormap-spawn! actormap actor-handler))
