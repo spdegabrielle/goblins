@@ -176,3 +176,14 @@
   ;; return the dispatcher
   (procedure-rename vat-dispatcher
                     'vat-dispatcher))
+
+(module+ test
+  (require rackunit)
+  (define a-vat (make-vat))
+  (define friendo (a-vat 'spawn (lambda (bcom) 'hello)))
+  (test-equal?
+   "vat 'call method"
+   (a-vat 'call friendo)
+   'hello)
+
+  )
