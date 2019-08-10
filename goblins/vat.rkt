@@ -174,4 +174,5 @@
   (main-loop)
 
   ;; return the dispatcher
-  vat-dispatcher)
+  (procedure-rename vat-dispatcher
+                    'vat-dispatcher))
