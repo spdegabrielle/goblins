@@ -1,71 +1,178 @@
 #lang racket/base
 
-;; TODO: Doesn't work yet; just a stub.
-
 (require "core.rkt"
-         racket/match)
+         "message.rkt"
+         (submod "core.rkt" syscaller)
+         racket/async-channel
+         racket/match
+         racket/exn
+         racket/contract)
 
-(struct vat (actormap
+(struct cmd-external-spawn (actor-handler return-ch))
+(struct cmd-<- (to-refr kws kw-args args))
+(struct cmd-<-p (to-refr kws kw-args args return-ch))
+(struct cmd-call (to-refr kws kw-args args return-ch))
+(struct cmd-send-message (msg))
+(struct cmd-halt ())
 
-             incoming-messages
-             outgoing-messages
+(define (make-vat [actormap (make-whactormap)])
+  ;; Weak hashes don't seem to "relinquish" its memory, unfortunately.
+  ;; Every now and then we stop and copy over the registry
+  ;; to a new registry, see 'gc-registry handler below.
+  (define vat-channel
+    (make-async-channel))
 
-             to-intervat-channel
-             from-intervat-channel
+  #;(define vat-custodian
+      (make-custodian))
+  #;(define address-will-executor
+      (make-will-executor))
 
-             ;; So this is going to be an object in the vat/actormap
-             ;; that maps swissnum based sturdyrefs to the actual ref
-             ;; objects.
-             sturdyref-manager
+  (define running? #f)
 
-             ;; TODO:
-             ;; keydata
-             ))
+  (define being-called-by-vat-actor
+    (make-parameter #f))
 
+  (define (forbid-internal-actor-call)
+    (when (being-called-by-vat-actor)
+      ;; That would have never completed!
+      (error "Called a blocking vat method from the vat's own actor")))
 
-;; (-> vat? vat?)
-(define (vat-turn vat)
-  'TODO)
+  ;; The main loop
+  ;; =============
+  (define (main-loop)
+    ;; Maybe parameterize custodian here in the future
+    (thread
+     (lambda ()
+       (define (do-main-loop)
+         (with-handlers ([exn:fail?
+                          (lambda (err)
+                            (display ";;;; Error when attempting to run hive main loop:"
+                                     (current-error-port))
+                            (display (exn->string err)
+                                     (current-error-port))
+                            (set! running? #f))])
+           (define schedule-local-messages
+             (match-lambda
+               ['() (void)]
+               [(list msg rest ...)
+                ;; Mildly more efficiently do this in reverse order
+                (schedule-local-messages rest)
+                (async-channel-put vat-channel (cmd-send-message msg))]))
+           ;; Big ol' TODO on this one
+           (define schedule-remote-messages
+             (match-lambda
+               ['() (void)]
+               [(list msg rest ...)
+                (schedule-remote-messages rest)
+                #;(async-channel-put vat-channel (cmd-send-message msg))
+                'TODO]))
 
-;; (-> vat? message? vat?)
-(define (vat-turn-message vat message)
-  'TODO)
+           (let lp ()
+             (match (async-channel-get vat-channel)
+               ;; This is the actual thing this loop spends the most
+               ;; time on, so it needs to go first
+               [(cmd-send-message msg)
+                (define-values (call-result resolve-result _val
+                                            transactormap
+                                            to-local to-remote)
+                  (actormap-turn-message actormap msg
+                                         ;; TODO: Come on, we need to do
+                                         ;; proper logging
+                                         #:display-errors? #t))
+                (transactormap-merge! transactormap)
+                (schedule-local-messages to-local)
+                (schedule-remote-messages to-remote)
+                (lp)]
+               [(cmd-external-spawn actor-handler return-ch)
+                (define refr
+                  (actormap-spawn! actormap actor-handler))
+                (channel-put return-ch refr)
+                (lp)]
+               [(cmd-<- to-refr kws kw-args args)
+                (define-values (returned-val transactormap to-local to-remote)
+                  (keyword-apply actormap-turn actormap
+                                 to-refr kws kw-args args))
+                (transactormap-merge! transactormap)
+                (schedule-local-messages to-local)
+                (schedule-remote-messages to-remote)
+                (lp)]
+               ;; This one is trickiest because we also want to
+               ;; propagate any errors.
+               [(cmd-call to-refr kws kw-args args return-ch)
+                (with-handlers ([any/c
+                                 (lambda (err)
+                                   (channel-put return-ch
+                                                (vector 'fail err)))])
+                  (define-values (returned-val transactormap to-local to-remote)
+                    (keyword-apply actormap-turn actormap
+                                   to-refr kws kw-args args))
+                  (transactormap-merge! transactormap)
+                  (schedule-local-messages to-local)
+                  (schedule-remote-messages to-remote)
+                  (channel-put return-ch (vector 'success returned-val)))
+                (lp)]
+               [(cmd-halt)
+                (void)]))))
 
-;; Churn through all messages
-(define (vat-churn vat)
-  'TODO)
+       ;; Boot it up!
+       (dynamic-wind
+         (lambda ()
+           (set! running? #t))
+         do-main-loop
+         (lambda ()
+           (set! running? #f))))))
 
-;; (-> vat? vat?)
-(define (vat-churn! vat)
-  'TODO)
+  ;; "Public" methods
+  ;; ================
+  (define (is-running?)
+    running?)
 
-;; (-> vat? vat?)
-(define (vat-send-outgoing vat)
-  'TODO)
+  (define (_spawn actor-handler
+                  [debug-name (object-name actor-handler)])
+    (forbid-internal-actor-call)
+    (define return-ch
+      (make-channel))
+    (async-channel-put vat-channel
+                       (cmd-external-spawn actor-handler return-ch))
+    (sync/enable-break return-ch))
 
-;; (-> vat? vat?)
-(define (vat-receive-incoming vat)
-  'TODO)
+  (define _<-
+    (make-keyword-procedure
+     (λ (kws kw-args to-refr . args)
+       (async-channel-put vat-channel
+                          (cmd-<- to-refr kws kw-args args))
+       (void))))
 
-;; (-> vat? any/c)
-(define (vat-commit! vat)
-  'TODO)
+  (define _call
+    (make-keyword-procedure
+     (λ (kws kw-args to-refr . args)
+       (define return-ch
+         (make-channel))
+       (async-channel-put vat-channel
+                          (cmd-call to-refr kws kw-args args return-ch))
+       (match (sync/enable-break return-ch)
+         [(vector 'success val)
+          val]
+         [(vector 'fail err)
+          (raise err)]))))
 
+  (define (_halt)
+    (async-channel-put vat-channel (cmd-halt)))
 
-;; Runs in its own thread
-(define (start-intervat-manager)
-  (define connected
-    'TODO)
-  ;; This one should be a weak map?
-  (define disconnected
-    'TODO)
-  'TODO)
+  (define vat-dispatcher
+    (make-keyword-procedure
+     (λ (kws kw-args method-name . args)
+       (define method
+         (match method-name
+           ['spawn _spawn]
+           ['<- _<-]
+           ['call _call]
+           ['halt _halt]
+           ['is-running? is-running?]))
+       (keyword-apply method kws kw-args args))))
 
-;; Each of these also run in their own threads
-(define (start-intervat-connection)
-  (define questions
-    'TODO)
-  (define answers
-    'TODO)
-  'TODO)
+  ;; boot the main loop
+  (main-loop)
 
+  ;; return the dispatcher
+  vat-dispatcher)
