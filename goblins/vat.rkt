@@ -45,7 +45,7 @@
        (define (do-main-loop)
          (with-handlers ([exn:fail?
                           (lambda (err)
-                            (display ";;;; Error when attempting to run hive main loop:"
+                            (display ";;;; Error when attempting to run vat main loop:"
                                      (current-error-port))
                             (display (exn->string err)
                                      (current-error-port))
