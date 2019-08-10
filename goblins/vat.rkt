@@ -74,10 +74,11 @@
                 (define-values (call-result resolve-result _val
                                             transactormap
                                             to-local to-remote)
-                  (actormap-turn-message actormap msg
-                                         ;; TODO: Come on, we need to do
-                                         ;; proper logging
-                                         #:display-errors? #t))
+                  (parameterize ([being-called-by-vat-actor #t])
+                    (actormap-turn-message actormap msg
+                                           ;; TODO: Come on, we need to do
+                                           ;; proper logging
+                                           #:display-errors? #t)))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
@@ -89,8 +90,9 @@
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
                 (define-values (returned-val transactormap to-local to-remote)
-                  (keyword-apply actormap-turn kws kw-args
-                                 actormap to-refr args))
+                  (parameterize ([being-called-by-vat-actor #t])
+                    (keyword-apply actormap-turn kws kw-args
+                                   actormap to-refr args)))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
@@ -103,8 +105,9 @@
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define-values (returned-val transactormap to-local to-remote)
-                    (keyword-apply actormap-turn kws kw-args
-                                   actormap to-refr args))
+                    (parameterize ([being-called-by-vat-actor #t])
+                      (keyword-apply actormap-turn kws kw-args
+                                     actormap to-refr args)))
                   (transactormap-merge! transactormap)
                   (schedule-local-messages to-local)
                   (schedule-remote-messages to-remote)
@@ -145,6 +148,7 @@
   (define _call
     (make-keyword-procedure
      (λ (kws kw-args to-refr . args)
+       (forbid-internal-actor-call)
        (define return-ch
          (make-channel))
        (async-channel-put vat-channel
