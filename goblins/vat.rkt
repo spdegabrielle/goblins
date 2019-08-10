@@ -2,7 +2,6 @@
 
 (require "core.rkt"
          "message.rkt"
-         (submod "core.rkt" syscaller)
          racket/async-channel
          racket/match
          racket/exn
