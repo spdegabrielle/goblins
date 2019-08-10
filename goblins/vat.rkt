@@ -83,20 +83,20 @@
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
                 (lp)]
-               ;; TODO: Actually these should probably handle errors similar
-               ;;   to cmd-call?
                [(cmd-external-spawn actor-handler return-ch)
-                (define refr
-                  (actormap-spawn! actormap actor-handler))
-                (channel-put return-ch refr)
+                (with-handlers ([any/c
+                                 (lambda (err)
+                                   (channel-put return-ch
+                                                (vector 'fail err)))])
+                  (define refr
+                    (actormap-spawn! actormap actor-handler))
+                  (channel-put return-ch (vector 'success refr)))
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
                 (async-channel-put vat-channel
                                    (cmd-send-message
                                     (message to-refr #f kws kw-args args)))
                 (lp)]
-               ;; This one is trickiest because we also want to
-               ;; propagate any errors.
                [(cmd-call to-refr kws kw-args args return-ch)
                 (with-handlers ([any/c
                                  (lambda (err)
@@ -122,6 +122,13 @@
          (lambda ()
            (set! running? #f))))))
 
+  (define (sync-return-ch return-ch)
+    (match (sync/enable-break return-ch)
+      [(vector 'success val)
+       val]
+      [(vector 'fail err)
+       (raise err)]))
+
   ;; "Public" methods
   ;; ================
   (define (is-running?)
@@ -134,7 +141,7 @@
       (make-channel))
     (async-channel-put vat-channel
                        (cmd-external-spawn actor-handler return-ch))
-    (sync/enable-break return-ch))
+    (sync-return-ch return-ch))
 
   (define _<-
     (make-keyword-procedure
@@ -151,11 +158,7 @@
          (make-channel))
        (async-channel-put vat-channel
                           (cmd-call to-refr kws kw-args args return-ch))
-       (match (sync/enable-break return-ch)
-         [(vector 'success val)
-          val]
-         [(vector 'fail err)
-          (raise err)]))))
+       (sync-return-ch return-ch))))
 
   (define (_halt)
     (async-channel-put vat-channel (cmd-halt)))
