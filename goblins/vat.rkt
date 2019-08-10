@@ -190,4 +190,27 @@
    (a-vat 'call friendo)
    'hello)
 
-  )
+  (define (make-ctr [n 0])
+    (lambda (bcom)
+      (bcom (make-ctr (add1 n))
+            n)))
+  (define a-ctr
+    (a-vat 'spawn (make-ctr)))
+  (check-equal? (a-vat 'call a-ctr) 0)
+  (check-equal? (a-vat 'call a-ctr) 1)
+  (check-equal? (a-vat 'call a-ctr) 2)
+  (check-equal? (a-vat 'call a-ctr) 3)
+  (a-vat '<- a-ctr)
+  ;; race condition, but I mean, we're in trouble if that's failing :P
+  (sleep 0.05)
+  (check-equal? (a-vat 'call a-ctr) 5)
+
+  (define pokes-ctr
+    (a-vat 'spawn (lambda _ (<- a-ctr))))
+  (check-equal? (a-vat 'call a-ctr) 6)
+  (a-vat 'call pokes-ctr)
+  (sleep 0.05)
+  (check-equal? (a-vat 'call a-ctr) 8)
+  (a-vat '<- pokes-ctr)
+  (sleep 0.05)
+  (check-equal? (a-vat 'call a-ctr) 10))
