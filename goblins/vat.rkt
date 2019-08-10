@@ -89,13 +89,9 @@
                 (channel-put return-ch refr)
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
-                (define-values (returned-val transactormap to-local to-remote)
-                  (parameterize ([being-called-by-vat-actor #t])
-                    (keyword-apply actormap-turn kws kw-args
-                                   actormap to-refr args)))
-                (transactormap-merge! transactormap)
-                (schedule-local-messages to-local)
-                (schedule-remote-messages to-remote)
+                (async-channel-put vat-channel
+                                   (cmd-send-message
+                                    (message to-refr #f kws kw-args args)))
                 (lp)]
                ;; This one is trickiest because we also want to
                ;; propagate any errors.
