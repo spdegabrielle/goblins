@@ -50,17 +50,24 @@
 
          ;; preventing awkwardness: we don't want actor handlers
          ;; to be actor refrs
+         ;; TODO: But is this a problem?  Vats are accessing these procedures
+         ;;   through these contracts, which almost certainly add slowdown.
+         ;;   But the Vat code is more or less "trusted" to be have right.
          (contract-out
           [actormap-spawn
            (->* [any/c
                  (and/c procedure?
                         (not/c refr?))]
-                [(or/c #f symbol? string?)]
+                [(or/c #f symbol? string?)
+                 #:vat-connector
+                 (or/c #f procedure?)]
                 (values any/c any/c))]
           [actormap-spawn!
            (->* [any/c (and/c procedure?
                               (not/c refr?))]
-                [(or/c #f symbol? string?)]
+                [(or/c #f symbol? string?)
+                 #:vat-connector
+                 (or/c #f procedure?)]
                 any/c)])
 
          call
@@ -109,7 +116,7 @@
    (lambda (kws kw-args this . args)
      (keyword-apply call kws kw-args this args))))
 
-(struct live-refr refr (debug-name)
+(struct live-refr refr (debug-name vat-connector)
   #:constructor-name _make-live-refr
   #:methods gen:custom-write
   [(define (write-proc refr port mode)
@@ -120,8 +127,8 @@
          [debug-name (format "#<live-refr ~a>" debug-name)]))
      (write-string str-to-write port))])
 
-(define (make-live-refr [debug-name #f])
-  (_make-live-refr debug-name))
+(define (make-live-refr [debug-name #f] [vat-connector #f])
+  (_make-live-refr debug-name vat-connector))
 
 (struct sturdy-refr refr (swiss-num vat-id conn-hints))
 
@@ -395,9 +402,10 @@
     (error "No current syscaller"))
   sys)
 
-(define (call-with-fresh-syscaller actormap proc)
+(define (call-with-fresh-syscaller actormap proc
+                                   #:vat-connector [vat-connector #f])
   (define-values (sys get-sys-internals close-up!)
-    (fresh-syscaller actormap))
+    (fresh-syscaller actormap vat-connector))
   (begin0 (parameterize ([current-syscaller sys])
             (proc sys get-sys-internals))
     (close-up!)))
@@ -414,7 +422,7 @@
       [#f (error "no actor with this id")]
       [mactor (values refr-id mactor)])))
 
-(define (fresh-syscaller prev-actormap)
+(define (fresh-syscaller prev-actormap vat-connector)
   (define actormap
     (make-transactormap prev-actormap))
   (define to-local '())
@@ -482,10 +490,12 @@
   ;; spawn a new actor
   (define (_spawn actor-handler
                   [debug-name (object-name actor-handler)])
-    (actormap-spawn! actormap actor-handler debug-name))
+    (actormap-spawn! actormap actor-handler debug-name
+                     #:vat-connector vat-connector))
 
   (define (spawn-mactor mactor [debug-name #f])
-    (actormap-spawn-mactor! actormap mactor debug-name))
+    (actormap-spawn-mactor! actormap mactor debug-name
+                            #:vat-connector vat-connector))
 
   (define (promise-fulfill promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
@@ -764,11 +774,12 @@
 ;;           actormap to-local to-remote)
 ;; Mix and match the fail/success
 (define (actormap-turn-message actormap msg
-                               #:display-errors? [display-errors? #t])
+                               #:display-errors? [display-errors? #t]
+                               #:vat-connector [vat-connector #f])
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
   (call-with-fresh-syscaller
-   actormap
+   actormap #:vat-connector vat-connector
    (lambda (sys get-sys-internals)
      (match-define (message to resolve-me kws kw-vals args)
        msg)
@@ -898,9 +909,10 @@
 
 ;; non-committal version of actormap-spawn
 (define (actormap-spawn actormap actor-handler
-                        [debug-name (object-name actor-handler)])
+                        [debug-name (object-name actor-handler)]
+                        #:vat-connector [vat-connector #f])
   (define actor-refr
-    (make-live-refr debug-name))
+    (make-live-refr debug-name vat-connector))
   (define new-actormap
     (make-transactormap actormap))
   (define-values (become become-unseal become?)
@@ -912,9 +924,10 @@
   (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
-                         [debug-name (object-name actor-handler)])
+                         [debug-name (object-name actor-handler)]
+                         #:vat-connector [vat-connector #f])
   (define actor-refr
-    (make-live-refr debug-name))
+    (make-live-refr debug-name vat-connector))
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
@@ -922,9 +935,10 @@
                               become become-unseal become?))
   actor-refr)
 
-(define (actormap-spawn-mactor! actormap mactor [debug-name #f])
+(define (actormap-spawn-mactor! actormap mactor [debug-name #f]
+                                #:vat-connector [vat-connector #f])
   (define actor-refr
-    (make-live-refr debug-name))
+    (make-live-refr debug-name vat-connector))
   (actormap-set! actormap actor-refr mactor)
   actor-refr)
 

@@ -36,6 +36,27 @@
       ;; That would have never completed!
       (error "Called a blocking vat method from the vat's own actor")))
 
+  ;; Big ol' TODO
+  (define vat-connector-channel
+    (make-async-channel))
+  (define (send-to-vat-connector msg)
+    (async-channel-put vat-connector-channel msg))
+
+  ;; The vat connector thread
+  (define (vat-connector-loop)
+    (thread
+     (lambda ()
+       (define connections
+         (make-weak-hasheq))
+       (let lp ()
+         (match (async-channel-get vat-connector-channel)
+           ;; What all needs to exist here?
+           ;;  - Establishing a new vat "connection"
+           ;;  - Passing in a message (from a connection, or whatever)
+           ;;  - Passing out a message (to a connection always)
+           ['TODO 'TODO])))))
+  (vat-connector-loop)
+
   ;; The main loop
   ;; =============
   (define (main-loop)
@@ -78,7 +99,9 @@
                     (actormap-turn-message actormap msg
                                            ;; TODO: Come on, we need to do
                                            ;; proper logging
-                                           #:display-errors? #t)))
+                                           #:display-errors? #t
+                                           #:vat-connector
+                                           send-to-vat-connector)))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
@@ -89,7 +112,9 @@
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define refr
-                    (actormap-spawn! actormap actor-handler))
+                    (actormap-spawn! actormap actor-handler
+                                     #:vat-connector
+                                     send-to-vat-connector))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
@@ -112,6 +137,7 @@
                   (channel-put return-ch (vector 'success returned-val)))
                 (lp)]
                [(cmd-halt)
+                (send-to-vat-connector (cmd-halt))
                 (void)]))))
 
        ;; Boot it up!
