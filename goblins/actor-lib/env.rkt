@@ -9,7 +9,7 @@
 (require "../utils/simple-sealers.rkt"
          "../core.rkt"
          "facet.rkt"
-         "match-methods.rkt"
+         "mactor.rkt"
          racket/match)
 
 (define (rw->read-key rw-key)
@@ -67,12 +67,11 @@
           id])]))
 
   (define (env ht)
-    (match-methods
-     bcom
-      [(new-key)
+    (mactor
+      [(new-key bcom [key-name 'some-key])
        ;; unique by eq?
        (define id
-         (cons 'tick 'key))
+         (list key-name))
        (define read-key
          (seal `(read ,id)))
        (define write-key
@@ -80,11 +79,11 @@
        (define rw-key
          `(rw-key ,read-key ,write-key))
        rw-key]
-      [(read readable-key)
+      [(read bcom readable-key)
        (define id
          (extract/verify-read-id readable-key))
        (hash-ref ht id '())]
-      [(write writeable-key val)
+      [(write bcom writeable-key val)
        (define id
          (extract/verify-write-id writeable-key))
        (define updated-ht
@@ -93,7 +92,7 @@
        (define new-env
          (env updated-ht))
        (bcom new-env)]
-      [(reset)
+      [(reset bcom)
        (define new-env
          (env #hasheq()))
        (bcom new-env)]))
