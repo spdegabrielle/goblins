@@ -4,7 +4,12 @@
 ;; inspired by DOS/Win and later DOS/Hurd
 
 (provide make-env
-         spawn-env-pair)
+         spawn-env-pair
+         rw->read-key
+         rw->write-key
+         rw-key?
+         read-key?
+         write-key?)
 
 (require "../utils/simple-sealers.rkt"
          "../core.rkt"
