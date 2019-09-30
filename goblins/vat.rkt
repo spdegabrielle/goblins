@@ -5,7 +5,13 @@
          racket/async-channel
          racket/match
          racket/exn
-         racket/contract)
+         racket/contract
+         [only-in racket/promise delay delay/sync force]
+
+         crypto
+         crypto/private/common/base256
+         ;; until canonicalization is available in preserves
+         csexp)
 
 (struct cmd-external-spawn (actor-handler return-ch))
 (struct cmd-<- (to-refr kws kw-args args))
@@ -14,7 +20,51 @@
 (struct cmd-send-message (msg))
 (struct cmd-halt ())
 
-(define (make-vat [actormap (make-whactormap)])
+(define eddsa-impl
+  (delay/sync (get-pk 'eddsa (crypto-factories))))
+
+(define (make-eddsa-private-key)
+  (generate-private-key (force eddsa-impl) '((curve ed25519))))
+
+;; But what does the machine *do*?
+;; Does it need an event loop?
+;; Does it talk to the "external world"?
+;; It seems obvious that yes, I guess that's the main thing it does,
+;; is set up connections to the outside world and route outside
+;; connections
+
+;; TODO: If we parameterize this, *when* do we set up the ability
+;;   for the machine to be able to speak to the outside world?
+;;   especially if this happens through Tor or etc.
+(define current-machine
+  (make-parameter 'TODO))
+
+#;(define (make-machine
+         ;; TODO: rename to #:sign/decrypt-key ?
+         #:private-key [private-key (delay (make-eddsa-private-key))])
+  (define public-key
+    (delay
+      (pk-key->public-only-key (force private-key))))
+  (define public-key-as-bytes
+    (delay
+      (match (pk-key->datum (force public-key) 'rkt-public)
+        [(list 'eddsa public ed25519 public-key-bytes)
+         public-key-bytes])))
+  )
+
+
+(define (make-vat [actormap (make-whactormap)]
+                  ;; TODO: rename to #:sign/decrypt-key ?
+                  #:private-key [private-key (delay (make-eddsa-private-key))])
+  (define public-key
+    (delay
+      (pk-key->public-only-key (force private-key))))
+  (define public-key-as-bytes
+    (delay
+      (match (pk-key->datum (force public-key) 'rkt-public)
+        [(list 'eddsa public ed25519 public-key-bytes)
+         public-key-bytes])))
+
   ;; Weak hashes don't seem to "relinquish" its memory, unfortunately.
   ;; Every now and then we stop and copy over the registry
   ;; to a new registry, see 'gc-registry handler below.
@@ -209,7 +259,10 @@
                     'vat-dispatcher))
 
 (module+ test
-  (require rackunit)
+  (require rackunit
+           "utils/install-factory.rkt")
+  (install-default-factories!)
+
   (define a-vat (make-vat))
   (define friendo (a-vat 'spawn (lambda (bcom) 'hello)))
   (test-equal?
