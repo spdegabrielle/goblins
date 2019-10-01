@@ -172,9 +172,11 @@
 ;; Eventual things
 (struct mactor:far-promise mactor (vat-connid))
 
-(define local-refr?
+;; TODO: Whatever procedure we make for these we need to
+;;   operate with a refr indirection; we won't have the mactor
+#;(define local-refr?
   (procedure-rename mactor:local? 'local-refr?))
-(define far-refr?
+#;(define far-refr?
   (procedure-rename mactor:far? 'far-refr?))
 
 
