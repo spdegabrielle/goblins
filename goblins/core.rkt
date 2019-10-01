@@ -148,37 +148,45 @@
 ;;;  - eventual
 ;;;  - resolved
 
-(struct mactor ())
+;;; Additionally, location-wise:
+;;;  - near?:       same vat
+;;;  - far?:        different vat
+;;;  - local?:      same machine
+;;;  - remote?:     different machine
 
-;;  - near?:       same vat
-;;  - far?:        different vat
-;;  - local?:      same machine
-;;  - remote?:     different machine
+(struct mactor ())
+(struct mactor:local mactor ())
+(struct mactor:remote mactor (vat-connid))
+
 
 ;;; Resolved things
+;;; ---------------
 ;; once a local refr, always a local refr.
-(struct mactor:local mactor (handler become become-unsealer become?))
-(struct mactor:local-promise mactor (listeners resolver-unsealer resolver-tm?))
+(struct mactor:local-actor mactor:local
+  (handler become become-unsealer become?))
 
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
 ;;   not a mactor is basically "encased"?  But having an official
 ;;   mactor type gives us a clearer answer I guess.
 (struct mactor:encased mactor (val))
-(struct mactor:far mactor (vat-connid))
+(struct mactor:remote-actor mactor:remote (vat-connid))
 (struct mactor:symlink mactor (link-to-refr))
 ;; Once broken, always broken.
 (struct mactor:broken mactor (problem))
 
-;; Eventual things
-(struct mactor:far-promise mactor (vat-connid))
+;;; Eventual things
+;;; ---------------
+(struct mactor:local-promise mactor:local
+  (listeners resolver-unsealer resolver-tm?))
+(struct mactor:remote-promise mactor (vat-connid))
 
 ;; TODO: Whatever procedure we make for these we need to
 ;;   operate with a refr indirection; we won't have the mactor
 #;(define local-refr?
   (procedure-rename mactor:local? 'local-refr?))
 #;(define far-refr?
-  (procedure-rename mactor:far? 'far-refr?))
+  (procedure-rename mactor:remote? 'far-refr?))
 
 
 ;;; "Become" special sealers
@@ -472,30 +480,31 @@
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
        (match mactor
-         [(? mactor:local?)
+         [(? mactor:local-actor?)
           (define actor-handler
-            (mactor:local-handler mactor))
+            (mactor:local-actor-handler mactor))
           (define result
             (keyword-apply actor-handler kws kw-args
-                           (mactor:local-become mactor) args))
+                           (mactor:local-actor-become mactor) args))
 
           ;; I guess watching for this guarantees that an immediate call
           ;; against a local actor will not be tail recursive.
           ;; TODO: We need to document that.
           (define-values (new-handler return-val)
             (match result
-              [(? (mactor:local-become? mactor))
-               ((mactor:local-become-unsealer mactor) result)]
+              [(? (mactor:local-actor-become? mactor))
+               ((mactor:local-actor-become-unsealer mactor) result)]
               [_ (values #f result)]))
 
           ;; if a new handler for this actor was specified,
           ;; let's replace it
           (when new-handler
             (transactormap-set! actormap update-refr
-                                (mactor:local new-handler
-                                              (mactor:local-become mactor)
-                                              (mactor:local-become-unsealer mactor)
-                                              (mactor:local-become? mactor))))
+                                (mactor:local-actor
+                                 new-handler
+                                 (mactor:local-actor-become mactor)
+                                 (mactor:local-actor-become-unsealer mactor)
+                                 (mactor:local-actor-become? mactor))))
 
           return-val]
          [(? mactor:encased?)
@@ -676,12 +685,12 @@
       [(? mactor:encased? mactor)
        (call-on-fulfilled (mactor:encased-val mactor))
        (call-on-finally)]
-      [(? (or/c mactor:far? mactor:local?) mactor)
+      [(? (or/c mactor:remote? mactor:local-actor?) mactor)
        (call-on-fulfilled subscribe-refr)
        (call-on-finally)]
       ;; This involves invoking a vat-level method of the remote
       ;; machine, right?
-      [(? mactor:far-promise? mactor)
+      [(? mactor:remote-promise? mactor)
        'TODO]))
 
   (define (_extract id-refr)
@@ -935,8 +944,8 @@
     (make-become-sealer-triplet))
 
   (transactormap-set! new-actormap actor-refr
-                      (mactor:local actor-handler
-                                    become become-unseal become?))
+                      (mactor:local-actor actor-handler
+                                          become become-unseal become?))
   (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
@@ -947,8 +956,8 @@
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
-                 (mactor:local actor-handler
-                               become become-unseal become?))
+                 (mactor:local-actor actor-handler
+                                     become become-unseal become?))
   actor-refr)
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f]
