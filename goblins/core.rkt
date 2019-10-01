@@ -150,10 +150,14 @@
 
 (struct mactor ())
 
+;;  - near?:    same vat
+;;  - close?:   same machine
+;;  - far?:     different machine
+
 ;;; Resolved things
-;; once a near refr, always a near refr.
-(struct mactor:near mactor (handler
-                            become become-unsealer become?))
+;; once a close refr, always a close refr.
+(struct mactor:close mactor (handler
+                             become become-unsealer become?))
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
 ;;   not a mactor is basically "encased"?  But having an official
@@ -165,7 +169,7 @@
 (struct mactor:broken mactor (problem))
 
 ;; Eventual things
-(struct mactor:near-promise mactor (listeners resolver-unsealer resolver-tm?))
+(struct mactor:close-promise mactor (listeners resolver-unsealer resolver-tm?))
 (struct mactor:far-promise mactor (vat-connid))
 
 
@@ -456,36 +460,36 @@
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
        (match mactor
-         [(? mactor:near?)
+         [(? mactor:close?)
           (define actor-handler
-            (mactor:near-handler mactor))
+            (mactor:close-handler mactor))
           (define result
             (keyword-apply actor-handler kws kw-args
-                           (mactor:near-become mactor) args))
+                           (mactor:close-become mactor) args))
 
           ;; I guess watching for this guarantees that an immediate call
           ;; against a local actor will not be tail recursive.
           ;; TODO: We need to document that.
           (define-values (new-handler return-val)
             (match result
-              [(? (mactor:near-become? mactor))
-               ((mactor:near-become-unsealer mactor) result)]
+              [(? (mactor:close-become? mactor))
+               ((mactor:close-become-unsealer mactor) result)]
               [_ (values #f result)]))
 
           ;; if a new handler for this actor was specified,
           ;; let's replace it
           (when new-handler
             (transactormap-set! actormap update-refr
-                                (mactor:near new-handler
-                                             (mactor:near-become mactor)
-                                             (mactor:near-become-unsealer mactor)
-                                             (mactor:near-become? mactor))))
+                                (mactor:close new-handler
+                                              (mactor:close-become mactor)
+                                              (mactor:close-become-unsealer mactor)
+                                              (mactor:close-become? mactor))))
 
           return-val]
          [(? mactor:encased?)
           (mactor:encased-val mactor)]
          [_
-          (error "Actor immediate calls restricted to near-refrs and encased values")]))))
+          (error "Actor immediate calls restricted to close-refrs and encased values")]))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
@@ -499,11 +503,11 @@
 
   (define (promise-fulfill promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
-      [(? mactor:near-promise? promise-mactor)
+      [(? mactor:close-promise? promise-mactor)
        (define resolver-tm?
-         (mactor:near-promise-resolver-tm? promise-mactor))
+         (mactor:close-promise-resolver-tm? promise-mactor))
        (define resolver-unsealer
-         (mactor:near-promise-resolver-unsealer promise-mactor))
+         (mactor:close-promise-resolver-unsealer promise-mactor))
        ;; Is this a valid resolution?
        (unless (resolver-tm? sealed-val)
          (error "Resolution sealed with wrong trademark!"))
@@ -537,20 +541,20 @@
                                 (mactor:encased val))])
 
        ;; Inform all listeners of the resolution
-       (for ([listener (mactor:near-promise-listeners promise-mactor)])
+       (for ([listener (mactor:close-promise-listeners promise-mactor)])
          (<- listener 'fulfill val))]
       [#f (error "no actor with this id")]
-      [_ (error "can only resolve a near-promise")]))
+      [_ (error "can only resolve a close-promise")]))
 
   (define (promise-break promise-id sealed-problem)
     (match (actormap-ref actormap promise-id #f)
-      ;; TODO: Not just near-promise, anything that can
+      ;; TODO: Not just close-promise, anything that can
       ;;   break
-      [(? mactor:near-promise? promise-mactor)
+      [(? mactor:close-promise? promise-mactor)
        (define resolver-tm?
-         (mactor:near-promise-resolver-tm? promise-mactor))
+         (mactor:close-promise-resolver-tm? promise-mactor))
        (define resolver-unsealer
-         (mactor:near-promise-resolver-unsealer promise-mactor))
+         (mactor:close-promise-resolver-unsealer promise-mactor))
        ;; Is this a valid resolution?
        (unless (resolver-tm? sealed-problem)
          (error "Resolution sealed with wrong trademark!"))
@@ -560,10 +564,10 @@
        (actormap-set! actormap promise-id
                            (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (mactor:near-promise-listeners promise-mactor)])
+       (for ([listener (mactor:close-promise-listeners promise-mactor)])
          (<- listener 'break problem))]
       [#f (error "no actor with this id")]
-      [_ (error "can only resolve a near-promise")]))
+      [_ (error "can only resolve a close-promise")]))
 
   ;; helper to the become two methods
   (define (_send-message kws kw-args actor-refr resolve-me args)
@@ -595,8 +599,8 @@
                #:catch [on-broken #f]
                #:finally [on-finally #f]
                #:return-promise? [return-promise? #f])
-    #;(unless (near? id-refr)
-      (error "on only works for near objects"))
+    #;(unless (close? id-refr)
+      (error "on only works for close objects"))
     (define-values (subscribe-refr mactor)
       (actormap-symlink-ref actormap id-refr))
     ;; Alternate design for these (and the first I implemented) is to
@@ -622,7 +626,7 @@
       (when on-finally
         (on-finally)))
     (match mactor
-      [(mactor:near-promise listeners r-unsealer r-tm?)
+      [(mactor:close-promise listeners r-unsealer r-tm?)
        (match-define (list return-promise return-p-resolver)
          (if return-promise?
              (spawn-promise-pair)
@@ -649,8 +653,8 @@
        (define new-listeners
          (cons on-listener listeners))
        (actormap-set! actormap id-refr
-                           (mactor:near-promise new-listeners
-                                                r-unsealer r-tm?))
+                      (mactor:close-promise new-listeners
+                                            r-unsealer r-tm?))
        (if return-promise?
            return-promise
            (void))]
@@ -660,7 +664,7 @@
       [(? mactor:encased? mactor)
        (call-on-fulfilled (mactor:encased-val mactor))
        (call-on-finally)]
-      [(? (or/c mactor:far? mactor:near?) mactor)
+      [(? (or/c mactor:far? mactor:close?) mactor)
        (call-on-fulfilled subscribe-refr)
        (call-on-finally)]
       ;; This involves invoking a vat-level method of the remote
@@ -919,8 +923,8 @@
     (make-become-sealer-triplet))
 
   (transactormap-set! new-actormap actor-refr
-                      (mactor:near actor-handler
-                                   become become-unseal become?))
+                      (mactor:close actor-handler
+                                    become become-unseal become?))
   (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
@@ -931,8 +935,8 @@
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
-                 (mactor:near actor-handler
-                              become become-unseal become?))
+                 (mactor:close actor-handler
+                               become become-unseal become?))
   actor-refr)
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f]
@@ -1078,7 +1082,7 @@
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (mactor:near-promise '() unsealer tm?)
+         (mactor:close-promise '() unsealer tm?)
          'promised))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
