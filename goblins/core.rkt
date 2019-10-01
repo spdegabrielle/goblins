@@ -151,14 +151,13 @@
 (struct mactor ())
 
 ;;  - near?:    same vat
-;;  - roomie?:  same machine
+;;  - local?:   same machine
 ;;  - far?:     different machine
 
 ;;; Resolved things
-;; once a roomie refr, always a roomie refr.
-(struct mactor:roomie mactor (handler
-                             become become-unsealer become?))
-(struct mactor:roomie-promise mactor (listeners resolver-unsealer resolver-tm?))
+;; once a local refr, always a local refr.
+(struct mactor:local mactor (handler become become-unsealer become?))
+(struct mactor:local-promise mactor (listeners resolver-unsealer resolver-tm?))
 
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
@@ -173,8 +172,8 @@
 ;; Eventual things
 (struct mactor:far-promise mactor (vat-connid))
 
-(define roomie-refr?
-  (procedure-rename mactor:roomie? 'roomie-refr?))
+(define local-refr?
+  (procedure-rename mactor:local? 'local-refr?))
 (define far-refr?
   (procedure-rename mactor:far? 'far-refr?))
 
@@ -470,36 +469,36 @@
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
        (match mactor
-         [(? mactor:roomie?)
+         [(? mactor:local?)
           (define actor-handler
-            (mactor:roomie-handler mactor))
+            (mactor:local-handler mactor))
           (define result
             (keyword-apply actor-handler kws kw-args
-                           (mactor:roomie-become mactor) args))
+                           (mactor:local-become mactor) args))
 
           ;; I guess watching for this guarantees that an immediate call
           ;; against a local actor will not be tail recursive.
           ;; TODO: We need to document that.
           (define-values (new-handler return-val)
             (match result
-              [(? (mactor:roomie-become? mactor))
-               ((mactor:roomie-become-unsealer mactor) result)]
+              [(? (mactor:local-become? mactor))
+               ((mactor:local-become-unsealer mactor) result)]
               [_ (values #f result)]))
 
           ;; if a new handler for this actor was specified,
           ;; let's replace it
           (when new-handler
             (transactormap-set! actormap update-refr
-                                (mactor:roomie new-handler
-                                               (mactor:roomie-become mactor)
-                                               (mactor:roomie-become-unsealer mactor)
-                                               (mactor:roomie-become? mactor))))
+                                (mactor:local new-handler
+                                              (mactor:local-become mactor)
+                                              (mactor:local-become-unsealer mactor)
+                                              (mactor:local-become? mactor))))
 
           return-val]
          [(? mactor:encased?)
           (mactor:encased-val mactor)]
          [_
-          (error "Actor immediate calls restricted to roomie-refrs and encased values")]))))
+          (error "Actor immediate calls restricted to local-refrs and encased values")]))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
@@ -513,11 +512,11 @@
 
   (define (promise-fulfill promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
-      [(? mactor:roomie-promise? promise-mactor)
+      [(? mactor:local-promise? promise-mactor)
        (define resolver-tm?
-         (mactor:roomie-promise-resolver-tm? promise-mactor))
+         (mactor:local-promise-resolver-tm? promise-mactor))
        (define resolver-unsealer
-         (mactor:roomie-promise-resolver-unsealer promise-mactor))
+         (mactor:local-promise-resolver-unsealer promise-mactor))
        ;; Is this a valid resolution?
        (unless (resolver-tm? sealed-val)
          (error "Resolution sealed with wrong trademark!"))
@@ -551,20 +550,20 @@
                                 (mactor:encased val))])
 
        ;; Inform all listeners of the resolution
-       (for ([listener (mactor:roomie-promise-listeners promise-mactor)])
+       (for ([listener (mactor:local-promise-listeners promise-mactor)])
          (<- listener 'fulfill val))]
       [#f (error "no actor with this id")]
-      [_ (error "can only resolve a roomie-promise")]))
+      [_ (error "can only resolve a local-promise")]))
 
   (define (promise-break promise-id sealed-problem)
     (match (actormap-ref actormap promise-id #f)
-      ;; TODO: Not just roomie-promise, anything that can
+      ;; TODO: Not just local-promise, anything that can
       ;;   break
-      [(? mactor:roomie-promise? promise-mactor)
+      [(? mactor:local-promise? promise-mactor)
        (define resolver-tm?
-         (mactor:roomie-promise-resolver-tm? promise-mactor))
+         (mactor:local-promise-resolver-tm? promise-mactor))
        (define resolver-unsealer
-         (mactor:roomie-promise-resolver-unsealer promise-mactor))
+         (mactor:local-promise-resolver-unsealer promise-mactor))
        ;; Is this a valid resolution?
        (unless (resolver-tm? sealed-problem)
          (error "Resolution sealed with wrong trademark!"))
@@ -574,10 +573,10 @@
        (actormap-set! actormap promise-id
                            (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (mactor:roomie-promise-listeners promise-mactor)])
+       (for ([listener (mactor:local-promise-listeners promise-mactor)])
          (<- listener 'break problem))]
       [#f (error "no actor with this id")]
-      [_ (error "can only resolve a roomie-promise")]))
+      [_ (error "can only resolve a local-promise")]))
 
   ;; helper to the become two methods
   (define (_send-message kws kw-args actor-refr resolve-me args)
@@ -609,8 +608,8 @@
                #:catch [on-broken #f]
                #:finally [on-finally #f]
                #:return-promise? [return-promise? #f])
-    #;(unless (roomie? id-refr)
-      (error "on only works for roomie objects"))
+    #;(unless (local? id-refr)
+      (error "on only works for local objects"))
     (define-values (subscribe-refr mactor)
       (actormap-symlink-ref actormap id-refr))
     ;; Alternate design for these (and the first I implemented) is to
@@ -636,7 +635,7 @@
       (when on-finally
         (on-finally)))
     (match mactor
-      [(mactor:roomie-promise listeners r-unsealer r-tm?)
+      [(mactor:local-promise listeners r-unsealer r-tm?)
        (match-define (list return-promise return-p-resolver)
          (if return-promise?
              (spawn-promise-pair)
@@ -663,8 +662,8 @@
        (define new-listeners
          (cons on-listener listeners))
        (actormap-set! actormap id-refr
-                      (mactor:roomie-promise new-listeners
-                                             r-unsealer r-tm?))
+                      (mactor:local-promise new-listeners
+                                            r-unsealer r-tm?))
        (if return-promise?
            return-promise
            (void))]
@@ -674,7 +673,7 @@
       [(? mactor:encased? mactor)
        (call-on-fulfilled (mactor:encased-val mactor))
        (call-on-finally)]
-      [(? (or/c mactor:far? mactor:roomie?) mactor)
+      [(? (or/c mactor:far? mactor:local?) mactor)
        (call-on-fulfilled subscribe-refr)
        (call-on-finally)]
       ;; This involves invoking a vat-level method of the remote
@@ -933,8 +932,8 @@
     (make-become-sealer-triplet))
 
   (transactormap-set! new-actormap actor-refr
-                      (mactor:roomie actor-handler
-                                     become become-unseal become?))
+                      (mactor:local actor-handler
+                                    become become-unseal become?))
   (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
@@ -945,8 +944,8 @@
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
-                 (mactor:roomie actor-handler
-                                become become-unseal become?))
+                 (mactor:local actor-handler
+                               become become-unseal become?))
   actor-refr)
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f]
@@ -1092,7 +1091,7 @@
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (mactor:roomie-promise '() unsealer tm?)
+         (mactor:local-promise '() unsealer tm?)
          'promised))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
