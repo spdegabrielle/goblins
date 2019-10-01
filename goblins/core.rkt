@@ -150,9 +150,10 @@
 
 (struct mactor ())
 
-;;  - near?:    same vat
-;;  - local?:   same machine
-;;  - far?:     different machine
+;;  - near?:       same vat
+;;  - far?:        different vat
+;;  - local?:      same machine
+;;  - remote?:     different machine
 
 ;;; Resolved things
 ;; once a local refr, always a local refr.
