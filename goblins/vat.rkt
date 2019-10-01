@@ -86,27 +86,6 @@
       ;; That would have never completed!
       (error "Called a blocking vat method from the vat's own actor")))
 
-  ;; Big ol' TODO
-  (define vat-connector-channel
-    (make-async-channel))
-  (define (send-to-vat-connector msg)
-    (async-channel-put vat-connector-channel msg))
-
-  ;; The vat connector thread
-  (define (vat-connector-loop)
-    (thread
-     (lambda ()
-       (define connections
-         (make-weak-hasheq))
-       (let lp ()
-         (match (async-channel-get vat-connector-channel)
-           ;; What all needs to exist here?
-           ;;  - Establishing a new vat "connection"
-           ;;  - Passing in a message (from a connection, or whatever)
-           ;;  - Passing out a message (to a connection always)
-           ['TODO 'TODO])))))
-  (vat-connector-loop)
-
   ;; The main loop
   ;; =============
   (define (main-loop)
@@ -151,7 +130,7 @@
                                            ;; proper logging
                                            #:display-errors? #t
                                            #:vat-connector
-                                           send-to-vat-connector)))
+                                           vat-connector)))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
@@ -164,7 +143,7 @@
                   (define refr
                     (actormap-spawn! actormap actor-handler
                                      #:vat-connector
-                                     send-to-vat-connector))
+                                     vat-connector))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
@@ -187,7 +166,9 @@
                   (channel-put return-ch (vector 'success returned-val)))
                 (lp)]
                [(cmd-halt)
-                (send-to-vat-connector (cmd-halt))
+                ;; TODO: This should be maybe informing the current-machine,
+                ;;   once that exists
+                #;(send-to-vat-connector (cmd-halt))
                 (void)]))))
 
        ;; Boot it up!
@@ -219,6 +200,9 @@
                        (cmd-external-spawn actor-handler return-ch))
     (sync-return-ch return-ch))
 
+  ;; TODO: we need _<- and _<-np ???
+  ;;   I guess with external vats, they will provide their own
+  ;;   promise, so anyway we need a way to slot in a promise
   (define _<-
     (make-keyword-procedure
      (λ (kws kw-args to-refr . args)
@@ -239,24 +223,42 @@
   (define (_halt)
     (async-channel-put vat-channel (cmd-halt)))
 
-  (define vat-dispatcher
-    (make-keyword-procedure
-     (λ (kws kw-args method-name . args)
-       (define method
-         (match method-name
-           ['spawn _spawn]
-           ['<- _<-]
-           ['call _call]
-           ['halt _halt]
-           ['is-running? is-running?]))
-       (keyword-apply method kws kw-args args))))
+  (define (_get-vat-id)
+    (force public-key-as-bytes))
+
+  ;; be careful!
+  (define (_get-vat-private-key)
+    (force private-key))
+
+  (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
+    (define id
+      (procedure-rename
+       (make-keyword-procedure
+        (λ (kws kw-args this-method-name . args)
+          (define method
+            (match this-method-name
+              ['method-name method-handler] ...))
+          (keyword-apply method kws kw-args args)))
+       'id)))
+
+  (define-vat-dispatcher vat-connector
+    [<- _<-]
+    [vat-id _get-vat-id])
+
+  (define-vat-dispatcher vat-dispatcher
+    [spawn _spawn]
+    [<- _<-]
+    [call _call]
+    [vat-id _get-vat-id]
+    [vat-private-key _get-vat-private-key]
+    [halt _halt]
+    [is-running? is-running?])
 
   ;; boot the main loop
   (main-loop)
 
   ;; return the dispatcher
-  (procedure-rename vat-dispatcher
-                    'vat-dispatcher))
+  vat-dispatcher)
 
 (module+ test
   (require rackunit
