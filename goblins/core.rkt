@@ -39,6 +39,7 @@
 
 ;; The operating-on-actormap main functions
 (provide actormap-turn
+         actormap-turn*
          actormap-poke!
          actormap-peek
          actormap-extract
@@ -755,9 +756,9 @@
 ;;; actormap turning and utils
 ;;; ==========================
 
-(define (actormap-turn* actormap to-refr kws kw-args args)
+(define (actormap-turn* actormap vat-connector to-refr kws kw-args args)
   (call-with-fresh-syscaller
-   actormap
+   actormap #:vat-connector vat-connector
    (lambda (sys get-sys-internals)
      (define result-val
        (keyword-apply sys kws kw-args 'call to-refr args))
@@ -767,14 +768,14 @@
 (define actormap-turn
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
-     (actormap-turn* actormap to-refr kws kw-args args))))
+     (actormap-turn* actormap #f to-refr kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
 (define actormap-poke!
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
-       (actormap-turn* actormap to-refr kws kw-args args))
+       (actormap-turn* actormap #f to-refr kws kw-args args))
      (transactormap-merge! transactormap)
      returned-val)))
 
@@ -785,7 +786,7 @@
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val _am _tl _tr)
-       (actormap-turn* actormap to-refr kws kw-args args))
+       (actormap-turn* actormap #f to-refr kws kw-args args))
      returned-val)))
 
 (define (actormap-extract actormap id-refr)
@@ -870,7 +871,7 @@
   (define-values (actor-refr new-actormap)
     (actormap-spawn actormap (lambda (become) (thunk))))
   (define-values (returned-val new-actormap2 to-local to-remote)
-    (actormap-turn* new-actormap actor-refr '() '() '()))
+    (actormap-turn* new-actormap #f actor-refr '() '() '()))
   (values returned-val new-actormap2 to-local to-remote))
 
 ;; committal version

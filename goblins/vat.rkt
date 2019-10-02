@@ -167,8 +167,8 @@
                                                 (vector 'fail err)))])
                   (define-values (returned-val transactormap to-local to-remote)
                     (parameterize ([being-called-by-vat-actor #t])
-                      (keyword-apply actormap-turn kws kw-args
-                                     actormap to-refr args)))
+                      (actormap-turn* actormap vat-connector to-refr
+                                      kws kw-args args)))
                   (transactormap-merge! transactormap)
                   (schedule-local-messages to-local)
                   (schedule-remote-messages to-remote)
