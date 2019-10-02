@@ -209,7 +209,7 @@
                        (cmd-external-spawn actor-handler return-ch))
     (sync-return-ch return-ch))
 
-  ;; TODO: we need _<- and _<-np ???
+  ;; TODO: we need _<- and _<-p ???
   ;;   I guess with external vats, they will provide their own
   ;;   promise, so anyway we need a way to slot in a promise
   (define _<-
