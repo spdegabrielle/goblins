@@ -36,6 +36,8 @@
 ;; TODO: If we parameterize this, *when* do we set up the ability
 ;;   for the machine to be able to speak to the outside world?
 ;;   especially if this happens through Tor or etc.
+;; TODO: Does this need to move into core.rkt?
+
 (define (boot-machine)
   'TODO)
 
