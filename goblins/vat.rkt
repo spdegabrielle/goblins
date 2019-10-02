@@ -36,8 +36,15 @@
 ;; TODO: If we parameterize this, *when* do we set up the ability
 ;;   for the machine to be able to speak to the outside world?
 ;;   especially if this happens through Tor or etc.
+(define (boot-machine)
+  'TODO)
+
 (define current-machine
-  (make-parameter 'TODO))
+  (make-parameter (boot-machine)))
+
+(define (register-vat-with-current-machine vat-key vat-dispatcher)
+  'TODO)
+
 
 #;(define (make-machine
          ;; TODO: rename to #:sign/decrypt-key ?
@@ -256,6 +263,8 @@
 
   ;; boot the main loop
   (main-loop)
+
+  (register-vat-with-current-machine public-key vat-dispatcher)
 
   ;; return the dispatcher
   vat-dispatcher)
