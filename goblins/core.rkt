@@ -151,7 +151,8 @@
 ;;;  - remote?:     different machine
 
 (struct mactor ())
-(struct mactor:local mactor (vat-connector))
+(struct mactor:local mactor ())
+;; TODO: Will this ever exist?  It might only ever be a symlink.
 (struct mactor:remote mactor (vat-connid))
 
 
@@ -482,19 +483,24 @@
   (define (get-vat-connector)
     vat-connector)
 
-  (define (near-mactor? mactor)
-    (and (mactor:local-actor? mactor)
-         (eq? vat-connector
-              (mactor:local-vat-connector mactor))))
-
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
+       (define (raise-not-callable)
+         (error 'not-callable
+                "Actor immediate calls restricted to near-refrs and encased values"))
+       ;; Restrict to live-refrs which appear to have the same
+       ;; vat-connector as us
+       (unless (and (live-refr? to-refr)
+                    (eq? (live-refr-vat-connector to-refr)
+                         vat-connector))
+         (raise-not-callable))
+
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
        (match mactor
-         [(? near-mactor?)
+         [(? mactor:local-actor?)
           (define actor-handler
             (mactor:local-actor-handler mactor))
           (define result
@@ -515,7 +521,6 @@
           (when new-handler
             (transactormap-set! actormap update-refr
                                 (mactor:local-actor
-                                 vat-connector
                                  new-handler
                                  (mactor:local-actor-become mactor)
                                  (mactor:local-actor-become-unsealer mactor)
@@ -524,8 +529,7 @@
           return-val]
          [(? mactor:encased?)
           (mactor:encased-val mactor)]
-         [_
-          (error "Actor immediate calls restricted to near-refrs and encased values")]))))
+         [_ (raise-not-callable)]))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
@@ -660,7 +664,7 @@
       (when on-finally
         (on-finally)))
     (match mactor
-      [(mactor:local-promise vat-connector listeners r-unsealer r-tm?)
+      [(mactor:local-promise listeners r-unsealer r-tm?)
        (match-define (list return-promise return-p-resolver)
          (if return-promise?
              (spawn-promise-pair)
@@ -687,7 +691,7 @@
        (define new-listeners
          (cons on-listener listeners))
        (actormap-set! actormap id-refr
-                      (mactor:local-promise vat-connector new-listeners
+                      (mactor:local-promise new-listeners
                                             r-unsealer r-tm?))
        (if return-promise?
            return-promise
@@ -957,7 +961,7 @@
     (make-become-sealer-triplet))
 
   (transactormap-set! new-actormap actor-refr
-                      (mactor:local-actor vat-connector actor-handler
+                      (mactor:local-actor actor-handler
                                           become become-unseal become?))
   (values actor-refr new-actormap))
 
@@ -970,7 +974,7 @@
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
-                 (mactor:local-actor vat-connector actor-handler
+                 (mactor:local-actor actor-handler
                                      become become-unseal become?))
   actor-refr)
 
@@ -1118,8 +1122,7 @@
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (mactor:local-promise ((current-syscaller) 'vat-connector)
-                               '() unsealer tm?)
+         (mactor:local-promise '() unsealer tm?)
          'promised))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
