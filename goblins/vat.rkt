@@ -132,15 +132,15 @@
                [(cmd-send-message msg)
                 (define-values (call-result resolve-result _val
                                             transactormap
-                                            to-local to-remote)
+                                            to-near to-far)
                   (parameterize ([being-called-by-vat-actor #t])
                     (actormap-turn-message actormap msg
                                            ;; TODO: Come on, we need to do
                                            ;; proper logging
                                            #:display-errors? #t)))
                 (transactormap-merge! transactormap)
-                (schedule-local-messages to-local)
-                (schedule-remote-messages to-remote)
+                (schedule-local-messages to-near)
+                (schedule-remote-messages to-far)
                 (lp)]
                [(cmd-external-spawn actor-handler return-ch)
                 (with-handlers ([any/c
@@ -161,13 +161,13 @@
                                  (lambda (err)
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
-                  (define-values (returned-val transactormap to-local to-remote)
+                  (define-values (returned-val transactormap to-near to-far)
                     (parameterize ([being-called-by-vat-actor #t])
                       (keyword-apply actormap-turn kws kw-args
                                      actormap to-refr args)))
                   (transactormap-merge! transactormap)
-                  (schedule-local-messages to-local)
-                  (schedule-remote-messages to-remote)
+                  (schedule-local-messages to-near)
+                  (schedule-remote-messages to-far)
                   (channel-put return-ch (vector 'success returned-val)))
                 (lp)]
                [(cmd-halt)
