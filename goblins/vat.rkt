@@ -137,9 +137,7 @@
                     (actormap-turn-message actormap msg
                                            ;; TODO: Come on, we need to do
                                            ;; proper logging
-                                           #:display-errors? #t
-                                           #:vat-connector
-                                           vat-connector)))
+                                           #:display-errors? #t)))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-local)
                 (schedule-remote-messages to-remote)
@@ -150,9 +148,7 @@
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define refr
-                    (actormap-spawn! actormap actor-handler
-                                     #:vat-connector
-                                     vat-connector))
+                    (actormap-spawn! actormap actor-handler))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
                [(cmd-<- to-refr kws kw-args args)
@@ -167,8 +163,8 @@
                                                 (vector 'fail err)))])
                   (define-values (returned-val transactormap to-local to-remote)
                     (parameterize ([being-called-by-vat-actor #t])
-                      (actormap-turn* actormap vat-connector to-refr
-                                      kws kw-args args)))
+                      (keyword-apply actormap-turn kws kw-args
+                                     actormap to-refr args)))
                   (transactormap-merge! transactormap)
                   (schedule-local-messages to-local)
                   (schedule-remote-messages to-remote)

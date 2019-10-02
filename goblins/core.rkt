@@ -39,7 +39,6 @@
 
 ;; The operating-on-actormap main functions
 (provide actormap-turn
-         actormap-turn*
          actormap-poke!
          actormap-peek
          actormap-extract
@@ -59,16 +58,12 @@
            (->* [any/c
                  (and/c procedure?
                         (not/c refr?))]
-                [(or/c #f symbol? string?)
-                 #:vat-connector
-                 (or/c #f procedure?)]
+                [(or/c #f symbol? string?)]
                 (values any/c any/c))]
           [actormap-spawn!
            (->* [any/c (and/c procedure?
                               (not/c refr?))]
-                [(or/c #f symbol? string?)
-                 #:vat-connector
-                 (or/c #f procedure?)]
+                [(or/c #f symbol? string?)]
                 any/c)])
 
          call
@@ -217,17 +212,21 @@
 ;; hopefully works right.
 (define-generics actormap
   (actormap-ref actormap key [dflt])
-  (actormap-set! actormap key val))
+  (actormap-set! actormap key val)
+  (actormap-vat-connector actormap))
 
-(struct whactormap (wht) ; weak hash table
+(struct whactormap (wht            ; weak hash table
+                    vat-connector) ; if we have a vat, here's how to talk to it
   #:methods gen:actormap
   [(define (actormap-ref whactormap key [dflt #f])
      (whactormap-ref whactormap key dflt))
    (define (actormap-set! whactormap key [dflt #f])
-     (whactormap-set! whactormap key dflt))])
+     (whactormap-set! whactormap key dflt))
+   (define (actormap-vat-connector whactormap)
+     (whactormap-vat-connector whactormap))])
 
-(define (make-whactormap)
-  (whactormap (make-weak-hasheq)))
+(define (make-whactormap #:vat-connector [vat-connector #f])
+  (whactormap (make-weak-hasheq) vat-connector))
 (define (whactormap-ref whactormap key [dflt #f])
   (define val
     (hash-ref (whactormap-wht whactormap) key #f))
@@ -257,20 +256,28 @@
 
 ;;; Now the transactional stuff
 
-(struct transactormap (parent delta [merged? #:mutable])
+(struct transactormap (parent
+                       delta
+                       [merged? #:mutable]
+                       vat-connector)  ; same as parent's, lookup optimization
   #:constructor-name _make-transactormap
   #:methods gen:actormap
   [(define (actormap-ref transactormap key [dflt #f])
      (transactormap-ref transactormap key dflt))
    (define (actormap-set! transactormap key val)
-     (transactormap-set! transactormap key val))])
+     (transactormap-set! transactormap key val))
+   (define (actormap-vat-connector transactormap)
+     (transactormap-vat-connector transactormap))])
 
 #;(define actormap?
   (or/c transactormap? actormap?))
 
-(define/contract (make-transactormap parent)
-  (-> actormap? any/c)
-  (_make-transactormap parent (make-hasheq) #f))
+(define/contract (make-transactormap parent
+                                     [vat-connector
+                                      (actormap-vat-connector parent)])
+  (->* [actormap?] [(or/c #f procedure?)] any/c)
+  (_make-transactormap parent (make-hasheq) #f
+                       vat-connector))
 
 (define (transactormap-ref transactormap key [dflt #f])
   (when (transactormap-merged? transactormap)
@@ -423,10 +430,9 @@
     (error "No current syscaller"))
   sys)
 
-(define (call-with-fresh-syscaller actormap proc
-                                   #:vat-connector [vat-connector #f])
+(define (call-with-fresh-syscaller actormap proc)
   (define-values (sys get-sys-internals close-up!)
-    (fresh-syscaller actormap vat-connector))
+    (fresh-syscaller actormap))
   (begin0 (parameterize ([current-syscaller sys])
             (proc sys get-sys-internals))
     (close-up!)))
@@ -443,9 +449,11 @@
       [#f (error "no actor with this id")]
       [mactor (values refr-id mactor)])))
 
-(define (fresh-syscaller prev-actormap vat-connector)
+(define (fresh-syscaller prev-actormap)
+  (define vat-connector
+    (actormap-vat-connector prev-actormap))
   (define actormap
-    (make-transactormap prev-actormap))
+    (make-transactormap prev-actormap vat-connector))
   (define to-local '())
   (define to-remote '())
 
@@ -522,12 +530,10 @@
   ;; spawn a new actor
   (define (_spawn actor-handler
                   [debug-name (object-name actor-handler)])
-    (actormap-spawn! actormap actor-handler debug-name
-                     #:vat-connector vat-connector))
+    (actormap-spawn! actormap actor-handler debug-name))
 
   (define (spawn-mactor mactor [debug-name #f])
-    (actormap-spawn-mactor! actormap mactor debug-name
-                            #:vat-connector vat-connector))
+    (actormap-spawn-mactor! actormap mactor debug-name))
 
   (define (promise-fulfill promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
@@ -756,9 +762,9 @@
 ;;; actormap turning and utils
 ;;; ==========================
 
-(define (actormap-turn* actormap vat-connector to-refr kws kw-args args)
+(define (actormap-turn* actormap to-refr kws kw-args args)
   (call-with-fresh-syscaller
-   actormap #:vat-connector vat-connector
+   actormap
    (lambda (sys get-sys-internals)
      (define result-val
        (keyword-apply sys kws kw-args 'call to-refr args))
@@ -768,14 +774,14 @@
 (define actormap-turn
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
-     (actormap-turn* actormap #f to-refr kws kw-args args))))
+     (actormap-turn* actormap to-refr kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
 (define actormap-poke!
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
-       (actormap-turn* actormap #f to-refr kws kw-args args))
+       (actormap-turn* actormap to-refr kws kw-args args))
      (transactormap-merge! transactormap)
      returned-val)))
 
@@ -786,7 +792,7 @@
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val _am _tl _tr)
-       (actormap-turn* actormap #f to-refr kws kw-args args))
+       (actormap-turn* actormap to-refr kws kw-args args))
      returned-val)))
 
 (define (actormap-extract actormap id-refr)
@@ -806,12 +812,11 @@
 ;;           actormap to-local to-remote)
 ;; Mix and match the fail/success
 (define (actormap-turn-message actormap msg
-                               #:display-errors? [display-errors? #t]
-                               #:vat-connector [vat-connector #f])
+                               #:display-errors? [display-errors? #t])
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
   (call-with-fresh-syscaller
-   actormap #:vat-connector vat-connector
+   actormap
    (lambda (sys get-sys-internals)
      (match-define (message to resolve-me kws kw-vals args)
        msg)
@@ -871,7 +876,7 @@
   (define-values (actor-refr new-actormap)
     (actormap-spawn actormap (lambda (become) (thunk))))
   (define-values (returned-val new-actormap2 to-local to-remote)
-    (actormap-turn* new-actormap #f actor-refr '() '() '()))
+    (actormap-turn* new-actormap actor-refr '() '() '()))
   (values returned-val new-actormap2 to-local to-remote))
 
 ;; committal version
@@ -941,8 +946,9 @@
 
 ;; non-committal version of actormap-spawn
 (define (actormap-spawn actormap actor-handler
-                        [debug-name (object-name actor-handler)]
-                        #:vat-connector [vat-connector #f])
+                        [debug-name (object-name actor-handler)])
+  (define vat-connector
+    (actormap-vat-connector actormap))
   (define actor-refr
     (make-live-refr debug-name vat-connector))
   (define new-actormap
@@ -956,8 +962,9 @@
   (values actor-refr new-actormap))
 
 (define (actormap-spawn! actormap actor-handler
-                         [debug-name (object-name actor-handler)]
-                         #:vat-connector [vat-connector #f])
+                         [debug-name (object-name actor-handler)])
+  (define vat-connector
+    (actormap-vat-connector actormap))
   (define actor-refr
     (make-live-refr debug-name vat-connector))
   (define-values (become become-unseal become?)
@@ -967,8 +974,9 @@
                                      become become-unseal become?))
   actor-refr)
 
-(define (actormap-spawn-mactor! actormap mactor [debug-name #f]
-                                #:vat-connector [vat-connector #f])
+(define (actormap-spawn-mactor! actormap mactor [debug-name #f])
+  (define vat-connector
+    (actormap-vat-connector actormap))
   (define actor-refr
     (make-live-refr debug-name vat-connector))
   (actormap-set! actormap actor-refr mactor)
