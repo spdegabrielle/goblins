@@ -155,7 +155,7 @@
 ;;;  - remote?:     different machine
 
 (struct mactor ())
-(struct mactor:local mactor ())
+(struct mactor:local mactor (vat-connector))
 (struct mactor:remote mactor (vat-connid))
 
 
@@ -473,6 +473,11 @@
   (define (get-vat-connector)
     vat-connector)
 
+  (define (near-mactor? mactor)
+    (and (mactor:local-actor? mactor)
+         (eq? vat-connector
+              (mactor:local-vat-connector mactor))))
+
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
@@ -480,7 +485,7 @@
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
        (match mactor
-         [(? mactor:local-actor?)
+         [(? near-mactor?)
           (define actor-handler
             (mactor:local-actor-handler mactor))
           (define result
@@ -501,6 +506,7 @@
           (when new-handler
             (transactormap-set! actormap update-refr
                                 (mactor:local-actor
+                                 vat-connector
                                  new-handler
                                  (mactor:local-actor-become mactor)
                                  (mactor:local-actor-become-unsealer mactor)
@@ -510,7 +516,7 @@
          [(? mactor:encased?)
           (mactor:encased-val mactor)]
          [_
-          (error "Actor immediate calls restricted to local-refrs and encased values")]))))
+          (error "Actor immediate calls restricted to near-refrs and encased values")]))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
@@ -647,7 +653,7 @@
       (when on-finally
         (on-finally)))
     (match mactor
-      [(mactor:local-promise listeners r-unsealer r-tm?)
+      [(mactor:local-promise vat-connector listeners r-unsealer r-tm?)
        (match-define (list return-promise return-p-resolver)
          (if return-promise?
              (spawn-promise-pair)
@@ -674,7 +680,7 @@
        (define new-listeners
          (cons on-listener listeners))
        (actormap-set! actormap id-refr
-                      (mactor:local-promise new-listeners
+                      (mactor:local-promise vat-connector new-listeners
                                             r-unsealer r-tm?))
        (if return-promise?
            return-promise
@@ -944,7 +950,7 @@
     (make-become-sealer-triplet))
 
   (transactormap-set! new-actormap actor-refr
-                      (mactor:local-actor actor-handler
+                      (mactor:local-actor vat-connector actor-handler
                                           become become-unseal become?))
   (values actor-refr new-actormap))
 
@@ -956,7 +962,7 @@
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (actormap-set! actormap actor-refr
-                 (mactor:local-actor actor-handler
+                 (mactor:local-actor vat-connector actor-handler
                                      become become-unseal become?))
   actor-refr)
 
@@ -1103,7 +1109,8 @@
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (mactor:local-promise '() unsealer tm?)
+         (mactor:local-promise ((current-syscaller) 'vat-connector)
+                               '() unsealer tm?)
          'promised))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
