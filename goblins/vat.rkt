@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require "core.rkt"
+         (submod "core.rkt" for-vats)
          "message.rkt"
          racket/async-channel
          racket/match
@@ -62,9 +63,11 @@
   )
 
 
-(define (make-vat [actormap (make-whactormap)]
+;; TODO: Maybe restore #:actormap?
+;;   But what to do about the vat-connector in that case?
+(define (make-vat #:private-key
                   ;; TODO: rename to #:sign/decrypt-key ?
-                  #:private-key [private-key (delay (make-eddsa-private-key))])
+                  [private-key (delay (make-eddsa-private-key))])
   (define public-key
     (delay
       (pk-key->public-only-key (force private-key))))
@@ -116,14 +119,19 @@
                 ;; Mildly more efficiently do this in reverse order
                 (schedule-local-messages rest)
                 (async-channel-put vat-channel (cmd-send-message msg))]))
-           ;; Big ol' TODO on this one
+
            (define schedule-remote-messages
              (match-lambda
                ['() (void)]
                [(list msg rest ...)
                 (schedule-remote-messages rest)
-                #;(async-channel-put vat-channel (cmd-send-message msg))
-                'TODO]))
+                (define to-actor
+                  (message-to msg))
+                (define vat-connector
+                  (live-refr-vat-connector to-actor))
+                ;; forward to that vat connector!
+                (vat-connector 'handle-message msg)
+                (void)]))
 
            (let lp ()
              (match (async-channel-get vat-channel)
@@ -224,6 +232,11 @@
                           (cmd-call to-refr kws kw-args args return-ch))
        (sync-return-ch return-ch))))
 
+  (define (_handle-message msg)
+    (async-channel-put vat-channel
+                       (cmd-<- msg))
+    (void))
+
   (define (_halt)
     (async-channel-put vat-channel (cmd-halt)))
 
@@ -246,7 +259,7 @@
        'id)))
 
   (define-vat-dispatcher vat-connector
-    [<- _<-]
+    [handle-message _handle-message]
     [vat-id _get-vat-id])
 
   (define-vat-dispatcher vat-dispatcher
@@ -257,6 +270,9 @@
     [vat-private-key _get-vat-private-key]
     [halt _halt]
     [is-running? is-running?])
+
+  (define actormap
+    (make-whactormap #:vat-connector vat-connector))
 
   ;; boot the main loop
   (main-loop)
@@ -301,4 +317,13 @@
   (check-equal? (a-vat 'call a-ctr) 8)
   (a-vat '<- pokes-ctr)
   (sleep 0.05)
-  (check-equal? (a-vat 'call a-ctr) 10))
+  (check-equal? (a-vat 'call a-ctr) 10)
+
+  ;; inter-vat communication
+  (define b-vat (make-vat))
+  (define a-greeter-set-me #f)
+  (define a-greeter (a-vat 'spawn (lambda _ (set! a-greeter-set-me "got it!"))))
+  (define b-passoff (b-vat 'spawn (lambda (bcom) (<- a-greeter))))
+  (b-vat 'call b-passoff)
+  (sleep 0.05)
+  (check-equal? a-greeter-set-me "got it!"))
