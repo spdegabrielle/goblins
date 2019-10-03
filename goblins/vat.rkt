@@ -14,8 +14,8 @@
          csexp)
 
 (struct cmd-external-spawn (actor-handler return-ch))
-(struct cmd-<- (to-refr kws kw-args args))
-(struct cmd-<-p (to-refr kws kw-args args return-ch))
+(struct cmd-<- (msg))
+(struct cmd-<-p (msg return-ch))
 (struct cmd-call (to-refr kws kw-args args return-ch))
 (struct cmd-send-message (msg))
 (struct cmd-halt ())
@@ -151,10 +151,9 @@
                     (actormap-spawn! actormap actor-handler))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
-               [(cmd-<- to-refr kws kw-args args)
+               [(cmd-<- msg)
                 (async-channel-put vat-channel
-                                   (cmd-send-message
-                                    (message to-refr #f kws kw-args args)))
+                                   (cmd-send-message msg))
                 (lp)]
                [(cmd-call to-refr kws kw-args args return-ch)
                 (with-handlers ([any/c
@@ -212,7 +211,7 @@
     (make-keyword-procedure
      (λ (kws kw-args to-refr . args)
        (async-channel-put vat-channel
-                          (cmd-<- to-refr kws kw-args args))
+                          (cmd-<- (message to-refr #f kws kw-args args)))
        (void))))
 
   (define _call
