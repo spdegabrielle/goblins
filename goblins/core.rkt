@@ -1135,7 +1135,7 @@
   ;;  - throw an error
   ;;  - just return void regardless
   (define already-resolved
-    (lambda () #f))
+    (lambda _ #f))
   (define resolver
     (spawn
      (match-lambda*
