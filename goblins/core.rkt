@@ -93,6 +93,9 @@
 (module+ debug
   (provide whactormap-wht))
 
+;; meh...
+(module+ for-vats
+  (provide live-refr-vat-connector))
 
 ;;; Imports
 ;;; =======
