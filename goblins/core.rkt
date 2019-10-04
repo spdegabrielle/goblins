@@ -492,7 +492,8 @@
      (lambda (kws kw-args to-refr . args)
        (define (raise-not-callable)
          (error 'not-callable
-                "Actor immediate calls restricted to near-refrs and encased values"))
+                "Actor immediate calls restricted to near-refrs and encased values, given ~a"
+                to-refr))
        ;; Restrict to live-refrs which appear to have the same
        ;; vat-connector as us
        (unless (and (live-refr? to-refr)
