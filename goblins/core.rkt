@@ -851,29 +851,24 @@
        (set! call-result
              `(success ,result-val)))
 
-     (define resolve-result #f)
-     (when resolve-me
-       (with-handlers ([exn:fail?
-                        (lambda (err)
-                          (when display-errors?
-                            (displayln "=== While attempting to resolve promise: ==="
-                                       (current-error-port))
-                            ;; TODO: Display the message here
-                            ((error-display-handler) (exn-message err) err))
-                          (set! resolve-result
-                                `(fail ,err)))])
-         (match call-result
-           [(list 'success val)
-            (keyword-apply sys '() '() 'call
-                           resolve-me 'fulfill (list val))]
-           [(list 'fail err)
-            (keyword-apply sys '() '() 'call
-                           resolve-me 'break (list err))])))
-
-     (apply values
-            call-result resolve-result
-            result-val
-            (get-sys-internals)))))  ; actormap to-near to-far
+     (match (get-sys-internals)
+       [(list new-actormap to-near to-far)
+        (when resolve-me
+          (define resolve-message
+            (match call-result
+              [(list 'success val)
+               (message resolve-me #f '() '() (list 'fulfill val))]
+              [(list 'fail err)
+               (message resolve-me #f '() '() (list 'break err))]))
+          ;; TODO: Handle promises that aren't live refrs
+          (define resolve-me-in-same-vat?
+            (eq? (live-refr-vat-connector resolve-me)
+                 (actormap-vat-connector actormap)))
+          (if resolve-me-in-same-vat?
+              (set! to-near (cons resolve-message to-near))
+              (set! to-far (cons resolve-message to-far))))
+        ;; TODO: Isn't result-val redundant?  It's in the call-result...
+        (values call-result new-actormap to-near to-far)]))))
 
 ;; The following two are utilities for when you want to check
 ;; or bootstrap something within an actormap
@@ -914,7 +909,7 @@
       [else (cons a d)]))
   (match messages
     [(? message? message)
-     (define-values (call-result resolve-result _val new-am to-near to-far)
+     (define-values (call-result new-am to-near to-far)
        (actormap-turn-message actormap messages
                               #:display-errors? display-errors?))
      (values new-am to-near to-far)]
@@ -1281,7 +1276,10 @@
      (car what-i-got)
      'oh-no))
   
-  (let ([what-i-got #f])
+  ;; Yep, this is broken!
+  ;; We haven't correctly handled promises being "sent" promises
+  ;; apparently?
+  #;(let ([what-i-got #f])
     (actormap-full-run!
      am (lambda ()
           (define foo (spawn (lambda _ 'i-am-foo)))

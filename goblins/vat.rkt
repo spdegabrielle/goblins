@@ -138,9 +138,9 @@
                ;; This is the actual thing this loop spends the most
                ;; time on, so it needs to go first
                [(cmd-send-message msg)
-                (define-values (call-result resolve-result _val
-                                            transactormap
-                                            to-near to-far)
+                (define-values (call-result
+                                transactormap
+                                to-near to-far)
                   (parameterize ([being-called-by-vat-actor #t])
                     (actormap-turn-message actormap msg
                                            ;; TODO: Come on, we need to do
