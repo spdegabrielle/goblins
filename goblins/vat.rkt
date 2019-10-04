@@ -326,4 +326,15 @@
   (define b-passoff (b-vat 'spawn (lambda (bcom) (<- a-greeter))))
   (b-vat 'call b-passoff)
   (sleep 0.05)
-  (check-equal? a-greeter-set-me "got it!"))
+  (check-equal? a-greeter-set-me "got it!")
+
+  ;; basic inter-vat promise resolution
+  (let ([set-this #f])
+    (b-vat 'call
+           (b-vat 'spawn
+                  (lambda _
+                    (on (<-p friendo)
+                        (lambda (x)
+                          (set! set-this (format "I got: ~a" x)))))))
+    (sleep 0.05)
+    (check-equal? set-this "I got: hello")))
