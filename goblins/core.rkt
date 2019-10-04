@@ -627,7 +627,9 @@
            (set! to-near (cons new-message to-near))
            (set! to-far (cons new-message to-far)))]
       #;[(? far-refr?)
-       (set! to-far (cons new-message to-far))]))
+       (set! to-far (cons new-message to-far))]
+      [_ (error 'vat-send-message "Don't know how to send a message to: ~a" to-refr)]
+      ))
 
   (define _<-
     (make-keyword-procedure
