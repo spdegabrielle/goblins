@@ -628,8 +628,8 @@
            (set! to-far (cons new-message to-far)))]
       #;[(? far-refr?)
        (set! to-far (cons new-message to-far))]
-      [_ (error 'vat-send-message "Don't know how to send a message to: ~a" to-refr)]
-      ))
+      [_ (error 'vat-send-message
+                "Don't know how to send a message to: ~a" to-refr)]))
 
   (define _<-
     (make-keyword-procedure
@@ -653,6 +653,9 @@
       (error "on only works for local objects"))
     (define-values (subscribe-refr mactor)
       (actormap-symlink-ref actormap id-refr))
+    ;; TODO: Another thing we can do is rely on proper (E-)order and simply
+    ;;   send two messages.  The first one is to the on-fulfilled/on-broken
+    ;;   and the second is to the on-finally.
     ;; Alternate design for these (and the first I implemented) is to
     ;; actually spawn on-finally and on-fulfilled actors and call
     ;; them.  That might be better if we did add coroutines.
