@@ -191,6 +191,7 @@
 
 ;; Determines whether immediately callable within the current
 ;; syscaller context
+;; TODO: Needs tests!  Well, we could do them in vat.rkt...
 (define (callable? obj)
   (let ([sys (current-syscaller)])
     (and sys
