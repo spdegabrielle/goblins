@@ -475,8 +475,11 @@
            ['spawn-mactor spawn-mactor]
            ['fulfill-promise promise-fulfill]
            ['break-promise promise-break]
+           ;; TODO: These are all variants of 'send-message.
+           ;;   Shouldn't we collapse them?
            ['<- _<-]
            ['<-p _<-p]
+           ['send-message _send-message]
            ['on _on]
            ['extract _extract]
            ['vat-connector get-vat-connector]
@@ -645,45 +648,54 @@
        (_send-message kws kw-args to-refr resolver args)
        promise)))
 
+  ;; At THIS stage, on-fulfilled, on-broken, on-finally should
+  ;; be actors or #f.  That's not the case in the user-facing
+  ;; `on' procedure.
   (define (_on id-refr [on-fulfilled #f]
                #:catch [on-broken #f]
                #:finally [on-finally #f]
                #:return-promise? [return-promise? #f])
-    #;(unless (local? id-refr)
-      (error "on only works for local objects"))
+    (match-define (list return-promise return-p-resolver)
+      (if return-promise?
+          (spawn-promise-pair)
+          (list #f #f)))
+
     (define-values (subscribe-refr mactor)
       (actormap-symlink-ref actormap id-refr))
-    ;; TODO: Another thing we can do is rely on proper (E-)order and simply
-    ;;   send two messages.  The first one is to the on-fulfilled/on-broken
-    ;;   and the second is to the on-finally.
-    ;; Alternate design for these (and the first I implemented) is to
-    ;; actually spawn on-finally and on-fulfilled actors and call
-    ;; them.  That might be better if we did add coroutines.
-    ;; More on this issue and dynamic-wind:
-    ;; https://groups.google.com/d/msg/racket-users/-NHDOdo6DAk/4NcTa89sIpMJ
-    (define (call-on-fulfilled val)
-      (dynamic-wind
-        (lambda () #f)
-        (lambda ()
-          (when on-fulfilled
-            (on-fulfilled val)))
-        call-on-finally))
-    (define (call-on-broken problem)
-      (dynamic-wind
-        (lambda () #f)
-        (lambda ()
-          (when on-broken
-            (on-broken problem)))
-        call-on-finally))
-    (define (call-on-finally)
-      (when on-finally
-        (on-finally)))
+
+    ;; These two procedures are called once the fulfillment
+    ;; or break of the id-refr has actually occurred.
+    (define ((handle-resolution on-resolution
+                                resolve-fulfill-command) val)
+      (cond [on-resolution
+             ;; We can't use _send-message directly, because this may
+             ;; be in a separate syscaller at the time it's resolved.
+             (define syscaller (get-syscaller-or-die))
+             (syscaller 'send-message
+                        '() '() on-resolution
+                        ;; Which may be #f!
+                        return-p-resolver
+                        (list val))
+             (when on-finally
+               (<- on-finally))]
+            ;; There's no on-resolution, which means we can just fulfill
+            ;; the promise immediately!
+            [else
+             (when on-finally
+               (<- on-finally))
+             (when return-p-resolver
+               (<- return-p-resolver resolve-fulfill-command val))]))
+    (define handle-fulfilled
+      (handle-resolution on-fulfilled 'fulfill))
+    (define handle-broken
+      (handle-resolution on-broken 'break))
+
     (match mactor
+      ;; This object is a local promise, so we should handle it.
       [(mactor:local-promise listeners r-unsealer r-tm?)
-       (match-define (list return-promise return-p-resolver)
-         (if return-promise?
-             (spawn-promise-pair)
-             (list #f #f)))
+       ;; The purpose of this listener is that the promise
+       ;; *hasn't resolved yet*.  Because of that we need to
+       ;; queue something to happen *once* it resolves.
        (define on-listener
          ;; using _spawn here saves a very minor round
          ;; trip which we can't do in the on-fulfilled
@@ -691,39 +703,32 @@
          (_spawn
           (match-lambda*
             [(list bcom 'fulfill val)
-             (define fulfilled-response-val
-               (call-on-fulfilled val))
-             (when return-promise?
-               (<- return-p-resolver 'fulfill fulfilled-response-val))
-             ;; Not sure if we do need to, or it is useful to,
-             ;; return this, or if we should just return void.
-             ;; I don't think it hurts?
-             fulfilled-response-val]
+             (handle-fulfilled val)
+             (void)]
             [(list bcom 'break problem)
-             (when return-promise?
-               (<- return-p-resolver 'break problem))
-             (call-on-broken problem)])))
+             (handle-broken problem)
+             (void)])))
+       ;; Set a new version of the local-promise with this
+       ;; object as
        (define new-listeners
          (cons on-listener listeners))
        (actormap-set! actormap id-refr
                       (mactor:local-promise new-listeners
-                                            r-unsealer r-tm?))
-       (if return-promise?
-           return-promise
-           (void))]
+                                            r-unsealer r-tm?))]
       [(? mactor:broken? mactor)
-       (call-on-broken (mactor:broken-problem mactor))
-       (call-on-finally)]
+       (handle-broken (mactor:broken-problem mactor))]
       [(? mactor:encased? mactor)
-       (call-on-fulfilled (mactor:encased-val mactor))
-       (call-on-finally)]
+       (handle-fulfilled (mactor:encased-val mactor))]
       [(? (or/c mactor:remote? mactor:local-actor?) mactor)
-       (call-on-fulfilled subscribe-refr)
-       (call-on-finally)]
+       (handle-fulfilled subscribe-refr)]
       ;; This involves invoking a vat-level method of the remote
       ;; machine, right?
-      [(? mactor:remote-promise? mactor)
-       'TODO]))
+      #;[(? mactor:remote-promise? mactor)
+       'TODO])
+
+    ;; Unless an error was thrown, we now should return the promise
+    ;; we made.
+    return-promise)
 
   (define (_extract id-refr)
     (actormap-extract actormap id-refr))
@@ -768,9 +773,24 @@
             #:finally [on-finally #f]
             #:return-promise? [return-promise? #f])
   (define sys (get-syscaller-or-die))
-  (sys 'on id-refr on-fulfilled
-       #:catch on-broken
-       #:finally on-finally
+  (define (maybe-actorize obj)
+    (match obj
+      ;; if it's a reference, it's already fine
+      [(? refr?)
+       obj]
+      ;; if it's a procedure, let's spawn it
+      [(? procedure?)
+       (spawn
+        (lambda (bcom . args)
+          (apply obj args)))]
+      ;; If it's #f, leave it as #f
+      [#f #f]
+      ;; Otherwise, this doesn't belong here
+      [_ (error 'invalid-on-handler
+                "Invalid handler for on: ~a" obj)]))
+  (sys 'on id-refr (maybe-actorize on-fulfilled)
+       #:catch (maybe-actorize on-broken)
+       #:finally (maybe-actorize on-finally)
        #:return-promise? return-promise?))
 
 (define (extract id-refr)
