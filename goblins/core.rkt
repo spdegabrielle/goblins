@@ -507,16 +507,22 @@
   (define _call
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
+
        (define (raise-not-callable)
          (error 'not-callable
                 "Not callable: ~a"
                 to-refr))
+
        ;; Restrict to live-refrs which appear to have the same
        ;; vat-connector as us
-       (unless (and (live-refr? to-refr)
-                    (eq? (live-refr-vat-connector to-refr)
-                         vat-connector))
-         (raise-not-callable))
+       (unless (live-refr? to-refr)
+         (error 'not-callable
+                "Not a live reference: ~a" to-refr))
+
+       (unless (eq? (live-refr-vat-connector to-refr)
+                    vat-connector)
+         (error 'not-callable
+                "Not in the same vat: ~a" to-refr))
 
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
