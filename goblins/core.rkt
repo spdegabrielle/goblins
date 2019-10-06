@@ -477,7 +477,7 @@
        (when closed?
          (error "Sorry, this syscaller is closed for business!"))
        (define method
-         (match method-id
+         (case method-id
            ['call _call]
            ['spawn _spawn]
            ['spawn-mactor spawn-mactor]
@@ -492,7 +492,7 @@
            ['extract _extract]
            ['vat-connector get-vat-connector]
            ['callable? callable?]
-           [_ (error "invalid syscaller method")]))
+           [else (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
 
   (define (callable? obj)

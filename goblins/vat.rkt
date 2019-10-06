@@ -253,8 +253,10 @@
        (make-keyword-procedure
         (λ (kws kw-args this-method-name . args)
           (define method
-            (match this-method-name
-              ['method-name method-handler] ...))
+            (case this-method-name
+              ['method-name method-handler] ...
+              [else (error 'vat-dispatcher-error
+                           "Unnown method: ~a" this-method-name)]))
           (keyword-apply method kws kw-args args)))
        'id)))
 
