@@ -728,7 +728,7 @@
 
     ;; Unless an error was thrown, we now should return the promise
     ;; we made.
-    return-promise)
+    (or return-promise (void)))
 
   (define (_extract id-refr)
     (actormap-extract actormap id-refr))
