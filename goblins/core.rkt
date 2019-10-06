@@ -554,6 +554,8 @@
                                  (mactor:local-actor-become? mactor))))
 
           return-val]
+         ;; If it's an encased value, "calling" it just returns the
+         ;; internal value.
          [(? mactor:encased?)
           (mactor:encased-val mactor)]
          [_ (raise-not-callable)]))))
