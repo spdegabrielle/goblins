@@ -42,6 +42,9 @@
      (make-keyword-procedure
       (lambda (kws kw-args become method . args)
         (define method-proc
+          ;; TODO: we should really be using case here
+          ;;   but that seems to require more macro-foo to
+          ;;   operate correctly...
           (cond
             [(eq? method (method-defn-sym method-defn))
              (method-defn-proc method-defn)] ...
