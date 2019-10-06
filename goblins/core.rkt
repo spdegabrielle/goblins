@@ -11,7 +11,8 @@
 ;; Same as E refs, but -ref is already meaningful in scheme
 (provide refr?
          live-refr?
-         sturdy-refr?)
+         sturdy-refr?
+         callable?)
 
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
@@ -188,6 +189,12 @@
 #;(define far-refr?
   (procedure-rename mactor:remote? 'far-refr?))
 
+;; Determines whether immediately callable within the current
+;; syscaller context
+(define (callable? obj)
+  (let ([sys (current-syscaller)])
+    (and sys
+         (sys 'callable? obj))))
 
 ;;; "Become" special sealers
 ;;; ========================
@@ -483,8 +490,14 @@
            ['on _on]
            ['extract _extract]
            ['vat-connector get-vat-connector]
+           ['callable? callable?]
            [_ (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
+
+  (define (callable? obj)
+    (and (live-refr? obj)
+         (eq? (live-refr-vat-connector obj)
+              vat-connector)))
 
   (define (get-vat-connector)
     vat-connector)
