@@ -12,7 +12,7 @@
 (provide refr?
          live-refr?
          sturdy-refr?
-         callable?)
+         #;callable?)
 
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
@@ -192,10 +192,15 @@
 ;; Determines whether immediately callable within the current
 ;; syscaller context
 ;; TODO: Needs tests!  Well, we could do them in vat.rkt...
-(define (callable? obj)
+#;(define (callable? obj)
   (let ([sys (current-syscaller)])
     (and sys
          (sys 'callable? obj))))
+
+;; Presumes this is a mactor already
+(define (callable-mactor? mactor)
+  (or (mactor:local-actor? mactor)
+      (mactor:encased? mactor)))
 
 ;;; "Become" special sealers
 ;;; ========================
@@ -488,14 +493,14 @@
            ['<- _<-]
            ['<-p _<-p]
            ['send-message _send-message]
+           ['handle-message _handle-message]
            ['on _on]
            ['extract _extract]
            ['vat-connector get-vat-connector]
-           ['callable? callable?]
            [else (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
 
-  (define (callable? obj)
+  (define (near-refr? obj)
     (and (live-refr? obj)
          (eq? (live-refr-vat-connector obj)
               vat-connector)))
@@ -503,16 +508,49 @@
   (define (get-vat-connector)
     vat-connector)
 
+  ;; helper procedure, used by a couple of things
+  ;; By this point, update-refr should be de-symlink'ed
+  (define (__really-do-call update-refr mactor
+                            kws kw-args args)
+    (match mactor
+      [(? mactor:local-actor?)
+       (define actor-handler
+         (mactor:local-actor-handler mactor))
+       (define result
+         (keyword-apply actor-handler kws kw-args
+                        (mactor:local-actor-become mactor) args))
+
+       ;; I guess watching for this guarantees that an immediate call
+       ;; against a local actor will not be tail recursive.
+       ;; TODO: We need to document that.
+       (define-values (new-handler return-val)
+         (match result
+           [(? (mactor:local-actor-become? mactor))
+            ((mactor:local-actor-become-unsealer mactor) result)]
+           [_ (values #f result)]))
+
+       ;; if a new handler for this actor was specified,
+       ;; let's replace it
+       (when new-handler
+         (transactormap-set! actormap update-refr
+                             (mactor:local-actor
+                              new-handler
+                              (mactor:local-actor-become mactor)
+                              (mactor:local-actor-become-unsealer mactor)
+                              (mactor:local-actor-become? mactor))))
+
+       return-val]
+      ;; If it's an encased value, "calling" it just returns the
+      ;; internal value.
+      [(? mactor:encased?)
+       (mactor:encased-val mactor)]
+      [_ (error 'not-callable
+                "Not an encased or live-actor mactor: ~a" mactor)]))
+
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
-
-       (define (raise-not-callable)
-         (error 'not-callable
-                "Not callable: ~a"
-                to-refr))
-
        ;; Restrict to live-refrs which appear to have the same
        ;; vat-connector as us
        (unless (live-refr? to-refr)
@@ -526,39 +564,8 @@
 
        (define-values (update-refr mactor)
          (actormap-symlink-ref actormap to-refr))
-       (match mactor
-         [(? mactor:local-actor?)
-          (define actor-handler
-            (mactor:local-actor-handler mactor))
-          (define result
-            (keyword-apply actor-handler kws kw-args
-                           (mactor:local-actor-become mactor) args))
 
-          ;; I guess watching for this guarantees that an immediate call
-          ;; against a local actor will not be tail recursive.
-          ;; TODO: We need to document that.
-          (define-values (new-handler return-val)
-            (match result
-              [(? (mactor:local-actor-become? mactor))
-               ((mactor:local-actor-become-unsealer mactor) result)]
-              [_ (values #f result)]))
-
-          ;; if a new handler for this actor was specified,
-          ;; let's replace it
-          (when new-handler
-            (transactormap-set! actormap update-refr
-                                (mactor:local-actor
-                                 new-handler
-                                 (mactor:local-actor-become mactor)
-                                 (mactor:local-actor-become-unsealer mactor)
-                                 (mactor:local-actor-become? mactor))))
-
-          return-val]
-         ;; If it's an encased value, "calling" it just returns the
-         ;; internal value.
-         [(? mactor:encased?)
-          (mactor:encased-val mactor)]
-         [_ (raise-not-callable)]))))
+       (__really-do-call update-refr mactor kws kw-args args))))
 
   ;; spawn a new actor
   (define (_spawn actor-handler
@@ -635,6 +642,21 @@
          (<- listener 'break problem))]
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
+
+  (define (_handle-message msg)
+    (match-define (message to-refr resolve-me kws kw-vals args)
+      msg)
+    (unless (near-refr? to-refr)
+      (error 'not-a-near-refr "Not a near refr: ~a" to-refr))
+
+    (define-values (update-refr mactor)
+      (actormap-symlink-ref actormap to-refr))
+
+    (match mactor
+      [(? callable-mactor?)
+       (keyword-apply _call kws kw-vals to-refr args)]
+      #;[(? mactor:local-promise?)
+       'TODO]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args)
@@ -879,10 +901,6 @@
   (call-with-fresh-syscaller
    actormap
    (lambda (sys get-sys-internals)
-     (match-define (message to resolve-me kws kw-vals args)
-       msg)
-     (unless (live-refr? to)
-       (error "Can only perform a turn on a message to local actors"))
      (define call-result #f)
      (define result-val (void))
      (with-handlers ([exn:fail?
@@ -895,10 +913,12 @@
                         (set! call-result
                               `(fail ,err)))])
        (set! result-val
-             (keyword-apply sys kws kw-vals 'call to args))
+             (sys 'handle-message msg))
        (set! call-result
              `(success ,result-val)))
 
+     (define resolve-me
+       (message-resolve-me msg))
      (match (get-sys-internals)
        [(list new-actormap to-near to-far)
         (when resolve-me
