@@ -636,7 +636,7 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
 
-  ;; helper to the become two methods
+  ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args)
     (define new-message
       (message to-refr resolve-me kws kw-args args))
