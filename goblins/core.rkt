@@ -653,10 +653,24 @@
       (actormap-symlink-ref actormap to-refr))
 
     (match mactor
+      ;; If it's callable, we just use the call handler, because
+      ;; that's effectively the same code we'd be running anyway.
       [(? callable-mactor?)
        (keyword-apply _call kws kw-vals to-refr args)]
-      #;[(? mactor:local-promise?)
-       'TODO]))
+      ;; If it's a promise, that means we're queuing up something to
+      ;; run *once this promise is resolved*.
+      [(? mactor:local-promise?)
+       ;; Create new actor that is subscribed to this
+       ;; TODO: Really important!  We need to detect a cycle to prevent
+       ;;   going in loops on accident.
+       ;;   I'm not actually sure how to do that yet...
+       (_on update-refr
+            (_spawn (lambda (bcom val)
+                      (define sys (current-syscaller) )
+                      (sys 'send-message
+                           kws kw-vals val resolve-me args)
+                      (void))
+                    'promise-pipeline-helper))]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args)
@@ -1344,10 +1358,7 @@
      (car what-i-got)
      'oh-no))
   
-  ;; Yep, this is broken!
-  ;; We haven't correctly handled promises being "sent" promises
-  ;; apparently?
-  #;(let ([what-i-got #f])
+  (let ([what-i-got #f])
     (actormap-full-run!
      am (lambda ()
           (define foo (spawn (lambda _ 'i-am-foo)))

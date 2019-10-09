@@ -339,4 +339,22 @@
                         (lambda (x)
                           (set! set-this (format "I got: ~a" x)))))))
     (sleep 0.05)
-    (check-equal? set-this "I got: hello")))
+    (check-equal? set-this "I got: hello"))
+
+  ;; Another promise pipelining test
+  (define car-result-here
+    #f)
+  (define (make-car-factory)
+    (lambda (bcom color)
+      (spawn
+       (lambda (bcom)
+         (set! car-result-here (format "The ~a car says: *vroom vroom*!" color))))))
+  (define car-factory
+    (a-vat 'spawn (make-car-factory)))
+  (a-vat 'call
+         (a-vat 'spawn
+                (lambda (bcom)
+                  (<- (<-p car-factory 'green)))))
+  (sleep 0.05)
+  (check-equal? car-result-here
+                "The green car says: *vroom vroom*!"))
