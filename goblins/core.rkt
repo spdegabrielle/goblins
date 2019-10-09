@@ -612,7 +612,7 @@
          ;; Must be something else then.  Guess we'd better
          ;; encase it.
          [_ (actormap-set! actormap promise-id
-                                (mactor:encased val))])
+                           (mactor:encased val))])
 
        ;; Inform all listeners of the resolution
        (for ([listener (mactor:local-promise-listeners promise-mactor)])
