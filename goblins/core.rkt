@@ -486,8 +486,8 @@
            ['call _call]
            ['spawn _spawn]
            ['spawn-mactor spawn-mactor]
-           ['fulfill-promise promise-fulfill]
-           ['break-promise promise-break]
+           ['fulfill-promise fulfill-promise]
+           ['break-promise break-promise]
            ;; TODO: These are all variants of 'send-message.
            ;;   Shouldn't we collapse them?
            ['<- _<-]
@@ -575,7 +575,7 @@
   (define (spawn-mactor mactor [debug-name #f])
     (actormap-spawn-mactor! actormap mactor debug-name))
 
-  (define (promise-fulfill promise-id sealed-val)
+  (define (fulfill-promise promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
       [(? mactor:local-promise? promise-mactor)
        (define resolver-tm?
@@ -620,7 +620,7 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
 
-  (define (promise-break promise-id sealed-problem)
+  (define (break-promise promise-id sealed-problem)
     (match (actormap-ref actormap promise-id #f)
       ;; TODO: Not just local-promise, anything that can
       ;;   break
