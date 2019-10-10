@@ -664,13 +664,16 @@
        ;; TODO: Really important!  We need to detect a cycle to prevent
        ;;   going in loops on accident.
        ;;   I'm not actually sure how to do that yet...
+       ;; TODO: We've got an unncecessary promise-to-a-promise
+       ;;   indirection via this method, which we could cut out
+       ;;   the middleman of I think?
        (_on update-refr
-            (_spawn (lambda (bcom val)
-                      (define sys (current-syscaller) )
-                      (sys 'send-message
-                           kws kw-vals val resolve-me args)
-                      (void))
-                    'promise-pipeline-helper))]))
+            (_spawn (lambda (bcom send-to)
+                      (keyword-apply <-p kws kw-vals send-to args))
+                    'promise-pipeline-helper)
+            ;; Wait, what will this do for us?  Wouldn't it
+            ;; just return another void?
+            #:return-promise? #t)]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args)
