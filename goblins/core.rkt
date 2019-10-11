@@ -588,13 +588,20 @@
        (define val
          (resolver-unsealer sealed-val))
 
+       ;; Inform all listeners of the resolution
+       ;; We'll do this unless we're symlinking to another promise,
+       ;; in which case we just "pass on" the listeners.
+       (define (inform-listeners)
+         (for ([listener (mactor:local-promise-listeners promise-mactor)])
+           (<- listener 'fulfill val)))
+
        ;; Now we "become" that value!
        (match val
          ;; It's a reference now, so let's set up a symlink
          [(? refr?)
           ;; for efficiency, let's make it as direct of a symlink
           ;; as possible
-          (define link-to
+          (define-values (link-to-refr link-to-mactor)
             (let lp ([refr-id val]
                      [seen (seteq)])
               (when (set-member? seen refr-id)
@@ -606,17 +613,35 @@
                      (set-add seen refr-id))]
                 [#f (error "no actor with this id")]
                 ;; ok we found a non-symlink refr
-                [_ refr-id])))
+                [mactor (values refr-id mactor)])))
+          ;; Set up the symlink
           (actormap-set! actormap promise-id
-                              (mactor:symlink link-to))]
+                         (mactor:symlink link-to-refr))
+          ;; Now we either inform listeners or forward them to the promise
+          (match link-to-mactor
+            ;; Ok, it's a local promise...
+            ;; For this we still need to set the symlink, but
+            ;; we should defer our sending of messages until the
+            ;; other promise resolves.
+            [(mactor:local-promise linked-listeners linked-r-unsealer linked-r-tm?)
+             ;; Update the symlinked-to-promise to have all of our listeners
+             (define new-linked-listeners
+               (append (mactor:local-promise-listeners promise-mactor)
+                       linked-listeners))
+             (define new-linked-mactor
+               (mactor:local-promise new-linked-listeners
+                                     linked-r-unsealer
+                                     linked-r-tm?))
+             (actormap-set! actormap link-to-refr
+                            new-linked-mactor)]
+
+            ;; Nope it's not a promise, so inform listeners now
+            [_ (inform-listeners)])]
          ;; Must be something else then.  Guess we'd better
          ;; encase it.
          [_ (actormap-set! actormap promise-id
-                           (mactor:encased val))])
-
-       ;; Inform all listeners of the resolution
-       (for ([listener (mactor:local-promise-listeners promise-mactor)])
-         (<- listener 'fulfill val))]
+                           (mactor:encased val))
+            (inform-listeners)])]
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
 
