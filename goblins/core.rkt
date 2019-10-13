@@ -866,9 +866,13 @@
        obj]
       ;; if it's a procedure, let's spawn it
       [(? procedure?)
+       (define already-ran
+         (lambda _
+           (error "Already ran for automatically generated listener")))
        (spawn
         (lambda (bcom . args)
-          (apply obj args)))]
+          (bcom already-ran
+                (apply obj args))))]
       ;; If it's #f, leave it as #f
       [#f #f]
       ;; Otherwise, this doesn't belong here
