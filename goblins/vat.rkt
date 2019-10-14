@@ -290,18 +290,19 @@
   (install-default-factories!)
 
   (define a-vat (make-vat))
-  (define friendo (a-vat 'spawn (lambda (bcom) 'hello)))
+  (define ((^friendo bcom))
+    'hello)
+  (define friendo (a-vat 'spawn ^friendo))
   (test-equal?
    "vat 'call method"
    (a-vat 'call friendo)
    'hello)
 
-  (define (make-ctr [n 0])
-    (lambda (bcom)
-      (bcom (make-ctr (add1 n))
-            n)))
+  (define ((^ctr bcom [n 0]))
+    (values (bcom ^ctr (add1 n))
+            n))
   (define a-ctr
-    (a-vat 'spawn (make-ctr)))
+    (a-vat 'spawn ^ctr))
   (check-equal? (a-vat 'call a-ctr) 0)
   (check-equal? (a-vat 'call a-ctr) 1)
   (check-equal? (a-vat 'call a-ctr) 2)
@@ -312,7 +313,7 @@
   (check-equal? (a-vat 'call a-ctr) 5)
 
   (define pokes-ctr
-    (a-vat 'spawn (lambda _ (<- a-ctr))))
+    (a-vat 'spawn (lambda _ (lambda _ (<- a-ctr)))))
   (check-equal? (a-vat 'call a-ctr) 6)
   (a-vat 'call pokes-ctr)
   (sleep 0.05)
@@ -324,8 +325,12 @@
   ;; inter-vat communication
   (define b-vat (make-vat))
   (define a-greeter-set-me #f)
-  (define a-greeter (a-vat 'spawn (lambda _ (set! a-greeter-set-me "got it!"))))
-  (define b-passoff (b-vat 'spawn (lambda (bcom) (<- a-greeter))))
+  (define a-greeter (a-vat 'spawn (lambda (bcom)
+                                    (lambda _
+                                      (set! a-greeter-set-me "got it!")))))
+  (define b-passoff (b-vat 'spawn (lambda (bcom)
+                                    (lambda _
+                                      (<- a-greeter)))))
   (b-vat 'call b-passoff)
   (sleep 0.05)
   (check-equal? a-greeter-set-me "got it!")
@@ -334,27 +339,28 @@
   (let ([set-this #f])
     (b-vat 'call
            (b-vat 'spawn
-                  (lambda _
-                    (on (<-p friendo)
-                        (lambda (x)
-                          (set! set-this (format "I got: ~a" x)))))))
+                  (lambda (bcom)
+                    (lambda _
+                      (on (<-p friendo)
+                          (lambda (x)
+                            (set! set-this (format "I got: ~a" x))))))))
     (sleep 0.05)
     (check-equal? set-this "I got: hello"))
 
   ;; Another promise pipelining test
   (define car-result-here
     #f)
-  (define (make-car-factory)
-    (lambda (bcom color)
-      (spawn
-       (lambda (bcom)
-         (set! car-result-here (format "The ~a car says: *vroom vroom*!" color))))))
+  (define ((^car-factory bcom) color)
+    (define ((^car bcom))
+      (set! car-result-here (format "The ~a car says: *vroom vroom*!" color)))
+    (spawn ^car))
   (define car-factory
-    (a-vat 'spawn (make-car-factory)))
+    (a-vat 'spawn ^car-factory))
   (a-vat 'call
          (a-vat 'spawn
                 (lambda (bcom)
-                  (<- (<-p car-factory 'green)))))
+                  (lambda _
+                    (<- (<-p car-factory 'green))))))
   (sleep 0.05)
   (check-equal? car-result-here
                 "The green car says: *vroom vroom*!"))
