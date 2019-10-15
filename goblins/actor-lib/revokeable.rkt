@@ -7,18 +7,15 @@
 (define (spawn-revokeable target)
   (define revoked?
     (spawn-cell #f))
-  (define forwarder
-    (spawn
-     (make-keyword-procedure
-      (lambda (kws kw-args become . args)
-        (when (revoked?)
-          (error "Access revoked!"))
-        (keyword-apply call kws kw-args target args)))))
-  (define revoker
-    (spawn
-     (lambda (bcom)
-       (revoked? #t))))
-  (list forwarder revoker))
+  (define (^forwarder bcom)
+    (make-keyword-procedure
+     (lambda (kws kw-args . args)
+       (when (revoked?)
+         (error "Access revoked!"))
+       (keyword-apply call kws kw-args target args))))
+  (define ((^revoker bcom))
+    (revoked? #t))
+  (list (spawn ^forwarder) (spawn ^revoker)))
 
 (module+ test
   (require rackunit
@@ -28,10 +25,12 @@
   (define royal-admission
     (actormap-spawn!
      am (lambda (bcom)
-          "The Queen will see you now.")))
+          (lambda _
+            "The Queen will see you now."))))
   (match-define (list royal-forwarder royal-revoker)
-    (actormap-run! am (lambda ()
-                        (spawn-revokeable royal-admission))))
+    (actormap-run! am
+                   (lambda ()
+                     (spawn-revokeable royal-admission))))
 
   (check-equal?
    (actormap-peek am royal-forwarder)

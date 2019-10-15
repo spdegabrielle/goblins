@@ -3,7 +3,7 @@
 ;; An environment that multiple entities can read/write to,
 ;; inspired by DOS/Win and later DOS/Hurd
 
-(provide make-env
+(provide ^env
          spawn-env-pair
          rw->read-key
          rw->write-key
@@ -45,7 +45,7 @@
      #t]
     [_ #f]))
 
-(define (make-env)
+(define (^env bcom)
   (define-values (seal unseal branded?)
     (make-sealer-triplet))
 
@@ -106,12 +106,13 @@
 
 (define (spawn-env-pair)
   (define this-env
-    (spawn (make-env)))
+    (spawn ^env))
   (define rw-facet
-    (spawn (facet this-env 'new-key 'read 'write)))
+    (spawn ^facet this-env 'new-key 'read 'write))
+  (define ((^reset-facet bcom))
+    (call this-env 'reset))
   (define reset-facet
-    (spawn (lambda (bcom)
-             (call this-env 'reset))))
+    (spawn ^reset-facet))
   (list rw-facet reset-facet))
 
 (module+ test

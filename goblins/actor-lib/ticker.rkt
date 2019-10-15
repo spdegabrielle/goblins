@@ -11,12 +11,12 @@
 
 (define (spawn-ticker-pair)
   (define new-ticked
-    (spawn (make-cell '())))
+    (spawn ^cell '()))
   ;; This registers new ticked objects
-  (define (tick-register bcom . entries)
+  (define ((^tick-register bcom) . entries)
     (new-ticked (append entries (new-ticked))))
   ;; This runs all ticked objects
-  (define ((make-ticker current-ticked) bcom)
+  (define ((^ticker bcom current-ticked))
     ;; Update set of tickers with any that have been
     ;; added since when we last ran
     (define updated-ticked
@@ -32,9 +32,9 @@
              '()
              updated-ticked))
     ;; update ourself
-    (bcom (make-ticker next-tickers)))
-  (list (spawn tick-register)
-        (spawn (make-ticker '()))))
+    (bcom ^ticker next-tickers))
+  (list (spawn ^tick-register)
+        (spawn ^ticker '())))
 
 (module+ test
   (require rackunit)
@@ -43,12 +43,12 @@
   (match-define (list register-ticker ticker-tick)
     (actormap-run! am spawn-ticker-pair))
   (define joe-speaks-here
-    (actormap-spawn! am (make-cell)))
+    (actormap-spawn! am ^cell))
   (define jane-speaks-here
-    (actormap-spawn! am (make-cell)))
-  (define (malaise-sufferer name speaking-cell
-                            [maximum-suffering 3])
-    (define ((loop n) bcom)
+    (actormap-spawn! am ^cell))
+  (define (^malaise-sufferer bcom name speaking-cell
+                             [maximum-suffering 3])
+    (define ((loop bcom n))
       (if (> n maximum-suffering)
           (begin
             (speaking-cell
@@ -59,15 +59,15 @@
             (speaking-cell
              (format "<~a> sigh number ~a"
                      name n))
-            (bcom (loop (add1 n))))))
-    (loop 1))
+            (bcom loop (add1 n)))))
+    (loop bcom 1))
   (define joe
-    (actormap-spawn! am (malaise-sufferer "joe"
-                                          joe-speaks-here)))
+    (actormap-spawn! am ^malaise-sufferer "joe"
+                     joe-speaks-here))
   (define jane
-    (actormap-spawn! am (malaise-sufferer "jane"
-                                          jane-speaks-here
-                                          2)))
+    (actormap-spawn! am ^malaise-sufferer "jane"
+                     jane-speaks-here
+                     2))
   (actormap-poke! am register-ticker joe jane)
   (actormap-poke! am ticker-tick)
   (check-equal?
