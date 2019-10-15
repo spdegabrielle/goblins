@@ -1116,11 +1116,16 @@
 (define actormap-spawn!
   (make-keyword-procedure
    (lambda (kws kw-args actormap actor-constructor . args)
-     (call-with-fresh-syscaller
-      actormap
-      (lambda (sys get-sys-internals)
-        (actormap-spawn!* actormap actor-constructor
-                          kws kw-args args))))))
+     (define new-actormap
+       (make-transactormap actormap))
+     (define actor-refr
+       (call-with-fresh-syscaller
+        new-actormap
+        (lambda (sys get-sys-internals)
+          (actormap-spawn!* new-actormap actor-constructor
+                            kws kw-args args))))
+     (transactormap-merge! new-actormap)
+     actor-refr)))
 
 (define (actormap-spawn-mactor! actormap mactor [debug-name #f])
   (define vat-connector
