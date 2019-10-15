@@ -455,7 +455,7 @@
       [(? mactor:symlink? mactor)
        (lp (mactor:symlink-link-to-refr mactor)
            (set-add seen refr-id))]
-      [#f (error "no actor with this id")]
+      [#f (error "no actor with this id" refr-id)]
       [mactor (values refr-id mactor)])))
 
 (define (fresh-syscaller prev-actormap)
