@@ -572,7 +572,7 @@
 
   ;; spawn a new actor
   (define (_spawn constructor kws kw-args args)
-    (keyword-apply actormap-spawn! kws kw-args actormap constructor args))
+    (actormap-spawn!* actormap constructor kws kw-args args))
 
   (define (spawn-mactor mactor [debug-name #f])
     (actormap-spawn-mactor! actormap mactor debug-name))
