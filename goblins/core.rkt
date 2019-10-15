@@ -200,10 +200,12 @@
   (define-values (struct:seal make-seal sealed? seal-ref seal-set!)
     (make-struct-type 'become #f 1 0))
   (define become
-    (make-keyword-procedure
-     (lambda (kws kw-args constructor . args)
-       (make-seal
-        (keyword-apply constructor kws kw-args become args)))))
+    (procedure-rename
+     (make-keyword-procedure
+      (lambda (kws kw-args constructor . args)
+        (make-seal
+         (keyword-apply constructor kws kw-args become args))))
+     'become))
   (define unseal-handler
     (make-struct-field-accessor seal-ref 0))
   (define (unseal sealed-become)
