@@ -1232,10 +1232,10 @@
   (spawn ^cell val))
 
 (define (cell->read-only cell)
-  (spawn (lambda () (cell))))
+  (spawn-proc (lambda () (cell))))
 
 (define (cell->write-only cell)
-  (spawn (lambda (new-val) (cell new-val))))
+  (spawn-proc (lambda (new-val) (cell new-val))))
 
 (module+ test
   (define a-cell
