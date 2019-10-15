@@ -71,9 +71,9 @@
          [(list 'write id)
           id])]))
 
-  (define (env ht)
+  (define (^next-env bcom ht)
     (mactor
-      [(new-key bcom [key-name 'some-key])
+      [(new-key [key-name 'some-key])
        ;; unique by eq?
        (define id
          (list key-name))
@@ -84,25 +84,21 @@
        (define rw-key
          `(rw-key ,read-key ,write-key))
        rw-key]
-      [(read bcom readable-key)
+      [(read readable-key)
        (define id
          (extract/verify-read-id readable-key))
        (hash-ref ht id '())]
-      [(write bcom writeable-key val)
+      [(write writeable-key val)
        (define id
          (extract/verify-write-id writeable-key))
        (define updated-ht
          (hash-set ht id
                    (cons val (hash-ref ht id '()))))
-       (define new-env
-         (env updated-ht))
-       (bcom new-env)]
-      [(reset bcom)
-       (define new-env
-         (env #hasheq()))
-       (bcom new-env)]))
+       (bcom ^next-env updated-ht)]
+      [(reset)
+       (bcom ^next-env #hasheq())]))
   
-  (env #hasheq()))
+  (^next-env bcom #hasheq()))
 
 (define (spawn-env-pair)
   (define this-env
