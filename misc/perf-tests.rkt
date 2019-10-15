@@ -4,7 +4,7 @@
          racket/match)
 
 (define (do-actors-gc [actormap (make-whactormap)])
-  (define (simple-actor bcom)
+  (define ((simple-actor bcom))
     'hello)
   (time
    (actormap-run!
@@ -18,7 +18,7 @@
 ;; (collect-garbage 'major)
 
 (define (do-self-referential-actors-gc [actormap (make-whactormap)])
-  (define (make-simple-actor bcom)
+  (define (^simple-actor bcom)
     (define self
       (match-lambda*
         [(list 'self) self]
@@ -30,18 +30,18 @@
     (lambda ()
       (for ([i 1000000])
         (define friend
-          (spawn (make-simple-actor)))
+          (spawn ^simple-actor))
         (call friend 'oop))))))
 
 (define (call-a-lot [actormap (make-whactormap)])
-  (define (simple-actor bcom)
+  (define ((^simple-actor bcom))
     'hello)
   (time
    (actormap-run!
     actormap
     (lambda ()
       (define friend
-        (spawn simple-actor))
+        (spawn ^simple-actor))
       (for ([i 1000000])
         (call friend))))))
 
@@ -49,11 +49,12 @@
 (define (bcom-a-lot [actormap (make-whactormap)]
                     #:num-actors [num-actors 1000]
                     #:iterations [iterations 1000])
-  (define ((incrementing-actor [i 0]) bcom)
-    (bcom (incrementing-actor (add1 i)) i))
+  (define ((^incrementing-actor bcom [i 0]))
+    (values (bcom ^incrementing-actor (add1 i))
+            i))
   (define i-as
     (for/list ([i num-actors])
-      (actormap-spawn! actormap (incrementing-actor))))
+      (actormap-spawn! actormap ^incrementing-actor)))
   (time
    (for ([_ iterations])
      (actormap-run!
@@ -61,3 +62,4 @@
       (lambda ()
         (for ([i-a i-as])
           (i-a)))))))
+
