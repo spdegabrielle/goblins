@@ -61,7 +61,7 @@
          actormap-spawn
          actormap-spawn!
 
-         call
+         call $  ; $ is an alias
          spawn
 
          on
@@ -96,11 +96,7 @@
 ;;; Refrs
 ;;; =====
 
-(struct refr ()
-  #:property prop:procedure
-  (make-keyword-procedure
-   (lambda (kws kw-args this . args)
-     (keyword-apply call kws kw-args this args))))
+(struct refr ())
 
 (struct live-refr refr (debug-name vat-connector)
   #:constructor-name _make-live-refr
@@ -853,6 +849,8 @@
    (lambda (kws kw-args to-refr . args)
      (define sys (get-syscaller-or-die))
      (keyword-apply sys kws kw-args 'call to-refr args))))
+;; an alias
+(define $ call)
 
 (define spawn
   (make-keyword-procedure
@@ -1381,13 +1379,13 @@
            (spawn-promise-pair))
          (on a-vow
              (lambda args
-               (fulfilled-cell args))
+               ($ fulfilled-cell args))
              #:catch
              (lambda args
-               (broken-cell args))
+               ($ broken-cell args))
              #:finally
              (lambda ()
-               (finally-cell #t)))
+               ($ finally-cell #t)))
          (apply <- a-resolver resolve-args)
          (list fulfilled-cell broken-cell finally-cell))))
     (map (lambda (cell)

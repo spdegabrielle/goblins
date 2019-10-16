@@ -14,19 +14,19 @@
     (spawn ^cell '()))
   ;; This registers new ticked objects
   (define ((^tick-register bcom) . entries)
-    (new-ticked (append entries (new-ticked))))
+    ($ new-ticked (append entries ($ new-ticked))))
   ;; This runs all ticked objects
   (define ((^ticker bcom current-ticked))
     ;; Update set of tickers with any that have been
     ;; added since when we last ran
     (define updated-ticked
-      (append (new-ticked) current-ticked))
+      (append ($ new-ticked) current-ticked))
     ;; reset new-ticked
-    (new-ticked '())
+    ($ new-ticked '())
     ;; Now run all ticked objects
     (define next-tickers
       (foldr (lambda (tick-me next-queue)
-               (match (tick-me)
+               (match ($ tick-me)
                  ['die next-queue]
                  [_ (cons tick-me next-queue)]))
              '()
@@ -51,14 +51,14 @@
     (define ((loop bcom n))
       (if (> n maximum-suffering)
           (begin
-            (speaking-cell
-             (format "<~a> you know what? I'm done."
-                     name))
+            ($ speaking-cell
+               (format "<~a> you know what? I'm done."
+                       name))
             'die)
           (begin
-            (speaking-cell
-             (format "<~a> sigh number ~a"
-                     name n))
+            ($ speaking-cell
+               (format "<~a> sigh number ~a"
+                       name n))
             (bcom loop (add1 n)))))
     (loop bcom 1))
   (define joe

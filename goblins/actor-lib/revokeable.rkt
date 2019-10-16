@@ -10,11 +10,11 @@
   (define (^forwarder bcom)
     (make-keyword-procedure
      (lambda (kws kw-args . args)
-       (when (revoked?)
+       (when ($ revoked?)
          (error "Access revoked!"))
        (keyword-apply call kws kw-args target args))))
   (define ((^revoker bcom))
-    (revoked? #t))
+    ($ revoked? #t))
   (list (spawn ^forwarder) (spawn ^revoker)))
 
 (module+ test
