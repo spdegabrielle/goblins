@@ -13,7 +13,7 @@
   (raart:matte
    width height
    (raart:place-cursor-after
-    (val->raart (or (get-game-display)
+    (val->raart (or ($ get-game-display)
                     (raart:blank 0 0)))
     0 0)))
 
@@ -35,9 +35,9 @@
      ;; Either all of this succeeds or nothing succeeds.
      (define (transactional-update!)
        ;; reset the environment
-       (reset-env)
+       ($ reset-env)
        ;; run all objects
-       (ticker))
+       ($ ticker))
      (actormap-run! (game-actormap gw)
                     transactional-update!)
      gw)
@@ -79,7 +79,7 @@
         (lambda (kws kw-args constructor . args)
           (define ref
             (keyword-apply spawn kws kw-args constructor args))
-          (ticker-register ref)
+          ($ ticker-register ref)
           ref))
        'spawn-ticked))
     (spawn-ticked ^cauldron spawn-ticked display-cell env)
@@ -128,8 +128,8 @@
         [(>= time-to-live 2)
          #\o]
         [else #\.]))
-    (env 'write bubble-display
-         (list x y bubble-shape))
+    ($ env 'write bubble-display
+       (list x y bubble-shape))
     (define raise-time?
       (eqv? time-till-raise 0))
     (cond
@@ -154,7 +154,7 @@
 
 (define (^cauldron bcom spawn-ticked display-cell env)
   (define bubble-display-key
-    (env 'new-key #;'bubble-display))
+    ($ env 'new-key #;'bubble-display))
   (define bubble-canvas
     (raart:blank cauldron-width bubble-max-height))
   (define (new-bubble-cooldown)
@@ -165,7 +165,7 @@
       (spawn-ticked ^bubble env bubble-display-key))
     (define (do-display)
       (define all-bubbles
-        (env 'read bubble-display-key))
+        ($ env 'read bubble-display-key))
       (define bubbled-canvas
         (for/fold ([canvas bubble-canvas])
                   ([bubble-info all-bubbles])
@@ -182,7 +182,7 @@
        ;; yellow
        (raart:fg 'yellow
                  cauldron-raart)))
-    (display-cell do-display)
+    ($ display-cell do-display)
     (bcom ^next (if bubble-time?
                     (new-bubble-cooldown)
                     (sub1 bubble-cooldown))))
