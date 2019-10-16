@@ -1,5 +1,7 @@
 #lang racket/base
 
+(provide make-vat)
+
 (require "core.rkt"
          (submod "core.rkt" for-vats)
          "message.rkt"
