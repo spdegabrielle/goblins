@@ -120,10 +120,6 @@
 ;;; Meta-actors and miranda methods
 ;;; ===============================
 
-;; helper contract
-(define non-refr-procedure/c
-  (and/c (not/c live-refr?) procedure?))
-
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda rights":
 ;; http://www.erights.org/elang/blocks/miranda.html
@@ -151,7 +147,7 @@
 ;; once a local refr, always a local refr.
 (struct mactor:local-actor mactor:local
   (handler become become-unsealer become?)
-  #:guard (struct-guard/c non-refr-procedure/c any/c any/c any/c))
+  #:guard (struct-guard/c procedure? any/c any/c any/c))
 
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
