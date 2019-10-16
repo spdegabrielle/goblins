@@ -104,7 +104,7 @@
   (define this-env
     (spawn ^env))
   (define rw-facet
-    (spawn (procedure-rename ^facet '^rw-facet)
+    (spawn (procedure-rename ^facet '^env-rw-facet)
            this-env 'new-key 'read 'write))
   (define ((^reset-facet bcom))
     (call this-env 'reset))
