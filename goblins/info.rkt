@@ -4,7 +4,7 @@
 (define build-deps '("rackunit-lib" "scribble-lib"))
 (define pkg-desc
   "Transactional actor system inspired by the E programming language")
-(define version "0.0")
+(define version "0.4")
 (define pkg-authors '("cwebber"))
 #;(define raco-commands '(("crystal" (submod crystal/client main)
                                    "Run crystal client"
