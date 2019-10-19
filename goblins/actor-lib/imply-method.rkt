@@ -4,10 +4,13 @@
 
 (provide ^imply-method)
 
-(define (^imply-method bcom wrap-me method)
-  (make-keyword-procedure
-   (lambda (kws kw-args . args)
-     (keyword-apply call kws kw-args wrap-me method args))))
+(define (^imply-method bcom wrap-me method
+                       [debug-name '^imply-method])
+  (procedure-rename
+   (make-keyword-procedure
+    (lambda (kws kw-args . args)
+      (keyword-apply call kws kw-args wrap-me method args)))
+   debug-name))
 
 (module+ test
   (require rackunit
