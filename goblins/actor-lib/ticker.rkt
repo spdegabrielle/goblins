@@ -9,7 +9,7 @@
 
 (provide spawn-ticker-pair)
 
-(define (spawn-ticker-pair)
+(define (spawn-ticker-pair #:method [method #f])
   (define new-ticked
     (spawn ^cell '()))
   ;; This registers new ticked objects
@@ -26,7 +26,9 @@
     ;; Now run all ticked objects
     (define next-tickers
       (foldr (lambda (tick-me next-queue)
-               (match ($ tick-me)
+               (match (if method
+                          ($ tick-me method)
+                          ($ tick-me))
                  ['die next-queue]
                  [_ (cons tick-me next-queue)]))
              '()
