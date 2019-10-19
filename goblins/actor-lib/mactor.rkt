@@ -2,7 +2,8 @@
 
 (provide mactor)
 
-(require "../core.rkt")
+(require "../core.rkt"
+         racket/match)
 
 ;; Simple macro for method-based dispatching
 
@@ -38,17 +39,20 @@
   (syntax-rules ()
     [(mactor method-defn ...)
      (make-keyword-procedure
-      (lambda (kws kw-args method . args)
-        (define method-proc
-          ;; TODO: we should really be using case here
-          ;;   but that seems to require more macro-foo to
-          ;;   operate correctly...
-          (cond
-            [(eq? method (method-defn-sym method-defn))
-             (method-defn-proc method-defn)] ...
-            [else
-             (error (format "No such method ~a" method))]))
-        (keyword-apply method-proc kws kw-args args)))]))
+      (lambda (kws kw-args . args)
+        (match args
+          [(cons method non-method-args)
+           (define method-proc
+             ;; TODO: we should really be using case here
+             ;;   but that seems to require more macro-foo to
+             ;;   operate correctly...
+             (cond
+               [(eq? method (method-defn-sym method-defn))
+                (method-defn-proc method-defn)] ...
+               [else
+                (error (format "No such method ~a" method))]))
+           (keyword-apply method-proc kws kw-args non-method-args)]
+          [_ (error "Method required for mactor method dispatch")])))]))
 
 (module+ test
   (require rackunit
