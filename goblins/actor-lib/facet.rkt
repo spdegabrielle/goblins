@@ -15,7 +15,7 @@
        [(list (? symbol? method) args ...)
         (unless (set-member? method-set method)
           (error (format "Access to method ~a denied" method)))
-        (apply call wrap-me method args)]
+        (keyword-apply call kws kw-args wrap-me method args)]
        [_ "Requires symbol-based method dispatch"]))))
 
 (module+ test
