@@ -52,7 +52,7 @@
                [else
                 (error (format "No such method ~a" method))]))
            (keyword-apply method-proc kws kw-args non-method-args)]
-          [_ (error "Method required for mactor method dispatch")])))]))
+          [_ (error "Method required for mactor method dispatch call")])))]))
 
 (module+ test
   (require rackunit
