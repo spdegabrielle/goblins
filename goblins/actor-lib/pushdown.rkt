@@ -57,7 +57,7 @@
      (lambda (kws kw-args . args)
        (match ($ stack)
          [(list stack-top rest-stack ...)
-          (keyword-apply $ kws kw-args stack-top args)]))))
+          (keyword-apply $/<-p kws kw-args stack-top args)]))))
   (list (spawn ^pushdown) (spawn ^automata)))
 
 (module+ test

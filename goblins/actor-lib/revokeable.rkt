@@ -12,7 +12,7 @@
      (lambda (kws kw-args . args)
        (when ($ revoked?)
          (error "Access revoked!"))
-       (keyword-apply call kws kw-args target args))))
+       (keyword-apply $/<-p kws kw-args target args))))
   (define ((^revoker bcom))
     ($ revoked? #t))
   (list (spawn ^forwarder) (spawn ^revoker)))

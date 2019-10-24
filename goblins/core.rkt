@@ -12,6 +12,7 @@
 (provide refr?
          live-refr?
          sturdy-refr?
+         near-refr?
          #;callable?)
 
 ;; The making-and-modifying actormap functions
@@ -67,6 +68,8 @@
          on
          <- <-p
          extract
+
+         $/<-p
 
          spawn-proc spawn-const)
 
@@ -184,6 +187,9 @@
 (define (callable-mactor? mactor)
   (or (mactor:local-actor? mactor)
       (mactor:encased? mactor)))
+
+(define (near-refr? refr)
+  ((current-syscaller) 'near-refr? refr))
 
 ;;; "Become" special sealers
 ;;; ========================
@@ -481,6 +487,7 @@
            ['on _on]
            ['extract _extract]
            ['vat-connector get-vat-connector]
+           ['near-refr? near-refr?]
            [else (error "invalid syscaller method")]))
        (keyword-apply method kws kw-args args))))
 
@@ -847,6 +854,14 @@
      (keyword-apply sys kws kw-args 'call to-refr args))))
 ;; an alias
 (define $ call)
+
+;; A helper
+(define $/<-p
+  (make-keyword-procedure
+   (lambda (kws kw-args to-refr . args)
+     (if (near-refr? to-refr)
+         (keyword-apply $ kws kw-args to-refr args)
+         (keyword-apply <-p kws kw-args to-refr args)))))
 
 (define spawn
   (make-keyword-procedure
