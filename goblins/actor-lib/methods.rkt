@@ -5,6 +5,11 @@
                      racket/match)
          syntax/parse)
 
+(define raise-method-not-found
+  (make-keyword-procedure
+   (lambda (kws kw-args method . args)
+     (error 'method-not-found "~a" method))))
+
 (define-syntax (methods stx)
   (define-values (case-clauses method-not-found-handler)
     (let lp ([stx-to-process (cdr (syntax-e stx))]
@@ -14,9 +19,7 @@
         ['()
          (values (reverse clauses)
                  (or not-found-handler
-                     #'(make-keyword-procedure
-                        (lambda (kws kw-args method . args)
-                          (error 'method-not-found "~a" method)))))]
+                     #'raise-method-not-found))]
         [(list clause rest-clauses ...)
          (cond
            ;; Okay, we're setting up an fallback definition
