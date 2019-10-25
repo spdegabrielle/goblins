@@ -3,7 +3,10 @@
 (require (for-syntax racket/base
                      syntax/parse
                      racket/match)
-         syntax/parse)
+         racket/contract
+         syntax/parse
+         "../core.rkt"
+         "select-swear.rkt")
 
 (provide methods)
 
@@ -11,6 +14,16 @@
   (make-keyword-procedure
    (lambda (kws kw-args method . args)
      (error 'method-not-found "~a" method))))
+
+(define/contract (make-extends-handler extend-refr)
+  (-> refr? any/c)
+  (define $/<-p
+    (select-$/<-p extend-refr))
+  (define extends-handler
+    (make-keyword-procedure
+     (lambda (kws kw-args . args)
+       (keyword-apply $/<-p kws kw-args extend-refr args))))
+  extends-handler)
 
 (define-syntax (methods stx)
   (define-values (case-clauses method-not-found-handler)
@@ -23,10 +36,11 @@
                  (or not-found-handler
                      #'raise-method-not-found))]
         [(list clause rest-clauses ...)
+         (define clause-e
+           (syntax-e clause))
          (cond
            ;; Okay, we're setting up an fallback definition
-           [(eq? (syntax-e clause)
-                 '#:fallback)
+           [(eq? clause-e '#:fallback)
             (match rest-clauses
               [(list not-found-handler rest-clauses ...)
                (lp rest-clauses
@@ -36,6 +50,16 @@
                (raise-syntax-error
                 'methods-fallback-definition
                 "#:fallback must be followed by a procedure")])]
+           [(eq? clause-e '#:extend)
+            (match rest-clauses
+              [(list extends-refr rest-clauses ...)
+               (lp rest-clauses
+                   clauses
+                   #`(make-extends-handler #,extends-refr))]
+              ['()
+               (raise-syntax-error
+                'methods-invalid-extends-refr
+                "#:extend must be followed by a refr")])]
            [else
             (define new-clause
               (syntax-parse clause
@@ -105,4 +129,25 @@
 
   (check-equal?
    (some-methods-with-custom-fallback 'blorp)
-   'haha-fallback))
+   'haha-fallback)
+
+  (define am
+    (make-actormap))
+
+  (define fallback-to-me
+    (actormap-spawn! am (lambda (bcom)
+                          (methods
+                           [(foo)
+                            'i-am-foo]))))
+  (define extends-fallback-to-me
+    (actormap-spawn! am (lambda (bcom)
+                          (methods
+                           #:extend fallback-to-me
+                           [(bar)
+                            'i-am-bar]))))
+  (check-eq?
+   (actormap-peek am extends-fallback-to-me 'bar)
+   'i-am-bar)
+  (check-eq?
+   (actormap-peek am extends-fallback-to-me 'foo)
+   'i-am-foo))
