@@ -69,8 +69,6 @@
          <- <-p
          extract
 
-         $/<-p
-
          spawn-proc spawn-const)
 
 ;; Cells
@@ -854,14 +852,6 @@
      (keyword-apply sys kws kw-args 'call to-refr args))))
 ;; an alias
 (define $ call)
-
-;; A helper
-(define $/<-p
-  (make-keyword-procedure
-   (lambda (kws kw-args to-refr . args)
-     (if (near-refr? to-refr)
-         (keyword-apply $ kws kw-args to-refr args)
-         (keyword-apply <-p kws kw-args to-refr args)))))
 
 (define spawn
   (make-keyword-procedure

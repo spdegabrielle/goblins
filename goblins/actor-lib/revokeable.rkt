@@ -2,9 +2,11 @@
 
 (provide spawn-revokeable)
 
-(require "../core.rkt")
+(require "../core.rkt"
+         "select-swear.rkt")
 
 (define (spawn-revokeable target)
+  (define $/<-p (select-$/<-p target))
   (define revoked?
     (spawn-cell #f))
   (define (^forwarder bcom)

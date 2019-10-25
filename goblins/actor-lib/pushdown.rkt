@@ -3,6 +3,7 @@
 (provide spawn-pushdown-pair)
 
 (require "../core.rkt"
+         "select-swear.rkt"
          racket/match)
 
 (define (spawn-pushdown-pair [initial-refr #f])
@@ -57,7 +58,7 @@
      (lambda (kws kw-args . args)
        (match ($ stack)
          [(list stack-top rest-stack ...)
-          (keyword-apply $/<-p kws kw-args stack-top args)]))))
+          (keyword-apply run-$/<-p kws kw-args stack-top args)]))))
   (list (spawn ^pushdown) (spawn ^automata)))
 
 (module+ test

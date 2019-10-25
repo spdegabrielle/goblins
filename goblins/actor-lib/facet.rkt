@@ -3,12 +3,14 @@
 (require racket/contract
          racket/set
          racket/match
-         "../core.rkt")
+         "../core.rkt"
+         "select-swear.rkt")
 
 (provide ^facet)
 
 (define (^facet bcom wrap-me . methods)
   (define method-set (apply seteq methods))
+  (define $/<-p (select-$/<-p wrap-me))
   (make-keyword-procedure
    (lambda (kws kw-args . args)
      (match args

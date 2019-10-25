@@ -1,11 +1,14 @@
 #lang racket/base
 
-(require "../core.rkt")
+(require "../core.rkt"
+         "select-swear.rkt")
 
 (provide ^imply-method)
 
 (define (^imply-method bcom wrap-me method
                        [debug-name '^imply-method])
+  (define $/<-p
+    (select-$/<-p wrap-me))
   (procedure-rename
    (make-keyword-procedure
     (lambda (kws kw-args . args)
