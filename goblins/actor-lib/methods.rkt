@@ -5,6 +5,8 @@
                      racket/match)
          syntax/parse)
 
+(provide methods)
+
 (define raise-method-not-found
   (make-keyword-procedure
    (lambda (kws kw-args method . args)
