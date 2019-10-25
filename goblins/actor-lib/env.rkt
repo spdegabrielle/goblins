@@ -14,7 +14,7 @@
 (require "../utils/simple-sealers.rkt"
          "../core.rkt"
          "facet.rkt"
-         "mactor.rkt"
+         "methods.rkt"
          racket/match)
 
 (define (rw->read-key rw-key)
@@ -72,7 +72,7 @@
           id])]))
 
   (define (^next-env bcom ht)
-    (mactor
+    (methods
       [(new-key [key-name 'some-key])
        ;; unique by eq?
        (define id

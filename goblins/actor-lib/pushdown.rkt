@@ -62,8 +62,7 @@
   (list (spawn ^pushdown) (spawn ^automata)))
 
 (module+ test
-  (require rackunit
-           "mactor.rkt")
+  (require rackunit)
   (define am (make-actormap))
 
   (match-define (list pushdown automata)
