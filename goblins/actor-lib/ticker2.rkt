@@ -74,7 +74,10 @@
                              ;; ok it's dead now too
                              (cons this-ticked
                                    (lp tick-rest)))))])])))
-         (bcom ^ticker next-tickers)))]))
+         (bcom ^ticker next-tickers)))]
+     ;; Used for collision detection, etc.
+     [(foldr proc init)
+      (foldr proc init current-ticked)]))
 
   (spawn ^ticker '()))
 
