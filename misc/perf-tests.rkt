@@ -61,5 +61,5 @@
       actormap
       (lambda ()
         (for ([i-a i-as])
-          (i-a)))))))
+          ($ i-a)))))))
 
