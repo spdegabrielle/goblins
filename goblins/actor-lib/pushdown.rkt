@@ -12,7 +12,7 @@
            (if initial-refr
                (list initial-refr)
                '())))
-  (define (^pushdown bcom)
+  (define (^pd-stack bcom)
     (make-keyword-procedure
      (lambda (kws kw-args method . args)
        (define method-proc
@@ -53,45 +53,45 @@
             (lambda ()
               (null? ($ stack)))]))
        (keyword-apply method-proc kws kw-args args))))
-  (define (^automata bcom)
+  (define (^pd-forwarder bcom)
     (make-keyword-procedure
      (lambda (kws kw-args . args)
        (match ($ stack)
          [(list stack-top rest-stack ...)
           (keyword-apply run-$/<-p kws kw-args stack-top args)]))))
-  (list (spawn ^pushdown) (spawn ^automata)))
+  (list (spawn ^pd-stack) (spawn ^pd-forwarder)))
 
 (module+ test
   (require rackunit)
   (define am (make-actormap))
 
-  (match-define (list pushdown automata)
+  (match-define (list pd-stack pd-forwarder)
     (actormap-run! am spawn-pushdown-pair))
 
   (define first-actor
-    (actormap-poke! am pushdown 'spawn-push
+    (actormap-poke! am pd-stack 'spawn-push
                     (lambda (bcom prev foo)
                       (lambda (bar)
                         (list 'first prev foo bar)))
                     'foo))
   (check-equal?
-   (actormap-poke! am automata 'bar)
+   (actormap-poke! am pd-forwarder 'bar)
    `(first #f foo bar))
   (define second-actor
-    (actormap-poke! am pushdown 'spawn-push
+    (actormap-poke! am pd-stack 'spawn-push
                     (lambda (bcom prev foo)
                       (lambda (bar)
                         (list 'second prev foo bar)))
                     'foo2))
   (check-equal?
-   (actormap-poke! am automata 'bar2)
+   (actormap-poke! am pd-forwarder 'bar2)
    `(second ,first-actor foo2 bar2))
   
   (check-not-exn
    (lambda ()
-     (actormap-poke! am pushdown 'pop)))
+     (actormap-poke! am pd-stack 'pop)))
 
   (check-equal?
-   (actormap-poke! am automata 'bar3)
+   (actormap-poke! am pd-forwarder 'bar3)
    `(first #f foo bar3)))
 
