@@ -27,8 +27,7 @@
   (define (^ticky bcom dead?)
     (methods
      [(die)
-      (bcom ^ticky #t)
-      (void)]
+      (bcom ^ticky #t)]
      [(dead?)
       dead?]
      [spawn spawn-ticked]))
