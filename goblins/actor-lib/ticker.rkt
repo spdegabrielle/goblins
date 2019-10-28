@@ -9,32 +9,32 @@
 
 (provide spawn-ticker-pair)
 
-(define (spawn-ticker-pair #:method [method #f])
+(define (spawn-ticker-pair)
   (define new-ticked
     (spawn ^cell '()))
   ;; This registers new ticked objects
   (define ((^tick-register bcom) . entries)
     ($ new-ticked (append entries ($ new-ticked))))
   ;; This runs all ticked objects
-  (define ((^ticker bcom current-ticked))
-    ;; Update set of tickers with any that have been
-    ;; added since when we last ran
-    (define updated-ticked
-      (append ($ new-ticked) current-ticked))
-    ;; reset new-ticked
-    ($ new-ticked '())
-    ;; Now run all ticked objects
-    (define next-tickers
-      (foldr (lambda (tick-me next-queue)
-               (match (if method
-                          ($ tick-me method)
-                          ($ tick-me))
-                 ['die next-queue]
-                 [_ (cons tick-me next-queue)]))
-             '()
-             updated-ticked))
-    ;; update ourself
-    (bcom ^ticker next-tickers))
+  (define (^ticker bcom current-ticked)
+    (make-keyword-procedure
+     (lambda (kws kw-args . args)
+       ;; Update set of tickers with any that have been
+       ;; added since when we last ran
+       (define updated-ticked
+         (append ($ new-ticked) current-ticked))
+       ;; reset new-ticked
+       ($ new-ticked '())
+       ;; Now run all ticked objects
+       (define next-tickers
+         (foldr (lambda (tick-me next-queue)
+                  (match (keyword-apply $ kws kw-args tick-me args)
+                    ['die next-queue]
+                    [_ (cons tick-me next-queue)]))
+                '()
+                updated-ticked))
+       ;; update ourself
+       (bcom ^ticker next-tickers))))
   (list (spawn ^tick-register)
         (spawn ^ticker '())))
 
