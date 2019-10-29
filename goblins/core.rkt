@@ -147,8 +147,7 @@
 ;;; ---------------
 ;; once a local refr, always a local refr.
 (struct mactor:local-actor mactor:local
-  (handler become become-unsealer become?)
-  #:guard (struct-guard/c procedure? any/c any/c any/c))
+  (handler become become-unsealer become?))
 
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
@@ -1090,6 +1089,9 @@
     (make-become-sealer-triplet))
   (define actor-handler
     (keyword-apply actor-constructor kws kw-args become args))
+  (unless (procedure? actor-handler)
+    (error 'invalid-actor-handler "Not a procedure: ~a" actor-handler))
+
   (actormap-set! actormap actor-refr
                  (mactor:local-actor actor-handler
                                      become become-unseal become?))
