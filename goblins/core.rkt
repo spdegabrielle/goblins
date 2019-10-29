@@ -278,13 +278,6 @@
 #;(define actormap?
   (or/c transactormap? actormap?))
 
-#;(define/contract (make-transactormap parent
-                                     [vat-connector
-                                      (actormap-vat-connector parent)])
-  (->* [actormap?] [(or/c #f procedure?)] any/c)
-  (_make-transactormap parent (make-hasheq) #f
-                       vat-connector))
-
 (define (make-transactormap parent
                             [vat-connector
                              (actormap-vat-connector parent)])
