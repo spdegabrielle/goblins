@@ -46,6 +46,7 @@
 ;; The operating-on-actormap main functions
 (provide actormap-turn
          actormap-poke!
+         actormap-reckless-poke!
          actormap-peek
          actormap-extract
          actormap-turn-message
@@ -277,10 +278,16 @@
 #;(define actormap?
   (or/c transactormap? actormap?))
 
-(define/contract (make-transactormap parent
+#;(define/contract (make-transactormap parent
                                      [vat-connector
                                       (actormap-vat-connector parent)])
   (->* [actormap?] [(or/c #f procedure?)] any/c)
+  (_make-transactormap parent (make-hasheq) #f
+                       vat-connector))
+
+(define (make-transactormap parent
+                            [vat-connector
+                             (actormap-vat-connector parent)])
   (_make-transactormap parent (make-hasheq) #f
                        vat-connector))
 
@@ -434,9 +441,11 @@
     (error "No current syscaller"))
   sys)
 
-(define (call-with-fresh-syscaller actormap proc)
+(define (call-with-fresh-syscaller actormap proc
+                                   #:reckless? [reckless? #f])
   (define-values (sys get-sys-internals close-up!)
-    (fresh-syscaller actormap))
+    (fresh-syscaller actormap
+                     #:reckless? reckless?))
   (begin0 (parameterize ([current-syscaller sys])
             (proc sys get-sys-internals))
     (close-up!)))
@@ -453,11 +462,14 @@
       [#f (error "no actor with this id" refr-id)]
       [mactor (values refr-id mactor)])))
 
-(define (fresh-syscaller prev-actormap)
+(define (fresh-syscaller prev-actormap
+                         #:reckless? [reckless? #f])
   (define vat-connector
     (actormap-vat-connector prev-actormap))
   (define actormap
-    (make-transactormap prev-actormap vat-connector))
+    (if reckless?
+        prev-actormap
+        (make-transactormap prev-actormap vat-connector)))
   (define to-near '())
   (define to-far '())
 
@@ -531,12 +543,12 @@
        ;; if a new handler for this actor was specified,
        ;; let's replace it
        (when new-handler
-         (transactormap-set! actormap update-refr
-                             (mactor:local-actor
-                              new-handler
-                              (mactor:local-actor-become mactor)
-                              (mactor:local-actor-become-unsealer mactor)
-                              (mactor:local-actor-become? mactor))))
+         (actormap-set! actormap update-refr
+                        (mactor:local-actor
+                         new-handler
+                         (mactor:local-actor-become mactor)
+                         (mactor:local-actor-become-unsealer mactor)
+                         (mactor:local-actor-become? mactor))))
 
        return-val]
       ;; If it's an encased value, "calling" it just returns the
@@ -899,8 +911,10 @@
 ;;; actormap turning and utils
 ;;; ==========================
 
-(define (actormap-turn* actormap to-refr kws kw-args args)
+(define (actormap-turn* actormap to-refr kws kw-args args
+                        #:reckless? [reckless? #f])
   (call-with-fresh-syscaller
+   #:reckless? reckless?
    actormap
    (lambda (sys get-sys-internals)
      (define result-val
@@ -920,6 +934,14 @@
      (define-values (returned-val transactormap _tl _tr)
        (actormap-turn* actormap to-refr kws kw-args args))
      (transactormap-merge! transactormap)
+     returned-val)))
+
+(define actormap-reckless-poke!
+  (make-keyword-procedure
+   (lambda (kws kw-args actormap to-refr . args)
+     (define-values (returned-val transactormap _tl _tr)
+       (actormap-turn* actormap to-refr kws kw-args args
+                       #:reckless? #t))
      returned-val)))
 
 ;; run a turn but only for getting the result.
@@ -1011,10 +1033,15 @@
 
 ;; committal version
 ;; Run, and also commit the results of, the code in the thunk
-(define (actormap-run! actormap thunk)
+(define (actormap-run! actormap thunk
+                       #:reckless? [reckless? #f])
   (define actor-refr
     (actormap-spawn! actormap (lambda (bcom) thunk)))
-  (actormap-poke! actormap actor-refr))
+  (define actormap-poker!
+    (if reckless?
+        actormap-reckless-poke!
+        actormap-poke!))
+  (actormap-poker! actormap actor-refr))
 
 
 ;; Returns a new tree of local messages
