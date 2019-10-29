@@ -14,7 +14,7 @@
   (make-keyword-procedure
    (lambda (kws kw-args . args)
      (match args
-       [(list (? symbol? method) args ...)
+       [(cons (? symbol? method) args)
         (unless (set-member? method-set method)
           (error (format "Access to method ~a denied" method)))
         (keyword-apply $/<-p kws kw-args wrap-me method args)]

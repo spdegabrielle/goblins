@@ -29,7 +29,7 @@
                  ($ stack))
                (define stack-top
                  (match cur-stack
-                   [(list stack-top rest-stack ...)
+                   [(cons stack-top rest-stack)
                     stack-top]
                    ['() #f]))
                (define new-refr
@@ -40,7 +40,7 @@
            ['pop
             (lambda ()
               (match ($ stack)
-                [(list stack-top rest-stack ...)
+                [(cons stack-top rest-stack)
                  ;; set stack to the remaining value
                  ($ stack rest-stack)
                  ;; return the top value
@@ -57,7 +57,7 @@
     (make-keyword-procedure
      (lambda (kws kw-args . args)
        (match ($ stack)
-         [(list stack-top rest-stack ...)
+         [(cons stack-top rest-stack)
           (keyword-apply run-$/<-p kws kw-args stack-top args)]))))
   (list (spawn ^pd-stack) (spawn ^pd-forwarder)))
 

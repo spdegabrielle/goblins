@@ -56,7 +56,7 @@
            (let lp ([to-tick updated-ticked])
              (match to-tick
                ['() '()]
-               [(list this-ticked tick-rest ...)
+               [(cons this-ticked tick-rest)
                 (match this-ticked
                   [(vector ticked-refr ticked-ticky)
                    (if ($ ticked-ticky 'dead?)

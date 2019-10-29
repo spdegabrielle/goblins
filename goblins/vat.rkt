@@ -117,7 +117,7 @@
            (define schedule-local-messages
              (match-lambda
                ['() (void)]
-               [(list msg rest ...)
+               [(cons msg rest)
                 ;; Mildly more efficiently do this in reverse order
                 (schedule-local-messages rest)
                 (async-channel-put vat-channel (cmd-send-message msg))]))
@@ -125,7 +125,7 @@
            (define schedule-remote-messages
              (match-lambda
                ['() (void)]
-               [(list msg rest ...)
+               [(cons msg rest)
                 (schedule-remote-messages rest)
                 (define to-actor
                   (message-to msg))

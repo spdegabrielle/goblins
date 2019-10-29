@@ -42,7 +42,7 @@
            ;; Okay, we're setting up an fallback definition
            [(eq? clause-e '#:fallback)
             (match rest-clauses
-              [(list not-found-handler rest-clauses ...)
+              [(cons not-found-handler rest-clauses)
                (lp rest-clauses
                    clauses
                    not-found-handler)]
@@ -52,7 +52,7 @@
                 "#:fallback must be followed by a procedure")])]
            [(eq? clause-e '#:extend)
             (match rest-clauses
-              [(list extends-refr rest-clauses ...)
+              [(cons extends-refr rest-clauses)
                (lp rest-clauses
                    clauses
                    #`(make-extends-handler #,extends-refr))]
