@@ -13,16 +13,14 @@
   (define new-ticked
     (spawn ^cell '()))
 
-  (define spawn-ticked
-    (make-keyword-procedure
-     (lambda (kws kw-args constructor . args)
-       (define ticky
-         (spawn ^ticky #f))
-       (define new-refr
-         (keyword-apply spawn kws kw-args constructor ticky args))
-       ($ new-ticked
-          (cons (vector new-refr ticky) ($ new-ticked)))
-       new-refr)))
+  (define (to-tick give-ticky)
+    (define ticky
+      (spawn ^ticky #f))
+    (define new-refr
+      (give-ticky ticky))
+    ($ new-ticked
+       (cons (vector new-refr ticky) ($ new-ticked)))
+    new-refr)
 
   (define (^ticky bcom dead?)
     (methods
@@ -30,11 +28,11 @@
       (bcom ^ticky #t)]
      [(dead?)
       dead?]
-     [spawn spawn-ticked]))
+     [to-tick to-tick]))
 
   (define (^ticker bcom current-ticked)
     (methods
-     [spawn spawn-ticked]
+     [to-tick to-tick]
 
      ;; This wonky looking procedure actually does the ticking.
      ;; We apply any arguments given to the tick method to all
@@ -107,14 +105,16 @@
             (bcom loop (add1 n)))))
     (loop bcom 1))
   (define joe
-    (actormap-poke! am ticker 'spawn
-                    ^malaise-sufferer "joe"
-                    joe-speaks-here))
+    (actormap-poke! am ticker 'to-tick
+                    (lambda (ticky)
+                      (spawn ^malaise-sufferer ticky "joe"
+                             joe-speaks-here))))
   (define jane
-    (actormap-poke! am ticker 'spawn
-                    ^malaise-sufferer "jane"
-                    jane-speaks-here
-                    2))
+    (actormap-poke! am ticker 'to-tick
+                    (lambda (ticky)
+                      (spawn ^malaise-sufferer ticky "jane"
+                             jane-speaks-here
+                             2))))
   (actormap-poke! am ticker 'tick)
   (check-equal?
    (actormap-peek am joe-speaks-here)
