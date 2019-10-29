@@ -74,7 +74,10 @@
          (bcom ^ticker next-tickers)))]
      ;; Used for collision detection, etc.
      [(foldr proc init)
-      (foldr proc init current-ticked)]))
+      (foldr (match-lambda*
+               [(list (vector refr ticky) prev)
+                (proc refr prev)])
+             init current-ticked)]))
 
   (spawn ^ticker '()))
 
