@@ -33,6 +33,10 @@
           (spawn ^simple-actor))
         (call friend 'oop))))))
 
+;;; 2019-10-29
+;; perf-tests.rkt> (call-a-lot)
+;; cpu time: 991 real time: 990 gc time: 5
+
 (define (call-a-lot [actormap (make-whactormap)])
   (define ((^simple-actor bcom))
     'hello)
@@ -44,6 +48,12 @@
         (spawn ^simple-actor))
       (for ([i 1000000])
         (call friend))))))
+
+;;; 2019-10-29
+;; perf-tests.rkt> (bcom-a-lot)
+;; cpu time: 1567 real time: 1566 gc time: 36
+;; perf-tests.rkt> (bcom-a-lot #:reckless? #t)
+;; cpu time: 1352 real time: 1352 gc time: 29
 
 ;; A bunch of actors updating themselves
 (define (bcom-a-lot [actormap (make-whactormap)]
@@ -64,6 +74,10 @@
         (for ([i-a i-as])
           ($ i-a)))
       #:reckless? reckless?))))
+
+;;; 2019-10-29
+;; perf-tests.rkt> (set!-a-lot)
+;; cpu time: 1106 real time: 1105 gc time: 13
 
 (define (set!-a-lot [actormap (make-whactormap)]
                     #:num-actors [num-actors 1000]
