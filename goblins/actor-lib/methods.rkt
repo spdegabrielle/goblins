@@ -90,7 +90,8 @@
             [else #f]))
         (if method-proc
             (keyword-apply method-proc kws kw-args args)
-            (#,method-not-found-handler method))))
+            (keyword-apply #,method-not-found-handler
+                           kws kw-args method args))))
      'methods))
 
 (module+ test
@@ -138,7 +139,9 @@
     (actormap-spawn! am (lambda (bcom)
                           (methods
                            [(foo)
-                            'i-am-foo]))))
+                            'i-am-foo]
+                           [(takes-arg arg)
+                            (list 'got-arg arg)]))))
   (define extends-fallback-to-me
     (actormap-spawn! am (lambda (bcom)
                           (methods
@@ -150,4 +153,7 @@
    'i-am-bar)
   (check-eq?
    (actormap-peek am extends-fallback-to-me 'foo)
-   'i-am-foo))
+   'i-am-foo)
+  (check-equal?
+   (actormap-peek am extends-fallback-to-me 'takes-arg 'an-arg)
+   '(got-arg an-arg)))
