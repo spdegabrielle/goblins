@@ -50,7 +50,7 @@
                (raise-syntax-error
                 'methods-fallback-definition
                 "#:fallback must be followed by a procedure")])]
-           [(eq? clause-e '#:extend)
+           [(eq? clause-e '#:extends)
             (match rest-clauses
               [(cons extends-refr rest-clauses)
                (lp rest-clauses
@@ -59,7 +59,7 @@
               ['()
                (raise-syntax-error
                 'methods-invalid-extends-refr
-                "#:extend must be followed by a refr")])]
+                "#:extends must be followed by a refr")])]
            [else
             (define new-clause
               (syntax-parse clause
@@ -142,7 +142,7 @@
   (define extends-fallback-to-me
     (actormap-spawn! am (lambda (bcom)
                           (methods
-                           #:extend fallback-to-me
+                           #:extends fallback-to-me
                            [(bar)
                             'i-am-bar]))))
   (check-eq?
