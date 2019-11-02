@@ -434,11 +434,9 @@
     (error "No current syscaller"))
   sys)
 
-(define (call-with-fresh-syscaller actormap proc
-                                   #:reckless? [reckless? #f])
+(define (call-with-fresh-syscaller actormap proc)
   (define-values (sys get-sys-internals close-up!)
-    (fresh-syscaller actormap
-                     #:reckless? reckless?))
+    (fresh-syscaller actormap))
   (begin0 (parameterize ([current-syscaller sys])
             (proc sys get-sys-internals))
     (close-up!)))
@@ -455,14 +453,9 @@
       [#f (error "no actor with this id" refr-id)]
       [mactor (values refr-id mactor)])))
 
-(define (fresh-syscaller prev-actormap
-                         #:reckless? [reckless? #f])
+(define (fresh-syscaller actormap)
   (define vat-connector
-    (actormap-vat-connector prev-actormap))
-  (define actormap
-    (if reckless?
-        prev-actormap
-        (make-transactormap prev-actormap vat-connector)))
+    (actormap-vat-connector actormap))
   (define to-near '())
   (define to-far '())
 
@@ -907,7 +900,6 @@
 (define (actormap-turn* actormap to-refr kws kw-args args
                         #:reckless? [reckless? #f])
   (call-with-fresh-syscaller
-   #:reckless? reckless?
    actormap
    (lambda (sys get-sys-internals)
      (define result-val
@@ -918,14 +910,17 @@
 (define actormap-turn
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
-     (actormap-turn* actormap to-refr kws kw-args args))))
+     (define new-actormap
+       (make-transactormap actormap))
+     (actormap-turn* new-actormap to-refr kws kw-args args))))
 
 ;; Note that this does nothing with the messages.
 (define actormap-poke!
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
-       (actormap-turn* actormap to-refr kws kw-args args))
+       (actormap-turn* (make-transactormap actormap)
+                       to-refr kws kw-args args))
      (transactormap-merge! transactormap)
      returned-val)))
 
@@ -933,8 +928,7 @@
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
-       (actormap-turn* actormap to-refr kws kw-args args
-                       #:reckless? #t))
+       (actormap-turn* actormap to-refr kws kw-args args))
      returned-val)))
 
 ;; run a turn but only for getting the result.
@@ -944,7 +938,8 @@
   (make-keyword-procedure
    (lambda (kws kw-args actormap to-refr . args)
      (define-values (returned-val _am _tl _tr)
-       (actormap-turn* actormap to-refr kws kw-args args))
+       (actormap-turn* (make-transactormap actormap)
+                       to-refr kws kw-args args))
      returned-val)))
 
 (define (actormap-extract actormap id-refr)
@@ -968,7 +963,7 @@
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
   (call-with-fresh-syscaller
-   actormap
+   (make-transactormap actormap)
    (lambda (sys get-sys-internals)
      (define call-result #f)
      (define result-val (void))
@@ -1013,15 +1008,15 @@
 ;; non-committal version of actormap-run
 (define (actormap-run actormap thunk)
   (define-values (returned-val _am _tl _tr)
-    (actormap-run* actormap thunk))
+    (actormap-run* (make-transactormap actormap) thunk))
   returned-val)
 
 ;; like actormap-run but also returns the new actormap, to-near, to-far
 (define (actormap-run* actormap thunk)
   (define-values (actor-refr new-actormap)
-    (actormap-spawn actormap (lambda (bcom) thunk)))
+    (actormap-spawn (make-transactormap actormap) (lambda (bcom) thunk)))
   (define-values (returned-val new-actormap2 to-near to-far)
-    (actormap-turn* new-actormap actor-refr '() '() '()))
+    (actormap-turn* (make-transactormap new-actormap) actor-refr '() '() '()))
   (values returned-val new-actormap2 to-near to-far))
 
 ;; committal version
@@ -1241,7 +1236,23 @@
    "Hello!  My name is brian and I've been called 1 times!")
   (check-equal?
    (actormap-peek noncommital-am who-ya-gonna-call)
-   "Hello!  My name is brian and I've been called 2 times!"))
+   "Hello!  My name is brian and I've been called 2 times!")
+
+  ;; Now let's make sure that during actormap-spawn(!) that we can
+  ;; spawn other things
+
+  (define (^spawns-during-constructor bcom)
+    (define a-cell
+      (spawn ^cell 'foo))
+    (lambda ()
+      (list 'got ($ a-cell))))
+  (define sdc
+    (actormap-spawn! am ^spawns-during-constructor))
+
+  (test-equal?
+   "Spawn when we actormap-spawn(!) (yo dawg)"
+   (actormap-peek am sdc)
+   '(got foo)))
 
 ;;; Cells
 ;;; =====
