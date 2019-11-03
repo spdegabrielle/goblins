@@ -40,29 +40,20 @@
            (syntax-e clause))
          (cond
            ;; Okay, we're setting up an fallback definition
-           [(eq? clause-e '#:fallback)
-            (match rest-clauses
-              [(cons not-found-handler rest-clauses)
-               (lp rest-clauses
-                   clauses
-                   not-found-handler)]
-              ['()
-               (raise-syntax-error
-                'methods-fallback-definition
-                "#:fallback must be followed by a procedure")])]
            [(eq? clause-e '#:extends)
             (match rest-clauses
               [(cons extends-refr rest-clauses)
                (lp rest-clauses
                    clauses
-                   #`(make-extends-handler #,extends-refr))]
+                   extends-refr)]
               ['()
                (raise-syntax-error
                 'methods-invalid-extends-refr
-                "#:extends must be followed by a refr")])]
+                "#:extends must be followed by an extension mechanism")])]
            [else
             (define new-clause
               (syntax-parse clause
+                ;; TODO: These renames don't seem to be working :(
                 [((method-name:id method-args ...) body ...)
                  #'('method-name
                     (procedure-rename
@@ -88,9 +79,15 @@
           (case method
             #,@case-clauses
             [else #f]))
+        ;; If it's a refr, we need to wrap it in something that will
+        ;; call the refr
+        (define real-not-found-handler
+          (if (refr? #,method-not-found-handler)
+              (make-extends-handler #,method-not-found-handler)
+              #,method-not-found-handler))
         (if method-proc
             (keyword-apply method-proc kws kw-args args)
-            (keyword-apply #,method-not-found-handler
+            (keyword-apply real-not-found-handler
                            kws kw-args method args))))
      'methods))
 
@@ -117,7 +114,7 @@
 
   (define some-methods-with-custom-fallback
     (methods
-     #:fallback
+     #:extends
      (make-keyword-procedure
       (lambda _ 'haha-fallback))
      [(foo x)
