@@ -10,8 +10,8 @@
 (provide spawn-ticker-pair)
 
 (define (spawn-ticker-pair)
-  (define new-ticked
-    (spawn ^cell '()))
+  (define-cell new-ticked
+    '())
   ;; This registers new ticked objects
   (define ((^tick-register bcom) . entries)
     ($ new-ticked (append entries ($ new-ticked))))
