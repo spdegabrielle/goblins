@@ -45,10 +45,12 @@
      (^next bcom initial-ht))))
 
 (define ^st8
-  (make-^st8 #f))
+  (procedure-rename (make-^st8 #f)
+                    '^st8))
 
 (define ^loose-st8
-  (make-^st8 #t))
+  (procedure-rename (make-^st8 #t)
+                    '^loose-st8))
 
 (module+ test
   (require rackunit
