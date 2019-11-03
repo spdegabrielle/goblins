@@ -3,7 +3,8 @@
 ;;; Exports
 ;;; =======
 
-(require racket/contract
+(require (for-syntax syntax/parse racket/base)
+         racket/contract
          racket/set
          "utils/simple-sealers.rkt")
 
@@ -76,6 +77,7 @@
 
 (provide ^cell
          spawn-cell
+         define-cell
          cell->read-only
          cell->write-only)
 
@@ -1273,6 +1275,15 @@
 
 (define (cell->write-only cell)
   (spawn-proc (lambda (new-val) (cell new-val))))
+
+(define-syntax (define-cell stx)
+  (syntax-parse stx
+    [(_ id:id)
+     #'(define id
+         (spawn ^cell))]
+    [(_ id:id val)
+     #'(define id
+         (spawn ^cell val))]))
 
 (module+ test
   (define a-cell
