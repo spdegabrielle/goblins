@@ -7,11 +7,10 @@
          racket/match)
 
 (define (spawn-pushdown-pair [initial-refr #f])
-  (define stack
-    (spawn (procedure-rename ^cell '^pushdown-stack)
-           (if initial-refr
-               (list initial-refr)
-               '())))
+  (define-cell stack
+    (if initial-refr
+        (list initial-refr)
+        '()))
   (define (^pd-stack bcom)
     (make-keyword-procedure
      (lambda (kws kw-args method . args)
