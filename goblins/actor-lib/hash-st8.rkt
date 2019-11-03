@@ -25,26 +25,38 @@
                   [kw-arg kw-args])
          (hash-set ht (string->symbol (keyword->string kw)) kw-arg)))
      (define (^next bcom ht)
-       (match-lambda*
-         ;; get
-         [(list key)
-          (hash-ref ht key)]
-         ;; set (possibly multiple)
-         [kv-pairs
-          (define new-ht
-            (let lp ([kv-pairs kv-pairs])
-              (match kv-pairs
-                ['() ht]
-                [(list (? symbol? key) val rest-pairs ...)
-                 (unless (or loose?
-                             (hash-has-key? ht key))
-                   (error 'st8-undefined-key
-                          "Key not defined in strict st8 object: ~a" key))
-                 (hash-set (lp rest-pairs)
-                           key val)]
-                [_
-                 (raise-invalid-st8-pairs kv-pairs)])))
-          (bcom ^next new-ht)]))
+       (make-keyword-procedure
+        (lambda (kws kw-args . args)
+          (match args
+            ;; get
+            [(list key)
+             (hash-ref ht key)]
+            ;; set (possibly multiple)
+            [kv-pairs
+             (define (maybe-ensure-ht-has-key key)
+               (unless (or loose?
+                           (hash-has-key? ht key))
+                 (error 'st8-undefined-key
+                        "Key not defined in strict st8 object: ~a" key)))
+             (define kws-kwargs-ht
+               (for/fold ([ht ht])
+                         ([kw kws]
+                          [kw-arg kw-args])
+                 (define key
+                   (string->symbol (keyword->string kw)))
+                 (maybe-ensure-ht-has-key key)
+                 (hash-set ht key kw-arg)))
+             (define new-ht
+               (let lp ([kv-pairs kv-pairs])
+                 (match kv-pairs
+                   ['() kws-kwargs-ht]
+                   [(list (? symbol? key) val rest-pairs ...)
+                    (maybe-ensure-ht-has-key key)
+                    (hash-set (lp rest-pairs)
+                              key val)]
+                   [_
+                    (raise-invalid-st8-pairs kv-pairs)])))
+             (bcom ^next new-ht)]))))
 
      (^next bcom initial-ht))))
 
@@ -86,11 +98,20 @@
    'first-bar)
 
   (actormap-poke! am st8
-                  'foo 'final-foo
-                  'bar 'final-bar)
+                  'foo 'third-foo
+                  'bar 'third-bar)
   (check-equal?
    (actormap-peek am st8 'foo)
-   'final-foo)
+   'third-foo)
   (check-equal?
    (actormap-peek am st8 'bar)
-   'final-bar))
+   'third-bar)
+  (actormap-poke! am st8
+                  #:foo 'fourth-foo
+                  #:bar 'fourth-bar)
+  (check-equal?
+   (actormap-peek am st8 'foo)
+   'fourth-foo)
+  (check-equal?
+   (actormap-peek am st8 'bar)
+   'fourth-bar))
