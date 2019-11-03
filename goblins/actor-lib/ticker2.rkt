@@ -10,8 +10,8 @@
 (provide spawn-ticker)
 
 (define (spawn-ticker)
-  (define new-ticked
-    (spawn ^cell '()))
+  (define-cell new-ticked
+    '())
 
   (define (to-tick give-ticky)
     (define ticky
