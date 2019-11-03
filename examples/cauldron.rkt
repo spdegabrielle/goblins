@@ -116,7 +116,7 @@
       (random -1 2))
     (max -1 (min 1 (+ drift drift-it))))
   (define raise-delay (random 10 30))
-  (define ((lp bcom x y time-till-raise drift))
+  (define ((lp x y time-till-raise drift))
     (define time-to-live
       (- bubble-lifetime y))
     (define bubble-shape
@@ -140,16 +140,16 @@
            ;; o/~ I tried so hard... and went so far... o/~
            'die
            ;; Time to move and adjust
-           (bcom lp (max 0        ; drift, but stay within confines
-                         (min (+ x drift)
-                              (sub1 cauldron-width))) 
-                 new-y         ; move up
-                 raise-delay   ; reset
-                 (modify-drift drift)))]
+           (bcom (lp (max 0        ; drift, but stay within confines
+                          (min (+ x drift)
+                               (sub1 cauldron-width))) 
+                     new-y         ; move up
+                     raise-delay   ; reset
+                     (modify-drift drift))))]
       ;; stay the same..
       [else
-       (bcom lp x y (sub1 time-till-raise) drift)]))
-  (lp bcom (random 2 (- cauldron-width 2))
+       (bcom (lp x y (sub1 time-till-raise) drift))]))
+  (lp (random 2 (- cauldron-width 2))
       0 raise-delay 0))
 
 (define (^cauldron bcom spawn-ticked display-cell env)
@@ -159,7 +159,7 @@
     (raart:blank cauldron-width bubble-max-height))
   (define (new-bubble-cooldown)
     (random 15 40))
-  (define ((^next bcom [bubble-cooldown (new-bubble-cooldown)]))
+  (define ((next [bubble-cooldown (new-bubble-cooldown)]))
     (define bubble-time? (eqv? bubble-cooldown 0))
     (when bubble-time?
       (spawn-ticked ^bubble env bubble-display-key))
@@ -183,10 +183,10 @@
        (raart:fg 'yellow
                  cauldron-raart)))
     ($ display-cell do-display)
-    (bcom ^next (if bubble-time?
+    (bcom (next (if bubble-time?
                     (new-bubble-cooldown)
-                    (sub1 bubble-cooldown))))
-  (^next bcom))
+                    (sub1 bubble-cooldown)))))
+  (next))
 
 (define (val->raart val)
   (match val

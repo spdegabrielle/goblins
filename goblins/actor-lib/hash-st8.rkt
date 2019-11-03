@@ -24,7 +24,7 @@
                  ([kw kws]
                   [kw-arg kw-args])
          (hash-set ht (string->symbol (keyword->string kw)) kw-arg)))
-     (define (^next bcom ht)
+     (define (next ht)
        (make-keyword-procedure
         (lambda (kws kw-args . args)
           (match args
@@ -56,9 +56,9 @@
                               key val)]
                    [_
                     (raise-invalid-st8-pairs kv-pairs)])))
-             (bcom ^next new-ht)]))))
+             (bcom (next new-ht))]))))
 
-     (^next bcom initial-ht))))
+     (next initial-ht))))
 
 (define ^st8
   (procedure-rename (make-^st8 #f)

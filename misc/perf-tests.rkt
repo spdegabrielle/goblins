@@ -49,11 +49,11 @@
       (for ([i 1000000])
         (call friend))))))
 
-;;; 2019-10-29
+;;; 2019-11-03
 ;; perf-tests.rkt> (bcom-a-lot)
-;; cpu time: 1567 real time: 1566 gc time: 36
+;; cpu time: 1473 real time: 1472 gc time: 49
 ;; perf-tests.rkt> (bcom-a-lot #:reckless? #t)
-;; cpu time: 1352 real time: 1352 gc time: 29
+;; cpu time: 1262 real time: 1262 gc time: 24
 
 ;; A bunch of actors updating themselves
 (define (bcom-a-lot [actormap (make-whactormap)]
@@ -61,7 +61,7 @@
                     #:iterations [iterations 1000]
                     #:reckless? [reckless? #f])
   (define ((^incrementing-actor bcom [i 0]))
-    (values (bcom ^incrementing-actor (add1 i))
+    (values (bcom (^incrementing-actor bcom (add1 i)))
             i))
   (define i-as
     (for/list ([i num-actors])

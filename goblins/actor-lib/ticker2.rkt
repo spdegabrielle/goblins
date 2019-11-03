@@ -25,7 +25,7 @@
   (define (^ticky bcom dead?)
     (methods
      [(die)
-      (bcom ^ticky #t)]
+      (bcom (^ticky bcom #t))]
      [(dead?)
       dead?]
      [to-tick to-tick]))
@@ -71,7 +71,7 @@
                              ;; ok it's dead now too
                              (cons this-ticked
                                    (lp tick-rest)))))])])))
-         (bcom ^ticker next-tickers)))]
+         (bcom (^ticker bcom next-tickers))))]
      ;; Used for collision detection, etc.
      [(foldr proc init)
       (foldr (match-lambda*
@@ -94,7 +94,7 @@
     (actormap-spawn! am ^cell))
   (define (^malaise-sufferer bcom ticky name speaking-cell
                              [maximum-suffering 3])
-    (define ((loop bcom n))
+    (define ((loop n))
       (if (> n maximum-suffering)
           (begin
             ($ speaking-cell
@@ -105,8 +105,8 @@
             ($ speaking-cell
                (format "<~a> sigh number ~a"
                        name n))
-            (bcom loop (add1 n)))))
-    (loop bcom 1))
+            (bcom (loop (add1 n))))))
+    (loop 1))
   (define joe
     (actormap-poke! am ticker 'to-tick
                     (lambda (ticky)

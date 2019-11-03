@@ -71,7 +71,7 @@
          [(list 'write id)
           id])]))
 
-  (define (^next-env bcom ht)
+  (define (next ht)
     (methods
       [(new-key [key-name 'some-key])
        ;; unique by eq?
@@ -94,11 +94,11 @@
        (define updated-ht
          (hash-set ht id
                    (cons val (hash-ref ht id '()))))
-       (bcom ^next-env updated-ht)]
+       (bcom (next updated-ht))]
       [(reset)
-       (bcom ^next-env #hasheq())]))
+       (bcom (next #hasheq()))]))
   
-  (^next-env bcom #hasheq()))
+  (next #hasheq()))
 
 (define (spawn-env-pair)
   (define this-env

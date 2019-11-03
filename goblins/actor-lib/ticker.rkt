@@ -34,7 +34,7 @@
                 '()
                 updated-ticked))
        ;; update ourself
-       (bcom ^ticker next-tickers))))
+       (bcom (^ticker bcom next-tickers)))))
   (list (spawn ^tick-register)
         (spawn ^ticker '())))
 
@@ -50,7 +50,7 @@
     (actormap-spawn! am ^cell))
   (define (^malaise-sufferer bcom name speaking-cell
                              [maximum-suffering 3])
-    (define ((loop bcom n))
+    (define ((loop n))
       (if (> n maximum-suffering)
           (begin
             ($ speaking-cell
@@ -61,8 +61,8 @@
             ($ speaking-cell
                (format "<~a> sigh number ~a"
                        name n))
-            (bcom loop (add1 n)))))
-    (loop bcom 1))
+            (bcom (loop (add1 n))))))
+    (loop 1))
   (define joe
     (actormap-spawn! am ^malaise-sufferer "joe"
                      joe-speaks-here))

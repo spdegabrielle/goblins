@@ -200,9 +200,8 @@
   (define become
     (procedure-rename
      (make-keyword-procedure
-      (lambda (kws kw-args constructor . args)
-        (make-seal
-         (keyword-apply constructor kws kw-args become args))))
+      (lambda (kws kw-args new-handler)
+        (make-seal new-handler)))
      'become))
   (define unseal-handler
     (make-struct-field-accessor seal-ref 0))
@@ -870,7 +869,7 @@
        obj]
       ;; if it's a procedure, let's spawn it
       [(? procedure?)
-       (define (^already-ran bcom)
+       (define already-ran
          (make-keyword-procedure
           (lambda _
             (error "Already ran for automatically generated listener"))))
@@ -878,7 +877,7 @@
         (procedure-rename
          (lambda (bcom)
            (lambda args
-             (values (bcom ^already-ran)
+             (values (bcom already-ran)
                      (apply obj args))))
          proc-name))]
       ;; If it's #f, leave it as #f
@@ -1159,7 +1158,7 @@
   (define am (make-whactormap))
 
   (define ((counter bcom n))
-    (values (bcom counter (add1 n))
+    (values (bcom (counter bcom (add1 n)))
             n))
 
   ;; can actors update themselves?
@@ -1188,12 +1187,12 @@
   (check-eqv? turned-val3 3)
 
   (define ((^friend-spawner bcom) friend-name)
-    (define ((^a-friend bcom [called-times 0]))
-      (define new-called-times
-        (add1 called-times))
-      (values (bcom ^a-friend new-called-times)
-              (format "Hello!  My name is ~a and I've been called ~a times!"
-                      friend-name new-called-times)))
+    (define (^a-friend bcom)
+      (define ((next called-times))
+        (values (bcom (next (add1 called-times)))
+                (format "Hello!  My name is ~a and I've been called ~a times!"
+                        friend-name called-times)))
+      (next 1))
     (spawn ^a-friend))
   (define fr-spwn (actormap-spawn! am ^friend-spawner))
   (define joe (actormap-poke! am fr-spwn 'joe))
@@ -1265,7 +1264,7 @@
   (case-lambda
     [() val]
     [(new-val)
-     (bcom ^cell new-val)]))
+     (bcom (^cell bcom new-val))]))
 
 (define (spawn-cell [val #f])
   (spawn ^cell val))

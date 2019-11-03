@@ -301,7 +301,7 @@
    'hello)
 
   (define ((^ctr bcom [n 0]))
-    (values (bcom ^ctr (add1 n))
+    (values (bcom (^ctr bcom (add1 n)))
             n))
   (define a-ctr
     (a-vat 'spawn ^ctr))
