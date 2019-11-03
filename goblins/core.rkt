@@ -1280,10 +1280,10 @@
   (syntax-parse stx
     [(_ id:id)
      #'(define id
-         (spawn ^cell))]
+         (spawn (procedure-rename ^cell 'id)))]
     [(_ id:id val)
      #'(define id
-         (spawn ^cell val))]))
+         (spawn (procedure-rename ^cell 'id) val))]))
 
 (module+ test
   (define a-cell
