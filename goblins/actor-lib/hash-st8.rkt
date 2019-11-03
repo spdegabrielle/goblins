@@ -12,9 +12,13 @@
   (make-keyword-procedure
    (lambda (kws kw-args bcom . args)
      (define ht-pre-kws
-       (match args
-         ['() '#hasheq()]
-         [(list ht) ht]))
+       (let lp ([args args])
+         (match args
+           ['() '#hasheq()]
+           [(list (? hash-eq? ht)) ht]
+           [(list (? symbol? key) val rest-args ...)
+            (hash-set (lp rest-args)
+                      key args)])))
      (define initial-ht
        (for/fold ([ht ht-pre-kws])
                  ([kw kws]
