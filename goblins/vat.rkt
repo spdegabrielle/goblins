@@ -12,9 +12,7 @@
          [only-in racket/promise delay delay/sync force]
 
          crypto
-         crypto/private/common/base256
-         ;; until canonicalization is available in preserves
-         csexp)
+         crypto/private/common/base256)
 
 (struct cmd-external-spawn (actor-handler return-ch))
 (struct cmd-<- (msg))

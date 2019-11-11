@@ -1,6 +1,6 @@
 #lang info
 
-(define deps '("base"))
+(define deps '("base" "crypto"))
 (define build-deps '("rackunit-lib" "scribble-lib"))
 (define pkg-desc
   "Transactional actor system inspired by the E programming language")
