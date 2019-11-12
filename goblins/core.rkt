@@ -816,8 +816,10 @@
     ;; we made.
     (or return-promise (void)))
 
-  (define (_extract id-refr)
-    (actormap-extract actormap id-refr))
+  (define (_extract to-refr)
+    (unless (near-refr? to-refr)
+      (error 'not-a-near-refr "Not a near refr: ~a" to-refr))
+    (actormap-extract actormap to-refr))
 
   (define (get-internals)
     (list actormap to-near to-far))
