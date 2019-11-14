@@ -5,14 +5,11 @@
 (require "core.rkt"
          (submod "core.rkt" for-vats)
          "message.rkt"
+         "machine.rkt"
          racket/async-channel
          racket/match
          racket/exn
-         racket/contract
-         [only-in racket/promise delay delay/sync force]
-
-         crypto
-         crypto/private/common/base256)
+         racket/contract)
 
 (struct cmd-external-spawn (actor-handler return-ch))
 (struct cmd-<- (msg))
@@ -21,61 +18,10 @@
 (struct cmd-send-message (msg))
 (struct cmd-halt ())
 
-(define eddsa-impl
-  (delay/sync (get-pk 'eddsa (crypto-factories))))
-
-(define (make-eddsa-private-key)
-  (generate-private-key (force eddsa-impl) '((curve ed25519))))
-
-;; But what does the machine *do*?
-;; Does it need an event loop?
-;; Does it talk to the "external world"?
-;; It seems obvious that yes, I guess that's the main thing it does,
-;; is set up connections to the outside world and route outside
-;; connections
-
-;; TODO: If we parameterize this, *when* do we set up the ability
-;;   for the machine to be able to speak to the outside world?
-;;   especially if this happens through Tor or etc.
-;; TODO: Does this need to move into core.rkt?
-
-(define (boot-machine)
-  'TODO)
-
-(define current-machine
-  (make-parameter (boot-machine)))
-
-(define (register-vat-with-current-machine vat-key vat-dispatcher)
-  'TODO)
-
-
-#;(define (make-machine
-         ;; TODO: rename to #:sign/decrypt-key ?
-         #:private-key [private-key (delay (make-eddsa-private-key))])
-  (define public-key
-    (delay
-      (pk-key->public-only-key (force private-key))))
-  (define public-key-as-bytes
-    (delay
-      (match (pk-key->datum (force public-key) 'rkt-public)
-        [(list 'eddsa public ed25519 public-key-bytes)
-         public-key-bytes])))
-  )
-
-
 ;; TODO: Maybe restore #:actormap?
 ;;   But what to do about the vat-connector in that case?
-(define (make-vat #:private-key
-                  ;; TODO: rename to #:sign/decrypt-key ?
-                  [private-key (delay (make-eddsa-private-key))])
-  (define public-key
-    (delay
-      (pk-key->public-only-key (force private-key))))
-  (define public-key-as-bytes
-    (delay
-      (match (pk-key->datum (force public-key) 'rkt-public)
-        [(list 'eddsa public ed25519 public-key-bytes)
-         public-key-bytes])))
+(define (make-vat )
+  
 
   ;; Weak hashes don't seem to "relinquish" its memory, unfortunately.
   ;; Every now and then we stop and copy over the registry
@@ -240,13 +186,6 @@
   (define (_halt)
     (async-channel-put vat-channel (cmd-halt)))
 
-  (define (_get-vat-id)
-    (force public-key-as-bytes))
-
-  ;; be careful!
-  (define (_get-vat-private-key)
-    (force private-key))
-
   (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
     (define id
       (procedure-rename
@@ -261,15 +200,12 @@
        'id)))
 
   (define-vat-dispatcher vat-connector
-    [handle-message _handle-message]
-    [vat-id _get-vat-id])
+    [handle-message _handle-message])
 
   (define-vat-dispatcher vat-dispatcher
     [spawn _spawn]
     [<- _<-]
     [call _call]
-    [vat-id _get-vat-id]
-    [vat-private-key _get-vat-private-key]
     [halt _halt]
     [is-running? is-running?])
 
@@ -279,7 +215,7 @@
   ;; boot the main loop
   (main-loop)
 
-  (register-vat-with-current-machine public-key vat-dispatcher)
+  #;(register-vat-with-current-machine public-key vat-dispatcher)
 
   ;; return the dispatcher
   vat-dispatcher)
