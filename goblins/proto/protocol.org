@@ -1,0 +1,42 @@
+#+TITLE: Spritely's Protocol
+
+* Overview
+
+Rough sketch of the protocol here.
+
+Two "machines" speak to each other over some sort of message passing.
+For now, we're starting with sockets but we'll assume that it's a bit
+more generic.
+
+The goal is to use Preserves; while we're waiting on a clean way to
+read preserves off a port we're using csexps.
+
+For right now all the messages have verbose names as tags; once the
+protocol is established we'll switch this over to an enum.
+
+** Sessions
+
+** Actors, vats, machines
+
+** What each machine tracks
+
+* Protocol sections
+** Machine identity
+
+** Session establishment
+
+** Capabilities management
+
+*** SturdyRefs
+
+**** SturdyRef structure
+
+**** SturdyRef conversion
+
+*** LiveRef imports/exports
+
+*** Handoffs
+
+** Sending messages to objects
+
+** Remote promises
