@@ -1,6 +1,6 @@
 #lang racket
 
-(require preserves
+(require csexp
          crypto
          racket/random)
 
@@ -88,19 +88,18 @@
 
 ;; listener
 (define (a-establish-connection a-privkey b-pubkey in-port out-port)
-  (parameterize ([canonicalize-preserves? #f])
+  (parameterize (#;[canonicalize-preserves? #f])
     (define a-id
       (pubkey->bytes a-privkey))
     (define b-id
       (pubkey->bytes b-pubkey))
-
     ;; 1. A->B <protocol bidir-pipe>
-    (write-bytes (encode (initiate-protocol 'bidir-pipe))
+    (write-csexp '(#"initiate-protocol" #"bidir-pipe")
                  out-port)
 
     ;; 2. B->A <accept-protocol bidir-pipe>
-    (match (read-preserve in-port)
-      [(accept-protocol 'bidir-pipe)
+    (match (read-csexp in-port)
+      [`(#"accept-protocol" #"bidir-pipe")
        'ok]
       [unexpected-response
        (error 'establish-protocol-error
@@ -112,22 +111,22 @@
     (define a->b-nonce
       (crypto-random-bytes 32))
     (define handshake1-obj
-      (handshake1 a-id b-id a->b-nonce))
+      `(#"handshake1" ,a-id ,b-id ,a->b-nonce))
     (define handshake1-sig
-      (pk-sign a-privkey (encode handshake1-obj)))
+      (pk-sign a-privkey (csexp->bytes handshake1-obj)))
     (define handshake1-signed
-      (signed handshake1-obj handshake1-sig))
-    (write-bytes (encode handshake1-signed)
+      `(#"signed" ,handshake1-obj ,handshake1-sig))
+    (write-csexp handshake1-signed
                  out-port)
 
     ;; ;; Yes, I am B.  Including nonce from 3.  Please sign nonce4 to prove this is you.
     ;; ;; Nonce3 is included to show that I'm going along.
     ;; 4. B->A <signed <handshake2 b-id a-id a->b-nonce b->a-nonce> sig>
-    (match-define (signed (and (handshake2 hs2-b-id hs2-a-id
-                                           hs2-a->b-nonce b->a-nonce)
-                               hs2)
-                          hs2-sig)
-      (read-preserve in-port))
+    (match-define `(#"signed" ,(and `(#"handshake2" ,hs2-b-id ,hs2-a-id
+                                      ,hs2-a->b-nonce ,b->a-nonce)
+                                    hs2)
+                    ,hs2-sig)
+      (read-csexp in-port))
     (unless (equal? hs2-b-id b-id)
       (error 'establish-protocol-error
              "Mismatching B id."))
@@ -137,33 +136,32 @@
     (unless (equal? hs2-a->b-nonce a->b-nonce)
       (error 'establish-protocol-error
              "Mismatching a->b nonce."))
-    (unless (pk-verify b-pubkey (encode hs2) hs2-sig)
+    (unless (pk-verify b-pubkey (csexp->bytes hs2) hs2-sig)
       (error 'establish-protocol-error
              "Signature verification fail for handshake2"))
 
     ;; ;; I really am A, no replay attack.  Here are all nonces signed.
     ;; 5. A->B <signed <handshake3 a-id b-id a->b-nonce b->a-nonce> sig>
     (define handshake3-obj
-      (handshake3 a-id b-id a->b-nonce b->a-nonce))
+      `(#"handshake3" ,a-id ,b-id ,a->b-nonce ,b->a-nonce))
     (define handshake3-sig
-      (pk-sign a-privkey (encode handshake3-obj)))
+      (pk-sign a-privkey (csexp->bytes handshake3-obj)))
     (define handshake3-signed
-      (signed handshake3-obj handshake3-sig))
-    (write-bytes (encode handshake3-signed)
-                 out-port)
+      `(#"signed" ,handshake3-obj ,handshake3-sig))
+    (write-csexp handshake3-signed out-port)
 
     ;; Ok we made it this far!  Here's the session id
     (derive-session-id a-id b-id a->b-nonce b->a-nonce)))
 
 ;; client
 (define (b-establish-connection b-privkey in-port out-port)
-  (parameterize ([canonicalize-preserves? #f])
+  (parameterize (#;[canonicalize-preserves? #f])
     (define b-id
       (pubkey->bytes b-privkey))
 
     ;; 1. A->B <protocol bidir-pipe>
-    (match (read-preserve in-port)
-      [(initiate-protocol 'bidir-pipe)
+    (match (read-csexp in-port)
+      ['(#"initiate-protocol" #"bidir-pipe")
        'ok]
       [unexpected-response
        (error 'establish-protocol-error
@@ -171,21 +169,22 @@
               unexpected-response)])
 
     ;; 2. B->A <accept-protocol bidir-pipe>
-    (write-bytes (encode (accept-protocol 'bidir-pipe))
+    (write-csexp '(#"accept-protocol" #"bidir-pipe")
                  out-port)
 
     ;; ;; Hello, I am A.  Are you B?
     ;; 3. A->B <signed <handshake1 a-id a->b-nonce> sig>  ; Signs: ['handshake1 <...obj...>]
-    (match-define (signed (and (handshake1 a-id hs1-b-id a->b-nonce)
-                               hs1)
-                          hs1-sig)
-      (read-preserve in-port))
+    (match-define `(#"signed" ,(and `(#"handshake1" ,a-id ,hs1-b-id ,a->b-nonce)
+                                    hs1)
+                    ,hs1-sig)
+      (read-csexp in-port))
     (define a-pubkey
-      (datum->pk-key (list 'eddsa 'public 'ed25519 a-id)))
+      (datum->pk-key (list 'eddsa 'public 'ed25519 a-id)
+                     'rkt-public))
     (unless (equal? b-id hs1-b-id)
       (error 'establish-protocol-error
              "Mismatching B id."))
-    (unless (pk-verify a-pubkey (encode hs1) hs1-sig)
+    (unless (pk-verify a-pubkey (csexp->bytes hs1) hs1-sig)
       (error 'establish-protocol-error
              "Signature verification fail for handshake2"))
 
@@ -195,21 +194,21 @@
     (define b->a-nonce
       (crypto-random-bytes 32))
     (define handshake2-obj
-      (handshake2 b-id a-id a->b-nonce b->a-nonce))
+      `(#"handshake2" ,b-id ,a-id ,a->b-nonce ,b->a-nonce))
     (define handshake2-sig
-      (pk-sign b-privkey b-id a-id a->b-nonce b->a-nonce))
+      (pk-sign b-privkey (csexp->bytes handshake2-obj)))
     (define handshake2-signed
-      (signed handshake2-obj handshake2-sig))
-    (write-bytes (encode handshake2-signed)
+      `(#"signed" ,handshake2-obj ,handshake2-sig))
+    (write-csexp handshake2-signed
                  out-port)
 
     ;; ;; I really am A, no replay attack.  Here are all nonces signed.
     ;; 5. A->B <signed <handshake3 a-id b-id a->b-nonce b->a-nonce> sig>
-    (match-define (signed (and (handshake3 hs3-a-id hs3-b-id
-                                           hs3-a->b-nonce hs3-b->a-nonce)
-                               hs3)
-                          hs3-sig)
-      (read-preserve in-port))
+    (match-define `(#"signed" ,(and `(#"handshake3" ,hs3-a-id ,hs3-b-id
+                                      ,hs3-a->b-nonce ,hs3-b->a-nonce)
+                                    hs3)
+                    ,hs3-sig)
+      (read-csexp in-port))
     (unless (equal? hs3-a-id a-id)
       (error 'establish-protocol-error
              "Mismatching A id."))
@@ -222,7 +221,7 @@
     (unless (equal? hs3-b->a-nonce b->a-nonce)
       (error 'establish-protocol-error
              "Mismatching b->a nonce."))
-    (unless (pk-verify a-pubkey (encode hs3) hs3-sig)
+    (unless (pk-verify a-pubkey (csexp->bytes hs3) hs3-sig)
       (error 'establish-protocol-error
              "Signature verification fail for handshake3"))
 
@@ -231,9 +230,9 @@
 
 (module+ test
   (define-values (a->b-input a->b-output)
-    (make-pipe))
+    (make-pipe #f 'a->b-input 'a->b-output))
   (define-values (b->a-input b->a-output)
-    (make-pipe))
+    (make-pipe #f 'b->a-input 'b->a-output))
 
   
 
