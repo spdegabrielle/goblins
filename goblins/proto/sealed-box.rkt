@@ -3,8 +3,7 @@
 (provide sealed-box
          seal-box unseal-box)
 
-(require crypto
-         racket/random)
+(require crypto)
 
 (struct sealed-box (type 1off-key encrypted)
   #:prefab)
