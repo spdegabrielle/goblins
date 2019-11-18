@@ -1,6 +1,7 @@
 #lang racket
 
-(provide sealed-box)
+(provide sealed-box
+         seal-box unseal-box)
 
 (require crypto
          racket/random)
