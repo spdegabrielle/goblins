@@ -46,7 +46,7 @@
   (define public-key-as-bytes
     (delay
       (match (pk-key->datum (force public-key) 'rkt-public)
-        [(list 'eddsa public ed25519 public-key-bytes)
+        [(list 'eddsa 'public 'ed25519 public-key-bytes)
          public-key-bytes])))
 
   (define (_get-machine-id)
