@@ -2,7 +2,8 @@
 
 (require preserves
          crypto
-         racket/random)
+         racket/random
+         "sealed-box.rkt")
 
 ;;; This whole protocol for setting up a session is based on the idea that two
 ;;; machines will want to establish communication with one another and will want
@@ -35,67 +36,80 @@
 (struct accept-protocol (proto-name)
   #:prefab)
 
-;; ;; Hello, I am A.  Are you B?
-;; 3. A->B <signed <handshake1 a-id b-id a->b-nonce> sig>  ; Signs: ['handshake1 <...obj...>]
-(struct handshake1 (a-id b-id a->b-nonce)
+;; ;; Hello, I am A.  Are you B?  Also here's a throwaway key to respond with.
+;; 3. A->B <signed <handshake1 a-id b-id tmp-seal-key> sig>  ; Signs: ['handshake1 <...obj...>]
+(struct handshake1 (a-id b-id tmp-seal-key)
   #:prefab)
 
-;; ;; Yes, I am B.  Including nonce from 3.  Please sign nonce4 to prove this is you.
-;; ;; Nonce3 is included to show that I'm going along.
-;; 4. B->A <signed <handshake2 b-id a-id a->b-nonce b->a-nonce> sig>
+;; ;; Yes, I am B.
+;; ;; Here is the hash of the last message so you know this is a proper reply.
+;; ;; Here is the key you should use for me (sealed to tmp-seal-key)
+;; 4. B->A <signed <handshake2 hash-of-hs1 #base64{sealed b-seal-key}> sig>
 
-(struct handshake2 (b-id a-id a->b-nonce b->a-nonce)
+(struct handshake2 (hash-of-hs1 sealed-b-seal-key)
   #:prefab)
 
-;; ;; I really am A, no replay attack.  Here are all nonces signed.
-;; 5. A->B <signed <handshake3 a-id b-id a->b-nonce b->a-nonce> sig>
+;; ;; I really am A, no replay attack.
+;; ;; Here is the hash of the last message so you know this is a proper reply.
+;; ;; Here is the key you should use for me (sealed to b-seal-key).
+;; 5. A->B <signed <handshake3 hash-of-hs2 #base64{sealed a-seal-key}> sig>
 
-(struct handshake3 (a-id b-id a->b-nonce b->a-nonce)
+(struct handshake3 (hash-of-hs2 sealed-a-seal-key)
   #:prefab)
 
 ;; At this point, both sides can develop the session id:
-;; 
-;; (sha256 (bytes-append a-id b-id nonce3 nonce4))
+;;   (sha256 (canonicalized (msg-5)))
 
-(define (derive-session-id a-id b-id a->b-nonce b->a-nonce)
-  (digest 'sha256
-          (bytes-append a-id b-id a->b-nonce b->a-nonce)))
-
-(module+ test
-  (require rackunit
-           "../utils/install-factory.rkt")
-  (install-default-factories!)
-  (define eddsa-impl
-    (get-pk 'eddsa (crypto-factories)))
-  (define a-privkey
-    (generate-private-key eddsa-impl '((curve ed25519))))
-  (define a-pubkey
-    (pk-key->public-only-key a-privkey))
-
-  (define b-privkey
-    (generate-private-key eddsa-impl '((curve ed25519))))
-  (define b-pubkey
-    (pk-key->public-only-key b-privkey))
-
-  )
-
-
-
-(define (pubkey->bytes pubkey)
-  (match (pk-key->datum pubkey 'rkt-public)
+(define (veri-key->bytes veri-key)
+  (match (pk-key->datum veri-key 'rkt-public)
     [(list 'eddsa 'public 'ed25519 bytes)
      bytes]))
 
+(define (seal-key->bytes enc-key)
+  (match (pk-key->datum enc-key 'rkt-public)
+    [(list 'ecx 'public 'x25519 pub-bytes)
+     pub-bytes]))
+
+
+(define (bytes->seal-key pub-bytes)
+  (datum->pk-key (list 'ecx 'public 'x25519 pub-bytes)
+                 'rkt-public))
+
+(define (sign obj sign-key)
+  (signed obj (pk-sign sign-key (encode obj))))
+
+;; Verify signed object against expected verification key.
+;; If signature passes, return the object.
+(define (get-verified-obj signed-obj verify-key)
+  (match signed-obj
+    [(signed obj (? bytes? sig))
+     (unless (pk-verify verify-key (encode obj) sig)
+       (error 'signature-verification-failure signed-obj))
+     obj]))
+
+;; Ensure that a preserves object matches the expected hash.
+;; If not, throw an error.
+(define (ensure-matching-hash obj sha256-hash)
+  (unless (equal? (sha256-bytes (encode obj))
+                  sha256-hash)
+    (error 'hash-mismatch)))
+
+(define (make-seal/unseal-key)
+  (define ecx-impl
+    (get-pk 'ecx (crypto-factories)))
+  (generate-private-key ecx-impl '((curve x25519))))
+
 ;; listener
-(define (a-establish-connection a-privkey b-pubkey in-port out-port)
-  (parameterize ([canonicalize-preserves? #f])
+(define (a-establish-connection a-signkey b-veri-key in-port out-port)
+  (parameterize ([canonicalize-preserves? #t])
     (define a-id
-      (pubkey->bytes a-privkey))
+      (veri-key->bytes a-signkey))
     (define b-id
-      (pubkey->bytes b-pubkey))
+      (veri-key->bytes b-veri-key))
     ;; 1. A->B <protocol bidir-pipe>
     (write-preserve (initiate-protocol 'bidir-pipe)
                     out-port)
+
 
     ;; 2. B->A <accept-protocol bidir-pipe>
     (match (read-preserve in-port)
@@ -106,58 +120,56 @@
               "unexpected-response: ~a"
               unexpected-response)])
 
-    ;; ;; Hello, I am A.  Are you B?
-    ;; 3. A->B <signed <handshake1 a-id a->b-nonce> sig>  ; Signs: ['handshake1 <...obj...>]
-    (define a->b-nonce
-      (crypto-random-bytes 32))
-    (define handshake1-obj
-      (handshake1 a-id b-id a->b-nonce))
-    (define handshake1-sig
-      (pk-sign a-privkey (encode handshake1-obj)))
-    (define handshake1-signed
-      (signed handshake1-obj handshake1-sig))
-    (write-preserve handshake1-signed
-                    out-port)
+;; ;; Hello, I am A.  Are you B?  Also here's a throwaway key to respond with.
+;; 3. A->B <signed <handshake1 a-id b-id tmp-seal-key> sig>  ; Signs: ['handshake1 <...obj...>]
+    (define tmp-seal/unseal-key
+      (make-seal/unseal-key))
+    (define hs1-obj
+      (handshake1 a-id b-id (seal-key->bytes tmp-seal/unseal-key)))
+    (define hs1-signed
+      (sign hs1-obj a-signkey))
+    (write-preserve hs1-signed out-port)
 
-    ;; ;; Yes, I am B.  Including nonce from 3.  Please sign nonce4 to prove this is you.
-    ;; ;; Nonce3 is included to show that I'm going along.
-    ;; 4. B->A <signed <handshake2 b-id a-id a->b-nonce b->a-nonce> sig>
-    (match-define (signed (and (handshake2 hs2-b-id hs2-a-id
-                                           hs2-a->b-nonce b->a-nonce)
-                               hs2)
-                          hs2-sig)
+    ;; ;; Yes, I am B.
+    ;; ;; Here is the hash of the last message so you know this is a proper reply.
+    ;; ;; Here is the key you should use for me (sealed to tmp-seal-key)
+    ;; 4. B->A <signed <handshake2 hash-of-3 #base64{sealed b-seal-key}> sig>
+    (define hs2
       (read-preserve in-port))
-    (unless (equal? hs2-b-id b-id)
-      (error 'establish-protocol-error
-             "Mismatching B id."))
-    (unless (equal? hs2-a-id a-id)
-      (error 'establish-protocol-error
-             "Mismatching A id."))
-    (unless (equal? hs2-a->b-nonce a->b-nonce)
-      (error 'establish-protocol-error
-             "Mismatching a->b nonce."))
-    (unless (pk-verify b-pubkey (encode hs2) hs2-sig)
-      (error 'establish-protocol-error
-             "Signature verification fail for handshake2"))
+    (define hs2-obj
+      (get-verified-obj hs2 b-veri-key))
+    (match-define (handshake2 hash-of-hs1 sealed-b-seal-key)
+      hs2-obj)
+    (ensure-matching-hash hs1-signed hash-of-hs1)
+    (define b-seal-key-bytes
+      (unseal-box tmp-seal/unseal-key sealed-b-seal-key))
+    (define b-seal-key
+      (bytes->seal-key b-seal-key-bytes))
 
-    ;; ;; I really am A, no replay attack.  Here are all nonces signed.
-    ;; 5. A->B <signed <handshake3 a-id b-id a->b-nonce b->a-nonce> sig>
-    (define handshake3-obj
-      (handshake3 a-id b-id a->b-nonce b->a-nonce))
-    (define handshake3-sig
-      (pk-sign a-privkey (encode handshake3-obj)))
-    (define handshake3-signed
-      (signed handshake3-obj handshake3-sig))
-    (write-preserve handshake3-signed out-port)
+    ;; ;; I really am A, no replay attack.
+    ;; ;; Here is the hash of the last message so you know this is a proper reply.
+    ;; ;; Here is the key you should use for me (sealed to b-seal-key).
+    ;; 5. A->B <signed <handshake3 hash-of-hs2 #base64{sealed a-seal-key}> sig>
+    (define a-seal/unseal-key
+      (make-seal/unseal-key))
+    (define sealed-a-seal-key
+      (seal-box b-seal-key (seal-key->bytes a-seal/unseal-key)))
+    (define hs3-obj
+      (handshake3 (sha256-bytes (encode hs2))
+                  sealed-a-seal-key))
+    (define hs3-signed
+      (sign hs3-obj a-signkey))
+    (write-preserve hs3-signed out-port)
 
-    ;; Ok we made it this far!  Here's the session id
-    (derive-session-id a-id b-id a->b-nonce b->a-nonce)))
+    ;; Ok we made it this far!  Here's the session id... its' just the hash of
+    ;; hs3-signed
+    (sha256-bytes (encode hs3-signed))))
 
 ;; client
-(define (b-establish-connection b-privkey in-port out-port)
-  (parameterize ([canonicalize-preserves? #f])
+(define (b-establish-connection b-signkey in-port out-port)
+  (parameterize ([canonicalize-preserves? #t])
     (define b-id
-      (pubkey->bytes b-privkey))
+      (veri-key->bytes b-signkey))
 
     ;; 1. A->B <protocol bidir-pipe>
     (match (read-preserve in-port)
@@ -172,69 +184,83 @@
     (write-preserve (accept-protocol 'bidir-pipe)
                     out-port)
 
-    ;; ;; Hello, I am A.  Are you B?
-    ;; 3. A->B <signed <handshake1 a-id a->b-nonce> sig>  ; Signs: ['handshake1 <...obj...>]
-    (match-define (signed (and (handshake1 a-id hs1-b-id a->b-nonce)
-                               hs1)
+    ;; ;; Hello, I am A.  Are you B?  Also here's a throwaway key to respond with.
+    ;; 3. A->B <signed <handshake1 a-id b-id tmp-seal-key> sig>  ; Signs: ['handshake1 <...obj...>]
+    (define hs1 (read-preserve in-port))
+    (match-define (signed (and (handshake1 a-id hs1-b-id tmp-seal-key-bytes)
+                               hs1-obj)
                           hs1-sig)
-      (read-preserve in-port))
-    (define a-pubkey
+      hs1)
+    (define a-veri-key
       (datum->pk-key (list 'eddsa 'public 'ed25519 a-id)
                      'rkt-public))
     (unless (equal? b-id hs1-b-id)
       (error 'establish-protocol-error
              "Mismatching B id."))
-    (unless (pk-verify a-pubkey (encode hs1) hs1-sig)
-      (error 'establish-protocol-error
-             "Signature verification fail for handshake2"))
+    ;; Done for its check side-effect
+    (get-verified-obj hs1 a-veri-key)
+    (define tmp-seal-key
+      (bytes->seal-key tmp-seal-key-bytes))
 
-    ;; ;; Yes, I am B.  Including nonce from 3.  Please sign nonce4 to prove this is you.
-    ;; ;; Nonce3 is included to show that I'm going along.
-    ;; 4. B->A <signed <handshake2 b-id a-id a->b-nonce b->a-nonce> sig>
-    (define b->a-nonce
-      (crypto-random-bytes 32))
-    (define handshake2-obj
-      (handshake2 b-id a-id a->b-nonce b->a-nonce))
-    (define handshake2-sig
-      (pk-sign b-privkey (encode handshake2-obj)))
-    (define handshake2-signed
-      (signed handshake2-obj handshake2-sig))
-    (write-preserve handshake2-signed
-                    out-port)
+    ;; ;; Yes, I am B.
+    ;; ;; Here is the hash of the last message so you know this is a proper reply.
+    ;; ;; Here is the key you should use for me (sealed to tmp-seal-key)
+    ;; 4. B->A <signed <handshake2 hash-of-hs1 #base64{sealed b-seal-key}> sig>
+    (define b-seal/unseal-key
+      (make-seal/unseal-key))
+    (define sealed-b-seal-key
+      (seal-box tmp-seal-key (seal-key->bytes b-seal/unseal-key)))
+    (define hs2-obj
+      (handshake2 (sha256-bytes (encode hs1))
+                  sealed-b-seal-key))
+    (define hs2-signed
+      (sign hs2-obj b-signkey))
+    (write-preserve hs2-signed out-port)
 
-    ;; ;; I really am A, no replay attack.  Here are all nonces signed.
-    ;; 5. A->B <signed <handshake3 a-id b-id a->b-nonce b->a-nonce> sig>
-    (match-define (signed (and (handshake3 hs3-a-id hs3-b-id
-                                           hs3-a->b-nonce hs3-b->a-nonce)
-                               hs3)
-                          hs3-sig)
+    ;; ;; I really am A, no replay attack.
+    ;; ;; Here is the hash of the last message so you know this is a proper reply.
+    ;; ;; Here is the key you should use for me (sealed to b-seal-key).
+    ;; 5. A->B <signed <handshake3 hash-of-hs2 #base64{sealed a-seal-key}> sig>
+    (define hs3-signed
       (read-preserve in-port))
-    (unless (equal? hs3-a-id a-id)
-      (error 'establish-protocol-error
-             "Mismatching A id."))
-    (unless (equal? hs3-b-id b-id)
-      (error 'establish-protocol-error
-             "Mismatching B id."))
-    (unless (equal? hs3-a->b-nonce a->b-nonce)
-      (error 'establish-protocol-error
-             "Mismatching a->b nonce."))
-    (unless (equal? hs3-b->a-nonce b->a-nonce)
-      (error 'establish-protocol-error
-             "Mismatching b->a nonce."))
-    (unless (pk-verify a-pubkey (encode hs3) hs3-sig)
-      (error 'establish-protocol-error
-             "Signature verification fail for handshake3"))
+    (define hs3-obj
+      (get-verified-obj hs3-signed a-veri-key))
+    (match-define (handshake3 hash-of-hs2 sealed-a-seal-key)
+      hs3-obj)
+    (ensure-matching-hash hs2-signed hash-of-hs2)
+    (define a-seal-key-bytes
+      (unseal-box b-seal/unseal-key sealed-a-seal-key))
+    (define a-seal-key
+      (bytes->seal-key a-seal-key-bytes))
 
-    ;; At this point, both sides can develop the session id
-    (derive-session-id a-id b-id a->b-nonce b->a-nonce)))
+    ;; At this point, both sides can develop the session id:
+    ;;   (sha256 (canonicalized (msg-5)))
+    (sha256-bytes (encode hs3-signed))))
 
 (module+ test
+  (require rackunit
+           "../utils/install-factory.rkt")
+  (install-default-factories!)
+  (define eddsa-impl
+    (get-pk 'eddsa (crypto-factories)))
+  (define a-signkey
+    (generate-private-key eddsa-impl '((curve ed25519))))
+  (define a-veri-key
+    (pk-key->public-only-key a-signkey))
+
+  (define b-signkey
+    (generate-private-key eddsa-impl '((curve ed25519))))
+  (define b-veri-key
+    (pk-key->public-only-key b-signkey))
+
   (define-values (a->b-input a->b-output)
     (make-pipe #f 'a->b-input 'a->b-output))
   (define-values (b->a-input b->a-output)
     (make-pipe #f 'b->a-input 'b->a-output))
 
   
+  #;(thread (lambda () (displayln (format "a session: ~a" (a-establish-connection a-signkey b-veri-key b->a-input a->b-output)))))
+  #;(thread (lambda () (displayln (format "b session: ~a" (b-establish-connection b-signkey a->b-input b->a-output)))))
 
   )
 
