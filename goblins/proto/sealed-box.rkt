@@ -64,6 +64,8 @@
   (define iv
     (smushed-iv to-key-bytes 1off-pubkey-bytes))
 
+  ;; TODO: Should we use chacha20-poly1305 instead?
+  ;;   That should help us more accurately identify an unsealing error.
   (define encrypted
     (encrypt '(aes ctr) shared-symmetric-key
              iv msg
