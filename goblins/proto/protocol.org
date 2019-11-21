@@ -1,4 +1,8 @@
-#+TITLE: Spritely's Protocol
+#+TITLE: Spritely's Protocol: OCapTN
+
+OCapTN stands for Object Capabilities Transmitted over the Network.
+
+It bears similarities to 
 
 * Overview
 
@@ -14,9 +18,107 @@ read preserves off a port we're using csexps.
 For right now all the messages have verbose names as tags; once the
 protocol is established we'll switch this over to an enum.
 
+** Actors, vats, machines
+
+Goblins has the following layers of abstractions:
+
+ - *Actors:* These are the individual objects that can speak to each
+   other.  Can always communicate via message passing; if in the same
+   vat can also invoke each other via immediate calls.
+ - *Vat:* An event loop that has is responsible for its actors.
+   There may be multiple vats per OS-process.
+ - *Machine:* A "boundary" within which one or more vats are
+   contained; typically an OS process.  Has its own id (which is a
+   public key).  Responsible for inter-machine-communication.
+
+Why these three layers of abstraction?  Couldn't everything just be an
+actor, and that's that?
+
+Vats and actors are a necessary distinction because our main method of
+communication is asynchronous message passing, but some invocations
+must happen atomically (eg in the case of [[http://erights.org/elib/capability/ode/index.html][building money out of ocaps]]).
+However we can't achieve this across vats, which are inherently
+asynchronous in communication based on our decision to be support
+non-blocking programming.
+
+What about vats vs machines?  Strictly speaking, this is an
+optimization.  We really could build one machine per vat, but this
+might result in multiple vats in the same OS process unnecessarily
+taking a trip outside the network and back into the machine again to
+communicate.
+
+
+** Message encryption and sessions
+
+Communication happens via machines sending each other messages
+(or more generally, message bundles).
+These message bundles are encrypted directly to the intended
+recipient; this allows for us to eventually support store-and-forward
+networks and the like.
+Replay attacks are avoided through a combination of a shared session
+name and incrementing message bundle counters.
+
+Say machine A is communicating with machine B.
+A's "name" is actually A's public key, and B's name is actually B's
+public key.
+
+There are thus a couple of ways that machines can safely connect to each other:
+
+ - Over a "living channel", eg tls, a connection via a Tor Onion Service
+   using the same id, etc.
+   Both machines will need to set up independent channels to each other
+   via this scheme, but then safely can pass messages to each other.
+ - Direct encryption to target; at that point the particular transmission
+   path from A->B is less important and this opens us to store-and-forward
+   messages.
+ - Some other trusted mechanism
+
+# If this is over a channel in which we explicitly know the recipient can
+# only be B, there's no need for an envelope:
+
+# #+BEGIN_SRC preserves
+#   @"Inter-machine-envelope."
+#   #base64{encrypted-data-here}
+# #+END_SRC
+
+# Otherwise, if forwarding along, we'll want to include the address:
+
+# #+BEGIN_SRC preserves
+#   @"Inter-machine-envelope for a specific recipient."
+#   <ime #base64{key/id-of-recipient-here}
+#        @"Id / public key of the sending machine"
+#        #base64{from-id}
+#        @"The encrypted payload"
+#        #base64{encrypted-data-here}
+#        @"The signature from from-id"
+#        #base64{signature-here}>
+# #+END_SRC
+
+# *TODO:* Putting the from-id on the outside of the envelope lets us
+# know who is talking to whom.  That might not be good.  We could
+# instead put this inside the encrypted body but it's maybe slightly
+# more overhead...
+
+# At this point, we know that this is legitimately a message from A->B.
+
+# Once B has received the IME envelope, B can decrypt the internal message
+# bundle.
+# This looks like so:
+
+# #+BEGIN_SRC preserves
+#   <bundle <session-ctr @"Session id for this machine <-> machine"
+#                        #base64{session-id}
+#                        @"Message counter within this session, eg 42 here"
+#                        42>
+#           @"Now the actual list of messages to be processed..."
+#           [msg1, msg2, msg3, ...]>>
+# #+END_SRC
+
+# This does 
+
 ** Sessions
 
-** Actors, vats, machines
+Each pair of machines speaking to each other keeps
 
 ** What each machine tracks
 
