@@ -21,12 +21,7 @@
 
 ;; TODO: Maybe restore #:actormap?
 ;;   But what to do about the vat-connector in that case?
-(define (make-vat )
-  
-
-  ;; Weak hashes don't seem to "relinquish" its memory, unfortunately.
-  ;; Every now and then we stop and copy over the registry
-  ;; to a new registry, see 'gc-registry handler below.
+(define (make-vat)
   (define vat-channel
     (make-async-channel))
 
