@@ -94,8 +94,7 @@
                                            #:display-errors? #t)))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-near)
-                (schedule-remote-messages to-far)
-                (lp)]
+                (schedule-remote-messages to-far)]
                [(cmd-external-spawn actor-handler return-ch)
                 (with-handlers ([any/c
                                  (lambda (err)
@@ -103,12 +102,10 @@
                                                 (vector 'fail err)))])
                   (define refr
                     (actormap-spawn! actormap actor-handler))
-                  (channel-put return-ch (vector 'success refr)))
-                (lp)]
+                  (channel-put return-ch (vector 'success refr)))]
                [(cmd-<- msg)
                 (async-channel-put vat-channel
-                                   (cmd-send-message msg))
-                (lp)]
+                                   (cmd-send-message msg))]
                [(cmd-call to-refr kws kw-args args return-ch)
                 (with-handlers ([any/c
                                  (lambda (err)
@@ -121,13 +118,14 @@
                   (transactormap-merge! transactormap)
                   (schedule-local-messages to-near)
                   (schedule-remote-messages to-far)
-                  (channel-put return-ch (vector 'success returned-val)))
-                (lp)]
+                  (channel-put return-ch (vector 'success returned-val)))]
                [(cmd-halt)
+                (set! running? #f)
                 ;; TODO: This should be maybe informing the current-machine,
                 ;;   once that exists
                 #;(send-to-vat-connector (cmd-halt))
-                (void)]))))
+                (void)])
+             (when running? (lp)))))
 
        ;; Boot it up!
        (dynamic-wind
