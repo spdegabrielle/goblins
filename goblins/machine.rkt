@@ -19,7 +19,7 @@
 
 (struct cmd-install-network (network))
 (struct cmd-register-local-vat (vat-conn))
-(struct cmd-register-removte-promise (promise-foo))
+(struct cmd-register-remote-promise (promise-foo))
 (struct cmd-make-sturdyrefr (refr))
 (struct cmd-reify-sturdyrefr (sturdy-refr))
 
