@@ -6,6 +6,7 @@
          (submod "core.rkt" for-vats)
          "message.rkt"
          "machine.rkt"
+         "actor-lib/methods.rkt"
          racket/async-channel
          racket/match
          racket/exn
@@ -184,28 +185,17 @@
   (define (_halt)
     (async-channel-put vat-channel (cmd-halt)))
 
-  (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
-    (define id
-      (procedure-rename
-       (make-keyword-procedure
-        (λ (kws kw-args this-method-name . args)
-          (define method
-            (case this-method-name
-              ['method-name method-handler] ...
-              [else (error 'vat-dispatcher-error
-                           "Unnown method: ~a" this-method-name)]))
-          (keyword-apply method kws kw-args args)))
-       'id)))
+  (define vat-connector
+    (methods
+     [handle-message _handle-message]))
 
-  (define-vat-dispatcher vat-connector
-    [handle-message _handle-message])
-
-  (define-vat-dispatcher vat-dispatcher
-    [spawn _spawn]
-    [<- _<-]
-    [call _call]
-    [halt _halt]
-    [is-running? is-running?])
+  (define vat-dispatcher
+    (methods
+     [spawn _spawn]
+     [<- _<-]
+     [call _call]
+     [halt _halt]
+     [is-running? is-running?]))
 
   (define actormap
     (make-whactormap #:vat-connector vat-connector))
