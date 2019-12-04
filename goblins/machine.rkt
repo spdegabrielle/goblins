@@ -4,10 +4,15 @@
          racket/async-channel
          racket/match
 
+         "actor-lib/methods.rkt"
+
          crypto
          crypto/private/common/base256
          
-         [only-in racket/promise delay delay/sync force])
+         [only-in racket/promise delay delay/sync force]
+
+         racket/exn
+         racket/contract)
 
 ;;; Core commands
 ;;; 
@@ -53,14 +58,37 @@
     (force public-key-as-bytes))
 
   ;; be careful!
-  (define (_get-machine-private-key)
+  ;; I guess we need this to be able to serialize later
+  #;(define (_get-machine-private-key)
     (force private-key))
 
+  (define machine-channel
+    (make-async-channel))
+
+  (define running? #t)
+
   (define (main-loop)
-    'TODO)
+    (thread
+     (λ ()
+       (with-handlers ([exn:fail?
+                        (lambda (err)
+                          (display ";;;; Error when attempting to run vat main loop:"
+                                   (current-error-port))
+                          (display (exn->string err)
+                                   (current-error-port))
+                          (set! running? #f))])
+         (let lp ()
+           (match (async-channel-get machine-channel)
+             [_ 'no-op])
+           (when running? (lp)))))))
 
-  'TODO)
+  (methods
+   [get-machine-id _get-machine-id]))
 
+;; Note that being able to access the current-machine is a POWERFUL
+;; capability, since it also lets you access the machine private key?
+;; So this is ambiently available to general racket programs but we'll
+;; need to lock it up in the dungeon
 (define current-machine
   (make-parameter (boot-machine)))
 
