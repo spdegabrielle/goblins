@@ -18,7 +18,10 @@
 ;;; 
 
 (struct cmd-install-network (network))
-(struct cmd-register-local-vat (vat-conn))
+;; Do we actually need to do this?
+;; When does registering a vat ever need to occur tbh?
+;; live-refrs have their own vat-connector
+#;(struct cmd-register-local-vat (vat-conn))
 (struct cmd-register-remote-promise (promise-foo))
 (struct cmd-make-sturdyrefr (refr))
 (struct cmd-reify-sturdyrefr (sturdy-refr))
