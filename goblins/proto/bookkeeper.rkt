@@ -2,10 +2,10 @@
 
 (require racket/contract)
 
-(provide bookkeeping)
+(provide bookkeeper)
 
 ;; TODO: go in its own module?
-(struct bookkeeping
+(struct bookkeeper
   #:mutable
   ;; My reading on this is a bit different than captp.js but I'm
   ;; not sure why
@@ -31,12 +31,14 @@
    ;; integer?
    last-question-id))
 
-(define/contract (bookkeeping-add/get-import! bkeep slot-id debug-name)
-  (-> bookkeeping? integer? any/c)
+(define (new-bookkeeper))
+
+(define/contract (bookkeeper-add/get-import! bkeep slot-id debug-name)
+  (-> bookkeeper? integer? any/c)
   'TODO)
 
-(define/contract (bookkeeping-add/get-export! bkeep obj)
-  (-> bookkeeping? any/c integer?)
+(define/contract (bookkeeper-add/get-export! bkeep obj)
+  (-> bookkeeper? any/c integer?)
   'TODO)
 
 ;;; Question making and resolution
@@ -47,14 +49,14 @@
 ;; when it comes in (that's all we actually care about, since those who
 ;; want the promise refr should already be able to get it).
 ;; Returns the slot id.
-(define/contract (bookkeeping-add/get-question! bkeep resolver-ref)
-  (-> bookkeeping? live-refr? live-refr?
+(define/contract (bookkeeper-add/get-question! bkeep resolver-ref)
+  (-> bookkeeper? live-refr? live-refr?
       integer?)
   'TODO)
 
 ;; Incoming resolution to this question
-(define/contract (bookkeeping-resolve-question! bkeep slot-id resolution)
-  (-> bookkeeping? integer? any/c
+(define/contract (bookkeeper-resolve-question! bkeep slot-id resolution)
+  (-> bookkeeper? integer? any/c
       any/c)
   'TODO)
 
@@ -66,13 +68,13 @@
 ;;; the answer yet by this point, but we need to spawn a resolver-like
 ;;; object that can give us the answer we need.
 ;;; What we return is a sealer that's allowed to provide the answer.
-(define/contract (bookkeeping-answer-add/get-answer-id! bkeep slot-id)
-  (-> bookkeeping? integer?
+(define/contract (bookkeeper-answer-add/get-answer-id! bkeep slot-id)
+  (-> bookkeeper? integer?
       any/c) ; the sealer, but we don't have a good "type" for this
   'TODO)
 
-(define/contract (bookkeeping-resolve-answer! bkeep slot-id sealed-resolution
+(define/contract (bookkeeper-resolve-answer! bkeep slot-id sealed-resolution
                                               send-resolution)
-  (-> bookkeeping? integer? any/c procedure?
+  (-> bookkeeper? integer? any/c procedure?
       any/c)
   'TODO)
