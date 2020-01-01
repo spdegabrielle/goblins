@@ -76,7 +76,10 @@
      [(foldr proc init)
       (foldr (match-lambda*
                [(list (vector refr ticky) prev)
-                (proc refr prev)])
+                ;; skip if dead (probably from a previous foldr)
+                (if ($ ticky 'dead?)
+                    prev
+                    (proc refr prev))])
              init current-ticked)]))
 
   (spawn ^ticker '()))
