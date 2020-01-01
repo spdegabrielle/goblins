@@ -67,6 +67,8 @@
          call $  ; $ is an alias
          spawn
 
+         define-spawned
+
          on
          <- <-p
          extract
@@ -858,6 +860,12 @@
    (lambda (kws kw-args constructor . args)
      (define sys (get-syscaller-or-die))
      (sys 'spawn constructor kws kw-args args))))
+
+(define-syntax (define-spawned stx)
+  (syntax-parse stx
+    [(_ id:id constructor args ...)
+     #'(define id
+         (spawn (procedure-rename constructor 'id) args ...))]))
 
 (define (on id-refr [on-fulfilled #f]
             #:catch [on-broken #f]
