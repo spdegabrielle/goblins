@@ -1270,8 +1270,11 @@
 
 ;; A simple turn-mutable cell
 
+;; Constructor for a cell.  Takes an optional initial value, defaults
+;; to false.
 (define (^cell bcom [val #f])
   (case-lambda
+    ;; Called with no arguments; return the current value
     [() val]
     [(new-val)
      (bcom (^cell bcom new-val))]))
