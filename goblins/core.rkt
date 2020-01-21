@@ -198,17 +198,20 @@
 
 (define (make-become-sealer-triplet)
   (define-values (struct:seal make-seal sealed? seal-ref seal-set!)
-    (make-struct-type 'become #f 1 0))
-  (define become
+    (make-struct-type 'become #f 2 0))
+  (define (become new-handler [return-val (void)])
+    (make-seal new-handler return-val))
+  (define unseal-become-handler
     (procedure-rename
-     (make-keyword-procedure
-      (lambda (kws kw-args new-handler)
-        (make-seal new-handler)))
-     'become))
-  (define unseal-handler
-    (make-struct-field-accessor seal-ref 0))
-  (define (unseal sealed-become)
-    (unseal-handler sealed-become))
+     (make-struct-field-accessor seal-ref 0)
+     'unseal-become-handler))
+  (define unseal-become-return-val
+    (procedure-rename
+     (make-struct-field-accessor seal-ref 1)
+     'unseal-become-return-val))
+  (define (unseal sealed)
+    (values (unseal-become-handler sealed)
+            (unseal-become-return-val sealed)))
   (values become unseal sealed?))
 
 ;;; Actormaps, whactormaps and transactormaps
@@ -514,20 +517,14 @@
        ;; against a local actor will not be tail recursive.
        ;; TODO: We need to document that.
        (define-values (new-handler return-val)
-         (call-with-values
-          (λ ()
-            (keyword-apply actor-handler kws kw-args args))
-          (match-lambda*
-            ;; Two values: both a becoming-this object and a value to
-            ;;   return
-            [(list (? become? becoming) val)
-             (values (become-unsealer becoming) val)]
-            ;; Just a becoming-this object
-            [(list (? become? becoming))
-             (values (become-unsealer becoming) (void))]
-            ;; Any other value
-            [(list val)
-             (values #f val)])))
+         (let ([returned (keyword-apply actor-handler kws kw-args
+                                        args)])
+           (if (become? returned)
+               ;; The unsealer unseals both the handler and return-value anyway
+               (become-unsealer returned)
+               ;; In this case, we're not becoming anything, so just give us
+               ;; the return-val
+               (values #f returned))))
 
        ;; if a new handler for this actor was specified,
        ;; let's replace it
@@ -887,8 +884,7 @@
         (procedure-rename
          (lambda (bcom)
            (lambda args
-             (values (bcom already-ran)
-                     (apply obj args))))
+             (bcom already-ran (apply obj args))))
          proc-name))]
       ;; If it's #f, leave it as #f
       [#f #f]
@@ -1168,8 +1164,8 @@
   (define am (make-whactormap))
 
   (define ((counter bcom n))
-    (values (bcom (counter bcom (add1 n)))
-            n))
+    (bcom (counter bcom (add1 n))
+          n))
 
   ;; can actors update themselves?
   (define ctr-refr
@@ -1199,9 +1195,9 @@
   (define ((^friend-spawner bcom) friend-name)
     (define (^a-friend bcom)
       (define ((next called-times))
-        (values (bcom (next (add1 called-times)))
-                (format "Hello!  My name is ~a and I've been called ~a times!"
-                        friend-name called-times)))
+        (bcom (next (add1 called-times))
+              (format "Hello!  My name is ~a and I've been called ~a times!"
+                      friend-name called-times)))
       (next 1))
     (spawn ^a-friend))
   (define fr-spwn (actormap-spawn! am ^friend-spawner))
