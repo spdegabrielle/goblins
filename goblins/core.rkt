@@ -253,14 +253,14 @@
 
 (define (snapshot-whactormap whactormap)
   (for/fold ([new-hasheq #hasheq()])
-            ([(key val) (whactormap-wht whactormap)])
-    (hash-set new-hasheq key (ephemeron-value val #f key))))
+            ([(key eph-val) (whactormap-wht whactormap)])
+    (hash-set new-hasheq key eph-val)))
 
 (define (hasheq->whactormap ht #:vat-connector [vat-connector #f])
   (define wht
     (make-weak-hasheq))
-  (for ([(key val) ht])
-    (hash-set! wht key (make-ephemeron key val)))
+  (for ([(key eph-val) ht])
+    (hash-set! wht key eph-val))
   (whactormap wht vat-connector))
 
 ;;; Now the transactional stuff
