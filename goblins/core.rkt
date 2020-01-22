@@ -42,7 +42,9 @@
   actormap-ref
   actormap-set!
 
-  transactormap-set! transactormap-ref)
+  transactormap-set! transactormap-ref
+
+  actormap-vat-connector)
 
 ;; The operating-on-actormap main functions
 (provide actormap-turn
