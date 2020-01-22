@@ -244,13 +244,7 @@
 (define (whactormap-ref whactormap key [dflt #f])
   (define val
     (hash-ref (whactormap-wht whactormap) key #f))
-  ;; TODO: we should use the retain argument instead, once that becomes available
-  ;;   https://github.com/racket/racket/commit/99feebf070d0dd3e62c697814e0a42508f7995ee
-  (or (and val (match (ephemeron-value val key)
-                 ;; workaround until retain-v becomes broadly available
-                 [(? (lambda (v) (eq? key v)))
-                  #f]
-                 [result result]))
+  (or (and val (ephemeron-value val #f key))
       dflt))
 
 (define (whactormap-set! whactormap key val)
@@ -260,13 +254,13 @@
 (define (snapshot-whactormap whactormap)
   (for/fold ([new-hasheq #hasheq()])
             ([(key val) (whactormap-wht whactormap)])
-    (hash-set new-hasheq key val)))
+    (hash-set new-hasheq key (ephemeron-value val #f key))))
 
 (define (hasheq->whactormap ht #:vat-connector [vat-connector #f])
   (define wht
     (make-weak-hasheq))
   (for ([(key val) ht])
-    (hash-set! wht key val))
+    (hash-set! wht key (make-ephemeron key val)))
   (whactormap wht vat-connector))
 
 ;;; Now the transactional stuff
