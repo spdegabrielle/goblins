@@ -260,11 +260,12 @@
             ([(key val) (whactormap-wht whactormap)])
     (hash-set new-hasheq key val)))
 
-(define (hasheq->whactormap ht)
-  (define whactormap (make-whactormap))
+(define (hasheq->whactormap ht #:vat-connector [vat-connector #f])
+  (define wht
+    (make-weak-hasheq))
   (for ([(key val) ht])
-    (actormap-set! whactormap key val))
-  whactormap)
+    (hash-set! wht key val))
+  (whactormap wht vat-connector))
 
 ;;; Now the transactional stuff
 
