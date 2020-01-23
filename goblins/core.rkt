@@ -1269,6 +1269,8 @@
   (case-lambda
     ;; Called with no arguments; return the current value
     [() val]
+    ;; Called with one argument, we become a version of ourselves
+    ;; with this new value
     [(new-val)
      (bcom (^cell bcom new-val))]))
 
