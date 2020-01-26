@@ -5,6 +5,7 @@
 ;; 'die the actor will not be queued for ticking again.
 
 (require "../core.rkt"
+         "cell.rkt"
          racket/match)
 
 (provide spawn-ticker-pair)

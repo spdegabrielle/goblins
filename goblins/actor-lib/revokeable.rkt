@@ -3,6 +3,7 @@
 (provide spawn-revokeable)
 
 (require "../core.rkt"
+         "cell.rkt"
          "select-swear.rkt")
 
 (define (spawn-revokeable target)

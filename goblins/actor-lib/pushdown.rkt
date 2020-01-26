@@ -3,6 +3,7 @@
 (provide spawn-pushdown-pair)
 
 (require "../core.rkt"
+         "cell.rkt"
          "select-swear.rkt"
          racket/match)
 

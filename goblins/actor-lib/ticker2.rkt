@@ -4,6 +4,7 @@
 ;; can be ticked on eg a game loop.
 
 (require "../core.rkt"
+         "cell.rkt"
          "methods.rkt"
          racket/match)
 
