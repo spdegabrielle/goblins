@@ -494,45 +494,47 @@
   ;; By this point, update-refr should be de-symlink'ed
   (define (__really-do-call update-refr mactor
                             kws kw-args args)
-    (match mactor
-      [(? mactor:local-actor?)
-       (define actor-handler
-         (mactor:local-actor-handler mactor))
-       (define become?
-         (mactor:local-actor-become? mactor))
-       (define become-unsealer
-         (mactor:local-actor-become-unsealer mactor))
+    (call-with-continuation-barrier
+     (λ ()
+       (match mactor
+         [(? mactor:local-actor?)
+          (define actor-handler
+            (mactor:local-actor-handler mactor))
+          (define become?
+            (mactor:local-actor-become? mactor))
+          (define become-unsealer
+            (mactor:local-actor-become-unsealer mactor))
 
-       ;; I guess watching for this guarantees that an immediate call
-       ;; against a local actor will not be tail recursive.
-       ;; TODO: We need to document that.
-       (define-values (new-handler return-val)
-         (let ([returned (keyword-apply actor-handler kws kw-args
-                                        args)])
-           (if (become? returned)
-               ;; The unsealer unseals both the handler and return-value anyway
-               (become-unsealer returned)
-               ;; In this case, we're not becoming anything, so just give us
-               ;; the return-val
-               (values #f returned))))
+          ;; I guess watching for this guarantees that an immediate call
+          ;; against a local actor will not be tail recursive.
+          ;; TODO: We need to document that.
+          (define-values (new-handler return-val)
+            (let ([returned (keyword-apply actor-handler kws kw-args
+                                           args)])
+              (if (become? returned)
+                  ;; The unsealer unseals both the handler and return-value anyway
+                  (become-unsealer returned)
+                  ;; In this case, we're not becoming anything, so just give us
+                  ;; the return-val
+                  (values #f returned))))
 
-       ;; if a new handler for this actor was specified,
-       ;; let's replace it
-       (when new-handler
-         (actormap-set! actormap update-refr
-                        (mactor:local-actor
-                         new-handler
-                         (mactor:local-actor-become mactor)
-                         (mactor:local-actor-become-unsealer mactor)
-                         (mactor:local-actor-become? mactor))))
+          ;; if a new handler for this actor was specified,
+          ;; let's replace it
+          (when new-handler
+            (actormap-set! actormap update-refr
+                           (mactor:local-actor
+                            new-handler
+                            (mactor:local-actor-become mactor)
+                            (mactor:local-actor-become-unsealer mactor)
+                            (mactor:local-actor-become? mactor))))
 
-       return-val]
-      ;; If it's an encased value, "calling" it just returns the
-      ;; internal value.
-      [(? mactor:encased?)
-       (mactor:encased-val mactor)]
-      [_ (error 'not-callable
-                "Not an encased or live-actor mactor: ~a" mactor)]))
+          return-val]
+         ;; If it's an encased value, "calling" it just returns the
+         ;; internal value.
+         [(? mactor:encased?)
+          (mactor:encased-val mactor)]
+         [_ (error 'not-callable
+                   "Not an encased or live-actor mactor: ~a" mactor)]))))
 
   ;; call actor's handler
   (define _call
