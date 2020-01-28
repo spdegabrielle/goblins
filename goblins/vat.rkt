@@ -299,8 +299,8 @@
    'hello)
 
   (define ((^ctr bcom [n 0]))
-    (values (bcom (^ctr bcom (add1 n)))
-            n))
+    (bcom (^ctr bcom (add1 n))
+          n))
   (define a-ctr
     (a-vat 'spawn ^ctr))
   (check-equal? (a-vat 'call a-ctr) 0)
