@@ -475,6 +475,41 @@ procedure, and could have easily rewritten the =^counter= and =^cell=
 versions like so:
 
 #+BEGIN_SRC racket
+(define (^imperative-friend bcom my-name)
+  (define greet-count
+    0)
+  (define recent-friend
+    #f)
+  (methods
+   ;; Greet the user using their name
+   [(greet your-name)
+    ;; Increment count by one, since we were just called.
+    ;; The counter starts at 0 so this will be correct.
+    (set! greet-count (add1 greet-count))
+    ;; Who our friend was last time
+    (define last-friend-name
+      recent-friend)
+    ;; But now let's set the recent friend to be this name
+    (set! recent-friend your-name)
+    (if last-friend-name
+        (format "Hello ~a, my name is ~a and I've greeted ~a times (last by ~a)!" 
+                your-name my-name greet-count last-friend-name)
+        (format "Hello ~a, my name is ~a and I've greeted ~a times!" 
+                your-name my-name greet-count))]
+   ;; return what our name is
+   [(name)
+    my-name]
+   ;; check how many times we've greeted, without
+   ;; incrementing it
+   [(greet-count)
+    greet-count]
+   [(recent-friend)
+    recent-friend]))
+#+END_SRC
+
+Usage is exactly the ssame:
+
+#+BEGIN_SRC racket
 > (define alice6
     (a-vat 'spawn ^imperative-friend "Alice"))
 > (a-vat 'call alice6 'greet "Chris")
@@ -485,7 +520,7 @@ versions like so:
 "Hello Carol, my name is Alice and I've greeted 3 times (last by Carl)!"
 #+END_SRC
 
-This code looks mostly the same, and indeed maybe even a little
+This code looks mostly the same too, and indeed maybe even a little
 simpler with =set!= (no mucking around with that =$= malarky).
 
 Let's introduce a couple of bugs into both the cell-using and
