@@ -14,7 +14,7 @@
          crypto
          crypto/private/common/base256)
 
-(struct cmd-external-spawn (actor-handler return-ch))
+(struct cmd-external-spawn (kws kw-args constructor args return-ch))
 (struct cmd-<- (msg))
 (struct cmd-<-p (msg return-ch))
 (struct cmd-call (to-refr kws kw-args args return-ch))
@@ -150,13 +150,13 @@
                 (schedule-local-messages to-near)
                 (schedule-remote-messages to-far)
                 (lp)]
-               [(cmd-external-spawn actor-handler return-ch)
+               [(cmd-external-spawn kws kw-args constructor args return-ch)
                 (with-handlers ([any/c
                                  (lambda (err)
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define refr
-                    (actormap-spawn! actormap actor-handler))
+                    (keyword-apply actormap-spawn! kws kw-args actormap constructor args))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
                [(cmd-<- msg)
@@ -203,14 +203,16 @@
   (define (is-running?)
     running?)
 
-  (define (_spawn actor-handler
-                  [debug-name (object-name actor-handler)])
-    (forbid-internal-actor-call)
-    (define return-ch
-      (make-channel))
-    (async-channel-put vat-channel
-                       (cmd-external-spawn actor-handler return-ch))
-    (sync-return-ch return-ch))
+  (define _spawn
+    (make-keyword-procedure
+     (λ (kws kw-args constructor . args)
+       (forbid-internal-actor-call)
+       (define return-ch
+         (make-channel))
+       (async-channel-put vat-channel
+                          (cmd-external-spawn kws kw-args constructor
+                                              args return-ch))
+       (sync-return-ch return-ch))))
 
   ;; TODO: we need _<- and _<-p ???
   ;;   I guess with external vats, they will provide their own
