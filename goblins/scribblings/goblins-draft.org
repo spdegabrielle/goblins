@@ -75,11 +75,556 @@ is already all the security system we need).
    "Spritely Dungeon" will help close the loop on ocap security for
    Racket.
 
+* A tutorial
 
-* A brief tutorial
+** Vats, actors, spawning, and immediate calls
 
+Let's open a Racket REPL and import Goblins:
 
+#+BEGIN_SRC racket
+(require goblins)
+#+END_SRC
 
+First we're going to need something to store our objects in.
+We'll boot up an event loop, called a "vat" (TODO: explain why it's
+called that), which can manage our objects.
+
+#+BEGIN_SRC racket
+(define a-vat
+  (make-vat))
+#+END_SRC
+
+Our vat is currently lonely... nobody lives in it!
+Let's make a friend.
+First we'll need a friend constructor:
+
+#+BEGIN_SRC racket
+;; The ^ is conventionally called a "hard hat" in Goblins; it means
+;; this is an object constructor.
+;; Every constructor takes a bcom argument, the rest of them are
+;; passed in from the spawn invocation.
+(define (^friend bcom my-name)
+  ;; This is the initial handler procedure.
+  (lambda (your-name)
+    (format "Hello ~a, my name is ~a!" your-name my-name)))
+#+END_SRC
+
+The outer procedure is the constructor; all it really does is return
+another procedure which is the handler.
+
+Let's make a friend and call her Alice.
+
+#+BEGIN_SRC racket
+(define alice
+  (a-vat 'spawn ^friend "Alice"))
+#+END_SRC
+
+(Normally in a Goblins program, we can just spawn and talk to a Goblins
+object directly using the =spawn=, =$=, and =<-= operators directly.
+However we're kind of "bootstrapping the world" here, so we need the
+vat's help to do that.)
+
+Here the arguments to the spawn method are ^friend, which is the
+constructor procedure we are using, and the argument "Alice", which
+becomes bound to =my-name=.
+(The =bcom= argument is implicitly provided by Goblins; we'll ignore
+it for right now.)
+
+If we look at Alice in the REPL, we'll see that what we're really
+holding onto is a "live reference" to Alice.
+
+#+BEGIN_SRC racket
+> alice
+#<live-refr ^friend>
+#+END_SRC
+
+Now we'd like to talk to Alice.
+For now let's use the "call" method on our vat:
+
+#+BEGIN_SRC racket
+> (a-vat 'call alice "Chris")
+"Hello Chris, my name is Alice!"
+#+END_SRC
+
+If we look at our =^friend= procedure again, this should make a lot of
+sense; the inner lambda is being evaluated with "Chris" being passed in
+for =your-name=.
+The returned value is just the result.
+
+Maybe we'd like to be greeted the same way we have been by our friend
+sometimes, but other times we'd like to just find out what our
+friend's name is.
+It would be nice to have different "methods" we could call, and in
+fact, Goblins comes with a convenient =methods= macro:
+
+#+BEGIN_SRC racket
+(define (^methods-friend bcom my-name)
+  (methods
+   ;; Greet the user using their name
+   [(greet your-name)
+    (format "Hello ~a, my name is ~a!" your-name my-name)]
+   ;; return what our name is
+   [(name)
+    my-name]))
+#+END_SRC
+
+Now let's spawn an alice2 that uses =^methods-friend=:
+
+#+BEGIN_SRC racket
+(define alice2
+  (a-vat 'spawn ^methods-friend "Alice"))
+#+END_SRC
+
+Now we can call each method separately:
+
+#+BEGIN_SRC racket
+> (a-vat 'call alice2 'name)
+"Alice"
+> (a-vat 'call alice2 'greet "Chris")
+"Hello Chris, my name is Alice!"
+#+END_SRC
+
+(As a side note, if you're thinking that it would look nicer if this
+looked like:)
+
+#+BEGIN_SRC racket
+> (a-vat.call alice2.name)
+"Alice"
+> (a-vat.call alice2.greet "Chris")
+"Hello Chris, my name is Alice!"
+#+END_SRC
+
+(... you're right and a =#lang= will provided in the future for such
+aesthetic improvement which expands to the former syntax.)
+
+What kind of magic is this methods thing?
+Well actually it's barely any magic at all.
+Methods just returns a procedure that dispatches on the first argument,
+a symbol, to one of several procedures.
+We could have just as well written methods-friend like so:
+
+#+BEGIN_SRC racket
+  (define (^match-friend bcom my-name)
+    (match-lambda*
+     ;; Greet the user using their name
+     [(list 'greet your-name)
+      (format "Hello ~a, my name is ~a!" your-name my-name)]
+     ;; return what our name is
+     [(list 'name)
+      my-name]))
+#+END_SRC
+
+But it's a lot nicer to use =methods=.
+But the key thing to realize is that =methods= just itself returns
+another procedure.
+
+Maybe we'd like to keep track of how many times our friend has been
+called.
+It might be helpful to have some kind of helper object which can do
+that.
+What if we made a counter?
+
+#+BEGIN_SRC racket
+  (define (^counter bcom)
+    (define (next count)
+      (methods
+       ;; return the current count
+       [(count)
+        count]
+       ;; Add one to the current counter
+       [(add1)
+        ;; Become the next version of ourselves,
+        ;; with count incremented
+        (bcom (next (add1 count)))]))
+    ;; We'll start at 0.
+    (next 0))
+#+END_SRC
+
+Now let's spawn and poke at an instance of that counter a bit:
+
+#+BEGIN_SRC racket
+> (define a-counter
+    (a-vat 'spawn ^counter))
+> (a-vat 'call a-counter 'count)
+0
+> (a-vat 'call a-counter 'add1)
+> (a-vat 'call a-counter 'count)
+1
+> (a-vat 'call a-counter 'add1)
+> (a-vat 'call a-counter 'add1)
+> (a-vat 'call a-counter 'count)
+3
+#+END_SRC
+
+Now note that our counter actually appears to change... how does this
+happen?
+Let's look at the body of that add1 method in detail:
+
+#+BEGIN_SRC racket
+  (bcom (next (add1 count)))
+#+END_SRC
+
+=bcom= (pronounced "be-come" or "be-comm") is the capability to
+"become" a new version of ourselves; more explicitly, to give a
+procedure which will be called the /next time/ this object is invoked.
+=next= returns some methods wrapped up in a closure which knows
+what the count is; we're incrementing that by one from whatever
+we currently have.
+(Depending on how experienced you are with functional programming is
+how confusing this is likely to be.)
+
+Now that we have this counter, we can rewrite our friend to spawn it
+and use it:
+
+#+BEGIN_SRC racket
+(define (^counter-friend bcom my-name)
+  (define greet-counter
+    (spawn ^counter))
+  (methods
+   ;; Greet the user using their name
+   [(greet your-name)
+    ;; Increment count by one, since we were just called.
+    ;; The counter starts at 0 so this will be correct.
+    ($ greet-counter 'add1)
+    (define greet-count
+      ($ greet-counter 'count))
+    (string-append "Hello " your-name
+                   ", my name is " my-name
+                   " and I've greeted "
+                   (number->string greet-count)
+                   " times!")]
+   ;; return what our name is
+   [(name)
+    my-name]
+   ;; check how many times we've greeted, without
+   ;; incrementing it
+   [(greet-count)
+    ($ greet-counter 'count)]))
+#+END_SRC
+
+You'll observe that there was no need to go through the vat here,
+our object was able to use =spawn= and =$= (which is pronounced "call",
+"immediate call", or "money call") directly.
+That's because our actor is operating within a goblins context, so
+there's no reason to do so by bootstrapping through the vat (indeed,
+trying to do so would cause an exception to be raised).
+
+Now let's give it a try:
+
+#+BEGIN_SRC racket
+> (define alice3
+    (a-vat 'spawn ^counter-friend "Alice"))
+> (a-vat 'call alice3 'greet "Chris")
+"Hello Chris, my name is Alice and I've greeted 1 times!"
+> (a-vat 'call alice3 'greet "Chris")
+"Hello Chris, my name is Alice and I've greeted 2 times!"
+> (a-vat 'call alice3 'greet-count)
+2
+> (a-vat 'call alice3 'greet "Chris")
+"Hello Chris, my name is Alice and I've greeted 3 times!"
+> (a-vat 'call alice3 'greet-count)
+3
+#+END_SRC
+
+Perhaps we'd like to have our friend remember the last person she
+was called by.
+It would be nice if there were something along the lines of a mutable
+variable we could change.
+In fact there is, and it's called a cell.
+When called with no arguments, a cell returns its current value.
+When called with one argument, a cell replaces its current value with
+the one we have provided:
+
+#+BEGIN_SRC racket
+> (require goblins/actor-lib/cell)
+> (define treasure-chest
+    (a-vat 'spawn ^cell 'gold))
+> (a-vat 'call treasure-chest)
+'gold
+> (a-vat 'call treasure-chest 'flaming-sword)
+> (a-vat 'call treasure-chest)
+'flaming-sword
+#+END_SRC
+
+A fun exercise is to try to write your own cell.
+Here is one way:
+
+#+BEGIN_SRC racket
+;; Constructor for a cell.  Takes an optional initial value, defaults
+;; to false.
+(define (^our-cell bcom [val #f])
+  (case-lambda
+    ;; Called with no arguments; return the current value
+    [() val]
+    ;; Called with one argument, we become a version of ourselves
+    ;; with this new value
+    [(new-val)
+     (bcom (^our-cell bcom new-val))]))
+#+END_SRC
+
+Of course, you could also have a cell that instead has ='get= and
+='set= methods.
+This is left as an exercise for the reader.
+
+Now that we have cells, we can use them:
+
+#+BEGIN_SRC racket
+(define (^memory-friend bcom my-name)
+  (define greet-counter
+    (spawn ^counter))
+  (define recent-friend
+    (spawn ^cell #f))
+  (methods
+   ;; Greet the user using their name
+   [(greet your-name)
+    ;; Increment count by one, since we were just called.
+    ;; The counter starts at 0 so this will be correct.
+    ($ greet-counter 'add1)
+    (define greet-count
+      ($ greet-counter 'count))
+    ;; Who our friend was last time
+    (define last-friend-name
+      ($ recent-friend))
+    ;; But now let's set the recent friend to be this name
+    ($ recent-friend your-name)
+    (if last-friend-name
+        (format "Hello ~a, my name is ~a and I've greeted ~a times (last by ~a)!" 
+                your-name my-name greet-count last-friend-name)
+        (format "Hello ~a, my name is ~a and I've greeted ~a times!" 
+                your-name my-name greet-count))]
+   ;; return what our name is
+   [(name)
+    my-name]
+   ;; check how many times we've greeted, without
+   ;; incrementing it
+   [(greet-count)
+    ($ greet-counter 'count)]))
+#+END_SRC
+
+Let's try interacting with this friend:
+
+#+BEGIN_SRC racket
+> (define alice4
+    (a-vat 'spawn ^memory-friend "Alice"))
+> (a-vat 'call alice4 'greet "Chris")
+"Hello Chris, my name is Alice and I've greeted 1 times!"
+> (a-vat 'call alice4 'greet "Carl")
+"Hello Carl, my name is Alice and I've greeted 2 times (last by Chris)!"
+> (a-vat 'call alice4 'greet "Carol")
+"Hello Carol, my name is Alice and I've greeted 3 times (last by Carl)!"
+#+END_SRC
+
+Whew... if we look at that code for the =greet= code, it sure looks
+fairly imperative, though.
+We pulled out the value from =recent-friend= before we changed
+it.
+If we had accidentlaly put the definition for =last-friend-name=
+after setting =recent-friend= to =your-name=, we might have resulted in
+a classic imperative error and =last-friend-name= would be set to the
+new one instead of the old one!
+
+Well, it turns out that =bcom= can take a second argument which
+provides a value it would like to return in addition to specifying the
+new version of itself it would like to become.
+This means that we could rewrite =^memory-friend= like so with no
+behavioral differences:
+
+#+BEGIN_SRC racket
+(define (^memory-friend2 bcom my-name)
+  (define (next greet-count last-friend-name)
+    (methods
+     ;; Greet the user using their name
+     [(greet your-name)
+      (define greeting
+        (if last-friend-name
+            (format "Hello ~a, my name is ~a and I've greeted ~a times (last by ~a)!" 
+                    your-name my-name greet-count last-friend-name)
+            (format "Hello ~a, my name is ~a and I've greeted ~a times!" 
+                    your-name my-name greet-count)))
+      (bcom (next (add1 greet-count)
+                  your-name)
+            greeting)]
+     ;; return what our name is
+     [(name)
+      my-name]
+     ;; check how many times we've greeted, without
+     ;; incrementing it
+     [(greet-count)
+      greet-count]))
+  (next 1 #f))
+#+END_SRC
+
+#+BEGIN_SRC racket
+> (define alice5
+    (a-vat 'spawn ^memory-friend2 "Alice"))
+> (a-vat 'call alice5 'greet "Chris")
+"Hello Chris, my name is Alice and I've greeted 1 times!"
+> (a-vat 'call alice5 'greet "Carl")
+"Hello Carl, my name is Alice and I've greeted 2 times (last by Chris)!"
+> (a-vat 'call alice5 'greet "Carol")
+"Hello Carol, my name is Alice and I've greeted 3 times (last by Carl)!"
+#+END_SRC
+
+This certainly looks more functional, and we have some freedom of how
+we'd like to implement it.
+It also leads to the observation that the behavior of objects in
+respect to updating themselves appears to be very functional (returning
+a new version of ourselves and maybe a value), whereas calling other
+objects appears to be very imperative.
+
+So what is the point of cells and counters?
+After all, if we're using =#lang racket= we have access to the =set!=
+procedure, and could have easily rewritten the =^counter= and =^cell=
+versions like so:
+
+#+BEGIN_SRC racket
+> (define alice6
+    (a-vat 'spawn ^imperative-friend "Alice"))
+> (a-vat 'call alice6 'greet "Chris")
+"Hello Chris, my name is Alice and I've greeted 1 times!"
+> (a-vat 'call alice6 'greet "Carl")
+"Hello Carl, my name is Alice and I've greeted 2 times (last by Chris)!"
+> (a-vat 'call alice6 'greet "Carol")
+"Hello Carol, my name is Alice and I've greeted 3 times (last by Carl)!"
+#+END_SRC
+
+This code looks mostly the same, and indeed maybe even a little
+simpler with =set!= (no mucking around with that =$= malarky).
+
+Let's introduce a couple of bugs into both the cell-using and
+the =set!= using imperative versions of these friends:
+
+#+BEGIN_SRC racket
+(define (^buggy-memory-friend bcom my-name)
+  (define greet-counter
+    (spawn ^counter))
+  (define recent-friend
+    (spawn ^cell #f))
+  (methods
+   ;; Greet the user using their name
+   [(greet your-name)
+    ;; Increment count by one, since we were just called.
+    ;; The counter starts at 0 so this will be correct.
+    ($ greet-counter 'add1)
+    (define greet-count
+      ($ greet-counter 'count))
+    ;; Who our friend was last time
+    (define last-friend-name
+      ($ recent-friend))
+    ;; But now let's set the recent friend to be this name
+    ($ recent-friend your-name)
+    (error "AHH! Throwing an error after I changed things!")
+    (if last-friend-name
+        (format "Hello ~a, my name is ~a and I've greeted ~a times (last by ~a)!" 
+                your-name my-name greet-count last-friend-name)
+        (format "Hello ~a, my name is ~a and I've greeted ~a times!" 
+                your-name my-name greet-count))]
+   ;; return what our name is
+   [(name)
+    my-name]
+   ;; check how many times we've greeted, without
+   ;; incrementing it
+   [(greet-count)
+    ($ greet-counter 'count)]))
+
+(define (^buggy-imperative-friend bcom my-name)
+  (define greet-count
+    0)
+  (define recent-friend
+    #f)
+  (methods
+   ;; Greet the user using their name
+   [(greet your-name)
+    ;; Increment count by one, since we were just called.
+    ;; The counter starts at 0 so this will be correct.
+    (set! greet-count (add1 greet-count))
+    ;; Who our friend was last time
+    (define last-friend-name
+      recent-friend)
+    ;; But now let's set the recent friend to be this name
+    (set! recent-friend your-name)
+    (error "AHH! Throwing an error after I changed things!")
+    (if last-friend-name
+        (format "Hello ~a, my name is ~a and I've greeted ~a times (last by ~a)!" 
+                your-name my-name greet-count last-friend-name)
+        (format "Hello ~a, my name is ~a and I've greeted ~a times!" 
+                your-name my-name greet-count))]
+   ;; return what our name is
+   [(name)
+    my-name]
+   ;; check how many times we've greeted, without
+   ;; incrementing it
+   [(greet-count)
+    greet-count]))
+#+END_SRC
+
+(Observe the =error= put after both of them changed =greet-count=
+and =recent-friend=.)
+
+Okay, first let's check the initial =greet-count=:
+
+#+BEGIN_SRC racket
+> (a-vat 'call buggy-gobliny-alice 'greet-count)
+0
+> (a-vat 'call buggy-imperative-alice 'greet-count)
+0
+#+END_SRC
+
+So far, so good.
+Now let's greet both of them:
+
+#+BEGIN_SRC racket
+> (a-vat 'call buggy-gobliny-alice 'greet "Chris")
+; AHH! Throwing an error after I changed things!
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:498:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:903:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:433:0 call-with-fresh-syscaller
+;  /gnu/store/xpivjjmjgcc3l3415dcvb4pm5xrbrm3i-racket-7.3/share/racket/collects/racket/match/compiler.rkt:507:40 f71
+> (a-vat 'call buggy-imperative-alice 'greet "Chris")
+; AHH! Throwing an error after I changed things!
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:498:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:903:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:433:0 call-with-fresh-syscaller
+;  /gnu/store/xpivjjmjgcc3l3415dcvb4pm5xrbrm3i-racket-7.3/share/racket/collects/racket/match/compiler.rkt:507:40 f71
+#+END_SRC
+
+Okay, so both of them threw the error.
+But what do you think the result of =greet-count= will be now?
+
+#+BEGIN_SRC racket
+goblins-tut.rkt> (a-vat 'call buggy-gobliny-alice 'greet-count)
+0
+goblins-tut.rkt> (a-vat 'call buggy-imperative-alice 'greet-count)
+1
+#+END_SRC
+
+Now this is definitely different!
+In the goblin'y example, by using goblin objects/actors, unhandled
+errors means that breakage is as if nothing ever occurred.
+We can log the error, but we won't mess up the rest of the system.
+With the imperative code which uses =set!=, the state of our system
+could become unintentionally corrupted and inconsistent.
+
+This is what we mean by Goblins being transactional: something that
+goes wrong need not be "committed" to the current state.
+This is important for systems like financial infrastructure.
+It turns out it also opens us up, in general, to becoming
+[[https://dustycloud.org/blog/goblins-time-travel-micropreview/][time wizards]].
+But more on that later.
+
+** Message passing, promises, and multiple vats
+
+*TODO: write this*
+
+** Going low-level: actormaps
+
+*TODO: write this*
+
+** Networked object interactions
+
+*Big ol' TODO here since we need to implement it, too!*
 
 * Core API
 
