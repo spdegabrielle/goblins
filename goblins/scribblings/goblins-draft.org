@@ -288,11 +288,8 @@ and use it:
     ($ greet-counter 'add1)
     (define greet-count
       ($ greet-counter 'count))
-    (string-append "Hello " your-name
-                   ", my name is " my-name
-                   " and I've greeted "
-                   (number->string greet-count)
-                   " times!")]
+    (format "Hello ~a, my name is ~a and I've greeted ~a times!" 
+            your-name my-name greet-count)]
    ;; return what our name is
    [(name)
     my-name]
