@@ -658,6 +658,10 @@ But more on that later.
 
 *Big ol' TODO here since we need to implement it, too!*
 
+** Advanced object patterns
+
+*TODO: write this*
+
 * Core API
 
 * Actormap API
