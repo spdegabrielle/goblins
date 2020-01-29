@@ -648,7 +648,81 @@ But more on that later.
 
 ** Message passing, promises, and multiple vats
 
+Remember simpler times, when friends mostly just greeted us hello?
+
+#+BEGIN_SRC racket
+(define (^friend bcom my-name)
+  (lambda (your-name)
+    (format "Hello ~a, my name is ~a!" your-name my-name)))
+
+(define alice
+  (a-vat 'spawn ^friend "Alice"))
+#+END_SRC
+
+We could of course make another friend that talks to Alice.
+
+#+BEGIN_SRC racket
+(define (^calls-friend bcom our-name)
+  (lambda (friend)
+    (define what-my-friend-said
+      ($ friend our-name))
+    (displayln (format "<~a>: I called my friend, and they said:"
+                       our-name))
+    (displayln (format "   \"~a\"" what-my-friend-said))))
+
+(define archie
+  (a-vat 'spawn ^chats-with-friend "Archie"))
+#+END_SRC
+
+Now Archie can talk to Alice:
+
+#+BEGIN_SRC racket
+> (a-vat 'call archie alice)
+<Archie>: I called my friend, and they said:
+   "Hello Archie, my name is Alice!"
+#+END_SRC
+
+Both Alice and Archie live in =a-vat=.
+But =a-vat= isn't the only vat in town.  One other such vat
+is =b-vat=, where Bob lives:
+
+#+BEGIN_SRC racket
+(define b-vat
+  (make-vat))
+
+(define bob
+  (b-vat 'spawn ^calls-friend "Bob"))
+#+END_SRC
+
+Obviously, sfince Bob is in =b-vat=, we bootstrap a message call to Bob
+from =b-vat=.
+But what do you think happens when Bob tries to call Alice?
+
+#+BEGIN_SRC racket
+> (b-vat 'call bob alice)
+; not-callable: Not in the same vat: #<live-refr ^friend>
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:542:5
+;  /home/cwebber/sandbox/goblins-tut.rkt:240:2
+;  /home/cwebber/devel/goblins/goblins/core.rkt:498:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:903:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:433:0 call-with-fresh-syscaller
+;  /gnu/store/xpivjjmjgcc3l3415dcvb4pm5xrbrm3i-racket-7.3/share/racket/collects/racket/match/compiler.rkt:507:40 f71
+#+END_SRC
+
+Oh no!
+It looks like Bob can't call Alice since they live in different
+places!
+Using the =$= operator performs a /synchronous/ call, but it's
+only safe to do synchronous calls for objects that are in the same
+vat.
+
+Fortunately there's something we can do: we can send a message from
+Bob to Alice.
+
+
 *TODO: write this*
+
 
 ** Going low-level: actormaps
 
