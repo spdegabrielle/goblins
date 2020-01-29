@@ -626,9 +626,9 @@ Okay, so both of them threw the error.
 But what do you think the result of =greet-count= will be now?
 
 #+BEGIN_SRC racket
-goblins-tut.rkt> (a-vat 'call buggy-gobliny-alice 'greet-count)
+> (a-vat 'call buggy-gobliny-alice 'greet-count)
 0
-goblins-tut.rkt> (a-vat 'call buggy-imperative-alice 'greet-count)
+> (a-vat 'call buggy-imperative-alice 'greet-count)
 1
 #+END_SRC
 
