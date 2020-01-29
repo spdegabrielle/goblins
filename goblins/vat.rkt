@@ -15,8 +15,8 @@
          crypto/private/common/base256)
 
 (struct cmd-external-spawn (kws kw-args constructor args return-ch))
-(struct cmd-<- (msg))
-(struct cmd-<-p (msg return-ch))
+(struct cmd-<-np (msg))
+(struct cmd-<- (msg return-ch))
 (struct cmd-call (to-refr kws kw-args args return-ch))
 (struct cmd-send-message (msg))
 (struct cmd-halt ())
@@ -159,7 +159,7 @@
                     (keyword-apply actormap-spawn! kws kw-args actormap constructor args))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
-               [(cmd-<- msg)
+               [(cmd-<-np msg)
                 (async-channel-put vat-channel
                                    (cmd-send-message msg))
                 (lp)]
@@ -214,14 +214,14 @@
                                               args return-ch))
        (sync-return-ch return-ch))))
 
-  ;; TODO: we need _<- and _<-p ???
+  ;; TODO: we need _<-np and _<- ???
   ;;   I guess with external vats, they will provide their own
   ;;   promise, so anyway we need a way to slot in a promise
-  (define _<-
+  (define _<-np
     (make-keyword-procedure
      (λ (kws kw-args to-refr . args)
        (async-channel-put vat-channel
-                          (cmd-<- (message to-refr #f kws kw-args args)))
+                          (cmd-<-np (message to-refr #f kws kw-args args)))
        (void))))
 
   (define _call
@@ -236,7 +236,7 @@
 
   (define (_handle-message msg)
     (async-channel-put vat-channel
-                       (cmd-<- msg))
+                       (cmd-<-np msg))
     (void))
 
   (define (_halt)
@@ -268,7 +268,7 @@
 
   (define-vat-dispatcher vat-dispatcher
     [spawn _spawn]
-    [<- _<-]
+    [<-np _<-np]
     [call _call]
     [vat-id _get-vat-id]
     [vat-private-key _get-vat-private-key]
@@ -309,18 +309,18 @@
   (check-equal? (a-vat 'call a-ctr) 1)
   (check-equal? (a-vat 'call a-ctr) 2)
   (check-equal? (a-vat 'call a-ctr) 3)
-  (a-vat '<- a-ctr)
+  (a-vat '<-np a-ctr)
   ;; race condition, but I mean, we're in trouble if that's failing :P
   (sleep 0.05)
   (check-equal? (a-vat 'call a-ctr) 5)
 
   (define pokes-ctr
-    (a-vat 'spawn (lambda _ (lambda _ (<- a-ctr)))))
+    (a-vat 'spawn (lambda _ (lambda _ (<-np a-ctr)))))
   (check-equal? (a-vat 'call a-ctr) 6)
   (a-vat 'call pokes-ctr)
   (sleep 0.05)
   (check-equal? (a-vat 'call a-ctr) 8)
-  (a-vat '<- pokes-ctr)
+  (a-vat '<-np pokes-ctr)
   (sleep 0.05)
   (check-equal? (a-vat 'call a-ctr) 10)
 
@@ -332,7 +332,7 @@
                                       (set! a-greeter-set-me "got it!")))))
   (define b-passoff (b-vat 'spawn (lambda (bcom)
                                     (lambda _
-                                      (<- a-greeter)))))
+                                      (<-np a-greeter)))))
   (b-vat 'call b-passoff)
   (sleep 0.05)
   (check-equal? a-greeter-set-me "got it!")
@@ -343,7 +343,7 @@
            (b-vat 'spawn
                   (lambda (bcom)
                     (lambda _
-                      (on (<-p friendo)
+                      (on (<- friendo)
                           (lambda (x)
                             (set! set-this (format "I got: ~a" x))))))))
     (sleep 0.05)
@@ -362,7 +362,7 @@
          (a-vat 'spawn
                 (lambda (bcom)
                   (lambda _
-                    (<- (<-p car-factory 'green))))))
+                    (<-np (<- car-factory 'green))))))
   (sleep 0.05)
   (check-equal? car-result-here
                 "The green car says: *vroom vroom*!"))

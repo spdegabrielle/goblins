@@ -10,14 +10,14 @@
 
 (define (^facet bcom wrap-me . methods)
   (define method-set (apply seteq methods))
-  (define $/<-p (select-$/<-p wrap-me))
+  (define $/<- (select-$/<- wrap-me))
   (make-keyword-procedure
    (lambda (kws kw-args . args)
      (match args
        [(cons (? symbol? method) args)
         (unless (set-member? method-set method)
           (error (format "Access to method ~a denied" method)))
-        (keyword-apply $/<-p kws kw-args wrap-me method args)]
+        (keyword-apply $/<- kws kw-args wrap-me method args)]
        [_ "Requires symbol-based method dispatch"]))))
 
 (module+ test

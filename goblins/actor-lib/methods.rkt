@@ -17,12 +17,12 @@
 
 (define/contract (make-extends-handler extend-refr)
   (-> refr? any/c)
-  (define $/<-p
-    (select-$/<-p extend-refr))
+  (define $/<-
+    (select-$/<- extend-refr))
   (define extends-handler
     (make-keyword-procedure
      (lambda (kws kw-args . args)
-       (keyword-apply $/<-p kws kw-args extend-refr args))))
+       (keyword-apply $/<- kws kw-args extend-refr args))))
   extends-handler)
 
 (define-syntax (methods stx)

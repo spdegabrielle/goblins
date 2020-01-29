@@ -72,7 +72,7 @@
          define-spawned
 
          on
-         <- <-p
+         <-np <-
          extract
 
          spawn-proc spawn-const)
@@ -471,8 +471,8 @@
            ['break-promise break-promise]
            ;; TODO: These are all variants of 'send-message.
            ;;   Shouldn't we collapse them?
+           ['<-np _<-np]
            ['<- _<-]
-           ['<-p _<-p]
            ['send-message _send-message]
            ['handle-message _handle-message]
            ['on _on]
@@ -581,7 +581,7 @@
        ;; in which case we just "pass on" the listeners.
        (define (inform-listeners)
          (for ([listener (mactor:local-promise-listeners promise-mactor)])
-           (<- listener 'fulfill val)))
+           (<-np listener 'fulfill val)))
 
        ;; Now we "become" that value!
        (match val
@@ -652,7 +652,7 @@
                            (mactor:broken problem))
        ;; Inform all listeners of the resolution
        (for ([listener (mactor:local-promise-listeners promise-mactor)])
-         (<- listener 'break problem))]
+         (<-np listener 'break problem))]
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
 
@@ -684,7 +684,7 @@
             (let ([promise-pipeline-helper
                    (lambda (bcom)
                      (lambda (send-to)
-                       (keyword-apply <-p kws kw-vals send-to args)))])
+                       (keyword-apply <- kws kw-vals send-to args)))])
               (_spawn promise-pipeline-helper '() '() '()))
             ;; Wait, what will this do for us?  Wouldn't it
             ;; just return another void?
@@ -710,13 +710,13 @@
       [_ (error 'vat-send-message
                 "Don't know how to send a message to: ~a" to-refr)]))
 
-  (define _<-
+  (define _<-np
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
        (_send-message kws kw-args to-refr #f args)
        (void))))
 
-  (define _<-p
+  (define _<-
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
        (match-define (list promise resolver)
@@ -753,14 +753,14 @@
                         return-p-resolver
                         (list val))
              (when on-finally
-               (<- on-finally))]
+               (<-np on-finally))]
             ;; There's no on-resolution, which means we can just fulfill
             ;; the promise immediately!
             [else
              (when on-finally
-               (<- on-finally))
+               (<-np on-finally))
              (when return-p-resolver
-               (<- return-p-resolver resolve-fulfill-command val))]))
+               (<-np return-p-resolver resolve-fulfill-command val))]))
     (define handle-fulfilled
       (handle-resolution on-fulfilled 'fulfill))
     (define handle-broken
@@ -824,17 +824,17 @@
 ;;; syscall external functions
 ;;; ==========================
 
+(define <-np
+  (make-keyword-procedure
+   (lambda (kws kw-args to-refr . args)
+     (define sys (get-syscaller-or-die))
+     (keyword-apply sys kws kw-args '<-np to-refr args))))
+
 (define <-
   (make-keyword-procedure
    (lambda (kws kw-args to-refr . args)
      (define sys (get-syscaller-or-die))
      (keyword-apply sys kws kw-args '<- to-refr args))))
-
-(define <-p
-  (make-keyword-procedure
-   (lambda (kws kw-args to-refr . args)
-     (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args '<-p to-refr args))))
 
 (define call
   (make-keyword-procedure
@@ -1395,7 +1395,7 @@
              #:finally
              (lambda ()
                ($ finally-cell #t)))
-         (apply <- a-resolver resolve-args)
+         (apply <-np a-resolver resolve-args)
          (list fulfilled-cell broken-cell finally-cell))))
     (map (lambda (cell)
            (actormap-peek actormap cell))
@@ -1414,21 +1414,21 @@
   (let ([what-i-got #f])
     (actormap-full-run!
      am (lambda ()
-          (on (<-p (spawn-const 'i-am-foo))
+          (on (<- (spawn-const 'i-am-foo))
               (lambda (v)
                 (set! what-i-got `(yeah ,v)))
               #:catch
               (lambda (e)
                 (set! what-i-got `(oh-no ,e))))))
     (test-equal?
-     "<-p returns a listen'able promise"
+     "<- returns a listen'able promise"
      what-i-got
      '(yeah i-am-foo)))
 
   (let ([what-i-got #f])
     (actormap-full-run!
      am (lambda ()
-          (on (<-p (spawn-proc
+          (on (<- (spawn-proc
                     (lambda _
                       (error "I am error"))))
               (lambda (v)
@@ -1438,7 +1438,7 @@
                 (set! what-i-got `(oh-no ,e)))))
      #:display-errors? #f)
     (test-equal?
-     "<-p promise breaks as expected"
+     "<- promise breaks as expected"
      (car what-i-got)
      'oh-no))
   
@@ -1446,7 +1446,7 @@
     (actormap-full-run!
      am (lambda ()
           (define foo (spawn-const 'i-am-foo))
-          (on (<-p (<-p (spawn-proc (lambda _ foo))))
+          (on (<- (<- (spawn-proc (lambda _ foo))))
               (lambda (v)
                 (set! what-i-got `(yeah ,v)))
               #:catch
@@ -1464,7 +1464,7 @@
             (spawn-proc
              (lambda _
                (error "I am error"))))
-          (on (<-p (<-p (spawn-proc (lambda _ fatal-foo))))
+          (on (<- (<- (spawn-proc (lambda _ fatal-foo))))
               (lambda (v)
                 (set! what-i-got `(yeah ,v)))
               #:catch
@@ -1486,7 +1486,7 @@
                                    (lambda (x)
                                      (* x 2)))))
           (define the-on-promise
-            (on (<-p doubler 3)
+            (on (<- doubler 3)
                 (lambda (x)
                   (format "got: ~a" x))
                 #:catch

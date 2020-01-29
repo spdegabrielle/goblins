@@ -7,12 +7,12 @@
 
 (define (^imply-method bcom wrap-me method
                        [debug-name '^imply-method])
-  (define $/<-p
-    (select-$/<-p wrap-me))
+  (define $/<-
+    (select-$/<- wrap-me))
   (procedure-rename
    (make-keyword-procedure
     (lambda (kws kw-args . args)
-      (keyword-apply $/<-p kws kw-args wrap-me method args)))
+      (keyword-apply $/<- kws kw-args wrap-me method args)))
    debug-name))
 
 (module+ test

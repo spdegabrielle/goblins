@@ -7,7 +7,7 @@
          "select-swear.rkt")
 
 (define (spawn-revokeable target)
-  (define $/<-p (select-$/<-p target))
+  (define $/<- (select-$/<- target))
   (define revoked?
     (spawn-cell #f))
   (define (^forwarder bcom)
@@ -15,7 +15,7 @@
      (lambda (kws kw-args . args)
        (when ($ revoked?)
          (error "Access revoked!"))
-       (keyword-apply $/<-p kws kw-args target args))))
+       (keyword-apply $/<- kws kw-args target args))))
   (define ((^revoker bcom))
     ($ revoked? #t))
   (list (spawn ^forwarder) (spawn ^revoker)))

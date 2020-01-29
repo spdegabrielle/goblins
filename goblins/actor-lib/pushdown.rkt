@@ -58,7 +58,7 @@
      (lambda (kws kw-args . args)
        (match ($ stack)
          [(cons stack-top rest-stack)
-          (keyword-apply run-$/<-p kws kw-args stack-top args)]))))
+          (keyword-apply run-$/<- kws kw-args stack-top args)]))))
   (list (spawn ^pd-stack) (spawn ^pd-forwarder)))
 
 (module+ test
