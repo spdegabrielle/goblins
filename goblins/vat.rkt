@@ -234,6 +234,11 @@
                           (cmd-call to-refr kws kw-args args return-ch))
        (sync-return-ch return-ch))))
 
+  (define (_run proc)
+    (define ((^_run bcom))
+      (proc))
+    (_call (_spawn ^_run)))
+
   (define (_handle-message msg)
     (async-channel-put vat-channel
                        (cmd-<-np msg))
@@ -273,7 +278,8 @@
     [vat-id _get-vat-id]
     [vat-private-key _get-vat-private-key]
     [halt _halt]
-    [is-running? is-running?])
+    [is-running? is-running?]
+    [run _run])
 
   (define actormap
     (make-whactormap #:vat-connector vat-connector))
@@ -339,13 +345,11 @@
 
   ;; basic inter-vat promise resolution
   (let ([set-this #f])
-    (b-vat 'call
-           (b-vat 'spawn
-                  (lambda (bcom)
-                    (lambda _
-                      (on (<- friendo)
-                          (lambda (x)
-                            (set! set-this (format "I got: ~a" x))))))))
+    (b-vat 'run
+           (lambda _
+             (on (<- friendo)
+                 (lambda (x)
+                   (set! set-this (format "I got: ~a" x))))))
     (sleep 0.05)
     (check-equal? set-this "I got: hello"))
 
@@ -358,11 +362,9 @@
     (spawn ^car))
   (define car-factory
     (a-vat 'spawn ^car-factory))
-  (a-vat 'call
-         (a-vat 'spawn
-                (lambda (bcom)
-                  (lambda _
-                    (<-np (<- car-factory 'green))))))
+  (a-vat 'run
+         (lambda _
+           (<-np (<- car-factory 'green))))
   (sleep 0.05)
   (check-equal? car-result-here
                 "The green car says: *vroom vroom*!"))
