@@ -15,7 +15,7 @@
          crypto/private/common/base256)
 
 (struct cmd-external-spawn (kws kw-args constructor args return-ch))
-(struct cmd-<-np (msg))
+(struct cmd-send-message (msg))
 (struct cmd-call (to-refr kws kw-args args return-ch))
 (struct cmd-receive-message (msg))
 (struct cmd-halt ())
@@ -158,7 +158,7 @@
                     (keyword-apply actormap-spawn! kws kw-args actormap constructor args))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
-               [(cmd-<-np msg)
+               [(cmd-send-message msg)
                 (async-channel-put vat-channel
                                    (cmd-receive-message msg))
                 (lp)]
@@ -220,7 +220,7 @@
     (make-keyword-procedure
      (λ (kws kw-args to-refr . args)
        (async-channel-put vat-channel
-                          (cmd-<-np (message to-refr #f kws kw-args args)))
+                          (cmd-send-message (message to-refr #f kws kw-args args)))
        (void))))
 
   (define _call
@@ -240,7 +240,7 @@
 
   (define (_handle-message msg)
     (async-channel-put vat-channel
-                       (cmd-<-np msg))
+                       (cmd-send-message msg))
     (void))
 
   (define (_halt)
