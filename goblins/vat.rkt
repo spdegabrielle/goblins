@@ -18,7 +18,7 @@
 (struct cmd-<-np (msg))
 (struct cmd-<- (msg return-ch))
 (struct cmd-call (to-refr kws kw-args args return-ch))
-(struct cmd-send-message (msg))
+(struct cmd-receive-message (msg))
 (struct cmd-halt ())
 
 (define eddsa-impl
@@ -118,7 +118,7 @@
                [(cons msg rest)
                 ;; Mildly more efficiently do this in reverse order
                 (schedule-local-messages rest)
-                (async-channel-put vat-channel (cmd-send-message msg))]))
+                (async-channel-put vat-channel (cmd-receive-message msg))]))
 
            (define schedule-remote-messages
              (match-lambda
@@ -137,7 +137,7 @@
              (match (async-channel-get vat-channel)
                ;; This is the actual thing this loop spends the most
                ;; time on, so it needs to go first
-               [(cmd-send-message msg)
+               [(cmd-receive-message msg)
                 (define-values (call-result
                                 transactormap
                                 to-near to-far)
@@ -161,7 +161,7 @@
                 (lp)]
                [(cmd-<-np msg)
                 (async-channel-put vat-channel
-                                   (cmd-send-message msg))
+                                   (cmd-receive-message msg))
                 (lp)]
                [(cmd-call to-refr kws kw-args args return-ch)
                 (with-handlers ([any/c
