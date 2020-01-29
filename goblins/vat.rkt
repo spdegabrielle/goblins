@@ -16,7 +16,6 @@
 
 (struct cmd-external-spawn (kws kw-args constructor args return-ch))
 (struct cmd-<-np (msg))
-(struct cmd-<- (msg return-ch))
 (struct cmd-call (to-refr kws kw-args args return-ch))
 (struct cmd-receive-message (msg))
 (struct cmd-halt ())
