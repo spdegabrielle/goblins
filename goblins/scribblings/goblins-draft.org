@@ -119,11 +119,6 @@ Let's make a friend and call her Alice.
   (a-vat 'spawn ^friend "Alice"))
 #+END_SRC
 
-(Normally in a Goblins program, we can just spawn and talk to a Goblins
-object directly using the =spawn=, =$=, and =<-= operators directly.
-However we're kind of "bootstrapping the world" here, so we need the
-vat's help to do that.)
-
 Here the arguments to the spawn method are ^friend, which is the
 constructor procedure we are using, and the argument "Alice", which
 becomes bound to =my-name=.
@@ -151,8 +146,25 @@ sense; the inner lambda is being evaluated with "Chris" being passed in
 for =your-name=.
 The returned value is just the result.
 
-Maybe we'd like to be greeted the same way we have been by our friend
-sometimes, but other times we'd like to just find out what our
+Normally in a Goblins program, we can just spawn and talk to a Goblins
+object directly using the =spawn= and =$= operators directly.
+However we're kind of "bootstrapping the world" here, so we need the
+vat's help to do that.
+However, we can see what it would look like to use them if we were in
+a "Goblins context" by using the vat's ='run= method which allows us
+to pass in an arbitrary thunk (aka "procedure with no arguments"):
+
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (define alyssa
+             (spawn ^friend "Alyssa"))
+           ($ alyssa "Ben")))
+"Hello Ben, my name is Alyssa!"
+#+END_SRC
+
+Anyway, maybe we'd like to be greeted the same way we have been by our
+friend sometimes, but other times we'd like to just find out what our
 friend's name is.
 It would be nice to have different "methods" we could call, and in
 fact, Goblins comes with a convenient =methods= macro:
