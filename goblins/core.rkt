@@ -75,7 +75,9 @@
          <-np <-
          extract
 
-         spawn-proc spawn-const)
+         spawn-proc spawn-const
+
+         spawn-promise-pair spawn-promise-cons)
 
 
 (module+ debug
@@ -719,7 +721,7 @@
   (define _<-
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
-       (match-define (list promise resolver)
+       (define-values (promise resolver)
          (spawn-promise-pair))
        (_send-message kws kw-args to-refr resolver args)
        promise)))
@@ -731,10 +733,10 @@
                #:catch [on-broken #f]
                #:finally [on-finally #f]
                #:return-promise? [return-promise? #f])
-    (match-define (list return-promise return-p-resolver)
+    (define-values (return-promise return-p-resolver)
       (if return-promise?
           (spawn-promise-pair)
-          (list #f #f)))
+          (values #f #f)))
 
     (define-values (subscribe-refr mactor)
       (actormap-symlink-ref actormap id-refr))
@@ -1310,12 +1312,15 @@
        (bcom already-resolved)]))
   (define resolver
     (spawn ^resolver))
-  (list promise resolver))
+  (values promise resolver))
+
+(define (spawn-promise-cons)
+  (call-with-values spawn-promise-pair cons))
 
 (module+ test
   (define bob (actormap-spawn! am ^cell "Hi, I'm bob!"))
-  (match-define (list bob-vow bob-resolver)
-    (actormap-run! am spawn-promise-pair))
+  (match-define (cons bob-vow bob-resolver)
+    (actormap-run! am spawn-promise-cons))
   (check-not-exn
    (lambda ()
      (actormap-poke! am bob-resolver 'fulfill bob)))
@@ -1345,8 +1350,8 @@
    on-resolved-bob-arg bob)
 
 
-  (match-define (list encase-me-vow encase-me-resolver)
-    (actormap-run! am spawn-promise-pair))
+  (match-define (cons encase-me-vow encase-me-resolver)
+    (actormap-run! am spawn-promise-cons))
   (actormap-poke! am encase-me-resolver 'fulfill 'encase-me)
   (test-eq?
    "actormap-extract on encased value"
@@ -1384,7 +1389,7 @@
          (define fulfilled-cell (spawn ^cell #f))
          (define broken-cell (spawn ^cell #f))
          (define finally-cell (spawn ^cell #f))
-         (match-define (list a-vow a-resolver)
+         (define-values (a-vow a-resolver)
            (spawn-promise-pair))
          (on a-vow
              (lambda args
