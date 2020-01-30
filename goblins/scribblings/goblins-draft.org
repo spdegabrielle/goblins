@@ -840,7 +840,7 @@ It turns out that on can take a =#:catch= argument:
                  (displayln (format "Got from Alice: ~a" alice-says)))
                #:catch
                (lambda (err)
-                 (displayln "Tried to talk to Alice and got an error :(")))))
+                 (displayln "Tried to talk to Alice, got an error :(")))))
 === While attempting to send message: ===
 ; AHH! Throwing an error after I changed things!
 ; Context:
@@ -848,7 +848,7 @@ It turns out that on can take a =#:catch= argument:
 ;  /home/cwebber/devel/goblins/goblins/core.rkt:966:3
 ;  /home/cwebber/devel/goblins/goblins/core.rkt:433:0 call-with-fresh-syscaller
 ;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
-Tried to talk to Alice and got an error :(
+Tried to talk to Alice, got an error :(
 #+END_SRC
 
 Now this is a little bit confusing to read because we saw two separate
