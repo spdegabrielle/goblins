@@ -696,6 +696,8 @@ But more on that later.
 
 ** Message passing, promises, and multiple vats
 
+*** The basics
+
 Remember simpler times, when friends mostly just greeted us hello?
 
 #+BEGIN_SRC racket
@@ -761,16 +763,178 @@ But what do you think happens when Bob tries to call Alice?
 Oh no!
 It looks like Bob can't call Alice since they live in different
 places!
-Using the =$= operator performs a /synchronous/ call, but it's
-only safe to do synchronous calls for objects that are in the same
-vat.
+From Archie's perspective, Alice was "near", aka "in the same vat".
+However from Bob's perspective Alice was "far", aka "in some other
+vat that isn't the one I'm in".
+This is a problem because using the =$= operator performs a
+/synchronous/ call, but it's only safe to do synchronous calls for
+objects that are near each other (in the same vat).
 
 Fortunately there's something we can do: we can send a message from
 Bob to Alice.
+But we've never seen message sending in Goblins before, so what is that?
 
+To prototype this, let's use the ='run= method on =b-vat=.
+Remember, we saw the ='run= method used before, where it looked like:
 
-*TODO: write this*
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (define alyssa
+             (spawn ^friend "Alyssa"))
+           ($ alyssa "Ben")))
+"Hello Ben, my name is Alyssa!"
+#+END_SRC
 
+So ='run= is just a way to run some arbitrary code in an actor context.
+That sounds good enough for playing around with sending messages.
+We can send messages with =<-= so let's try that:
+
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (<- alice "Brenda")))
+#<live-refr promised>
+#+END_SRC
+
+Ah ok... so what =<-= returns is something called a "Promise" which
+might eventually be resolved to something interesting.
+We want some way to be able to pull out that interesting thing.
+That's what =on= is for: it resolves promises and pulls out their
+resolved value:
+
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (on (<- alice "Brenda")
+               (lambda (alice-says)
+                 (displayln (format "Got from Alice: ~a" alice-says))))))
+Got from Alice: Hello Brenda, my name is Alice!
+#+END_SRC
+
+=<-= works just fine with far references, but it also works just fine
+with near references too!
+So we can run the same code in a-vat (where Alice is "near") and it
+works there too:
+
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (on (<- alice "Arthur")
+               (lambda (alice-says)
+                 (displayln (format "Got from Alice: ~a" alice-says))))))
+Got from Alice: Hello Arthur, my name is Alice!
+#+END_SRC
+
+So using =on= and =<-= seems to fit our needs.
+But what would have happened if Alice had thrown an error?
+Indeed, if we remember earlier we made =buggy-gobliny-alice=
+so we can test for that.
+It turns out that on can take a =#:catch= argument:
+
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (on (<- buggy-gobliny-alice 'greet "Brenda")
+               (lambda (alice-says)
+                 (displayln (format "Got from Alice: ~a" alice-says)))
+               #:catch
+               (lambda (err)
+                 (displayln "Tried to talk to Alice and got an error :(")))))
+=== While attempting to send message: ===
+; AHH! Throwing an error after I changed things!
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:498:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:966:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:433:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+Tried to talk to Alice and got an error :(
+#+END_SRC
+
+Now this is a little bit confusing to read because we saw two separate
+messages here... it's important to realize that due to the way our vat
+is configured, the exception backtrace being printed out is coming
+from =a-vat=, not from our code being evaluated in =b-vat=.
+We could configure the =a-vat= loop to do something different when it
+hits errors, but currently it prints exceptions so we can debug them.
+Anyway, so that's helpful information, but actually the place we caught
+the error in /our/ code above was in the =lambda= right after =#:catch=.
+As we can see, it did catch the error and we used that as an opportunity
+to print out a complaint.
+
+So =<-= makes a promise for us.
+We don't always need a promise; sometimes we're just calling something
+for its effects.
+For instance we might have a parrot that we like to encourage to say
+silly things, maybe on the screen or even out loud, but we don't care
+much about the result.
+In that case we can use =<-np= which sends a message but with "no
+promise":
+
+#+BEGIN_SRC racket
+> (define parrot
+    (a-vat 'spawn
+           (lambda (bcom)
+             (lambda (phrase)
+               ;; Since we're using displayln, we're printing this phrase
+               ;; rather than returning it as a string
+               (displayln (format "<parrot>: ~a... *SQWAK!*" phrase))))))
+> (b-vat 'run
+         (lambda ()
+           (<-np parrot "Polly wants a chiptune")))
+<parrot>: Polly wants a chiptune... *SQWAK!*
+#+END_SRC
+
+When we don't need a promise, =<-np= is an optimization that saves us
+from some promise overhead.
+But in most of our code, =<-= performs the more common case
+of returning a promise.
+
+Anyway, we should have enough information to make a better constructor
+for friends who are far away.
+Recall our definition of =^calls-friend=:
+
+#+BEGIN_SRC racket
+(define (^calls-friend bcom our-name)
+  (lambda (friend)
+    (define what-my-friend-said
+      ($ friend our-name))
+    (displayln (format "<~a>: I called my friend, and they said:"
+                       our-name))
+    (displayln (format "   \"~a\"" what-my-friend-said))))
+#+END_SRC
+
+.. we'll make a few changes and name our constructor =^messages-friend=:
+
+#+BEGIN_SRC racket
+(define (^messages-friend bcom our-name)
+  (lambda (friend)
+    (on (<- friend our-name)
+        (lambda (what-my-friend-said)
+          (displayln (format "<~a>: I messaged my friend, and they said:"
+                             our-name))
+          (displayln (format "   \"~a\"" what-my-friend-said)))
+        #:catch
+        (lambda (err)
+          (displayln
+           "I messaged my friend but they broke their response promise...")))))
+#+END_SRC
+
+(We even made it a bit more robust than our previous implementation
+by handling errors!)
+
+Now we can make a version of Bob that can do a better job of holding a
+conversation with his far-away friend Alice:
+
+#+BEGIN_SRC racket
+> (b-vat 'call bob2 alice)
+<Bob>: I messaged my friend, and they said:
+   "Hello Bob, my name is Alice!"
+#+END_SRC
+
+Much better!
+
+*** More on promises
 
 ** Going low-level: actormaps
 
