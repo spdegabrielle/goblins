@@ -227,6 +227,25 @@ that.
 What if we made a counter?
 
 #+BEGIN_SRC racket
+(define (^counter bcom [count 0])
+  (methods
+   ;; return the current count
+   [(count)
+    count]
+   ;; Add one to the current counter
+   [(add1)
+    (bcom (^counter bcom (add1 count)))]))
+#+END_SRC
+
+There are multiple equivalent ways we could build the "next" procedure
+we are becoming for ourselves, and one is to build an actual =next=
+builder and instantiate it once.
+This technique is exactly equivalent to the above, and we will use this
+kind of structure later, so it's worth seeing and realizing it's more
+or less the same (except that we didn't expose the choice of an initial
+count value):
+
+#+BEGIN_SRC racket
   (define (^counter bcom)
     (define (next count)
       (methods
