@@ -671,7 +671,7 @@ We could of course make another friend that talks to Alice.
     (displayln (format "   \"~a\"" what-my-friend-said))))
 
 (define archie
-  (a-vat 'spawn ^chats-with-friend "Archie"))
+  (a-vat 'spawn ^calls-friend "Archie"))
 #+END_SRC
 
 Now Archie can talk to Alice:
