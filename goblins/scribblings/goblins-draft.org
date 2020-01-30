@@ -936,6 +936,52 @@ Much better!
 
 *** More on promises
 
+So we know that =<-= can make promises, but it turns out we can
+make promises ourselves:
+
+#+BEGIN_SRC racket
+> (a-vat 'run spawn-promise-cons)
+'(#<live-refr promised> . #<live-refr ^resolver>)
+#+END_SRC
+
+As we can see, promises come in pairs: the promise object, which we
+can listen to with =on=, and the resolver object, which lets us
+fulfill or break a promise.
+
+We can also use =spawn-promise-pair= to spawn a promise
+(TODO: add footnote about why we didn't earlier, multiple value return
+not being allowed from actors currently), which returns multiple
+values (which we can bind with =define-values=).
+We can then try resolving a promise with =on=... but of course
+we'll need to fulfill or break it to see anything.
+
+#+BEGIN_SRC racket
+;; TODO: Well this is what SHOULD happen...
+> (a-vat 'run
+         (lambda ()
+           (define-values (foo-promise foo-resolver)
+             (spawn-promise-pair))
+           (define-values (bar-promise bar-resolver)
+             (spawn-promise-pair))
+           (define (declare-resolved result)
+             (printf "Resolved: ~a\n" result))
+           (define (declare-broken err)
+             (printf "Broken: ~a\n" err))
+           (on (<- foo-promise)
+               declare-resolved
+               #:catch declare-broken)
+           (on (<- bar-promise)
+               declare-resolved
+               #:catch declare-broken)
+           ($ foo-resolver 'fulfill 'yeah-foo)
+           ($ bar-resolver 'break 'oh-no-bar)))
+Resolved: yeah-foo
+Broken: oh-no-bar
+#+END_SRC
+
+*TODO: Something is wrong here and this isn't working.*
+*What is it?  Solve it before continuing.*
+
 ** Going low-level: actormaps
 
 *TODO: write this*
