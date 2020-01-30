@@ -264,30 +264,6 @@ What if we made a counter?
     (bcom (^counter bcom (add1 count)))]))
 #+END_SRC
 
-There are multiple equivalent ways we could build the "next" procedure
-we are becoming for ourselves, and one is to build an actual =next=
-builder and instantiate it once.
-This technique is exactly equivalent to the above, and we will use this
-kind of structure later, so it's worth seeing and realizing it's more
-or less the same (except that we didn't expose the choice of an initial
-count value):
-
-#+BEGIN_SRC racket
-  (define (^counter bcom)
-    (define (next count)
-      (methods
-       ;; return the current count
-       [(count)
-        count]
-       ;; Add one to the current counter
-       [(add1)
-        ;; Become the next version of ourselves,
-        ;; with count incremented
-        (bcom (next (add1 count)))]))
-    ;; We'll start at 0.
-    (next 0))
-#+END_SRC
-
 Now let's spawn and poke at an instance of that counter a bit:
 
 #+BEGIN_SRC racket
@@ -320,6 +296,30 @@ what the count is; we're incrementing that by one from whatever
 we currently have.
 (Depending on how experienced you are with functional programming is
 how confusing this is likely to be.)
+
+There are multiple equivalent ways we could build the "next" procedure
+we are becoming for ourselves, and one is to build an actual =next=
+builder and instantiate it once.
+This technique is exactly equivalent to the above, and we will use this
+kind of structure later, so it's worth seeing and realizing it's more
+or less the same (except that we didn't expose the choice of an initial
+count value):
+
+#+BEGIN_SRC racket
+  (define (^counter bcom)
+    (define (next count)
+      (methods
+       ;; return the current count
+       [(count)
+        count]
+       ;; Add one to the current counter
+       [(add1)
+        ;; Become the next version of ourselves,
+        ;; with count incremented
+        (bcom (next (add1 count)))]))
+    ;; We'll start at 0.
+    (next 0))
+#+END_SRC
 
 Now that we have this counter, we can rewrite our friend to spawn it
 and use it:
