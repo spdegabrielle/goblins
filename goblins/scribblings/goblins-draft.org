@@ -215,6 +215,21 @@ What kind of magic is this methods thing?
 Well actually it's barely any magic at all.
 Methods just returns a procedure that dispatches on the first argument,
 a symbol, to one of several procedures.
+We can even use it outside of an object/actor constructor:
+
+#+BEGIN_SRC racket
+> (define what-am-i
+    (methods
+     [(i-am)
+      (list 'i 'am 'just 'a 'procedure)]
+     [(that what)
+      (list 'that 'calls 'other what)]))
+> (what-am-i 'i-am)
+'(i am just a procedure)
+> (what-am-i 'that 'procedures)
+'(that calls other procedures)
+#+END_SRC
+
 We could have just as well written methods-friend like so:
 
 #+BEGIN_SRC racket
