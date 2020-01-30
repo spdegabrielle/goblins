@@ -158,6 +158,8 @@ It would be nice to have different "methods" we could call, and in
 fact, Goblins comes with a convenient =methods= macro:
 
 #+BEGIN_SRC racket
+(require goblins/actor-lib/methods)
+
 (define (^methods-friend bcom my-name)
   (methods
    ;; Greet the user using their name
