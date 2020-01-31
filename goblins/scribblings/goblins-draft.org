@@ -744,7 +744,7 @@ is =b-vat=, where Bob lives:
   (b-vat 'spawn ^calls-friend "Bob"))
 #+END_SRC
 
-Obviously, sfince Bob is in =b-vat=, we bootstrap a message call to Bob
+Obviously, since Bob is in =b-vat=, we bootstrap a message call to Bob
 from =b-vat=.
 But what do you think happens when Bob tries to call Alice?
 
