@@ -976,7 +976,7 @@
      (with-handlers ([exn:fail?
                       (lambda (err)
                         (when display-errors?
-                          (displayln "=== While attempting to send message: ==="
+                          (displayln ";; === While attempting to send message: ==="
                                      (current-error-port))
                           ;; TODO: Display the message here
                           ((error-display-handler) (exn-message err) err))
