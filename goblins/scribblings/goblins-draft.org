@@ -841,7 +841,7 @@ It turns out that on can take a =#:catch= argument:
                #:catch
                (lambda (err)
                  (displayln "Tried to talk to Alice, got an error :(")))))
-=== While attempting to send message: ===
+;; === While attempting to send message: ===
 ; AHH! Throwing an error after I changed things!
 ; Context:
 ;  /home/cwebber/devel/goblins/goblins/core.rkt:498:5
@@ -1008,7 +1008,7 @@ In such a case we can use the =#:finally= keyword:
                     (format "Done handling ~a." from-name)))))
            (handle-it 'resolves-ok (<- resolves-ok))
            (handle-it 'errors-out (<- errors-out))))
-=== While attempting to send message: ===
+;; === While attempting to send message: ===
 ; I am error!
 ; Context:
 ;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
