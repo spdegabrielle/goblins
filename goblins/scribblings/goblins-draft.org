@@ -44,14 +44,14 @@ is already all the security system we need).
    whether in the same OS process or (soon) across the network.
 
  - *Synchronous and asynchronous behavior, integrated but distinguished*:
-   Both synchronous and asynchronous programming is supported, but only
-   objects in the same "vat" (event loop) can perform synchronous immediate
-   calls.
+   Both synchronous and asynchronous programming is supported, but
+   only objects in the same "vat" (event loop) can perform synchronous
+   immediate calls.
    All objects can perform asynchronous calls against each other.
 
  - *A library, not a language:*
-   Goblins is itself a library that can be utilized with nearly any Racket
-   program, including many Racket #langs.
+   Goblins is itself a library that can be utilized with nearly any
+   Racket program, including many Racket #langs.
    (However, some languages may be provided or encouraged for additional
    security / convenience later).
 
