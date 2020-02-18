@@ -956,7 +956,6 @@ We can then try resolving a promise with =on=... but of course
 we'll need to fulfill or break it to see anything.
 
 #+BEGIN_SRC racket
-;; TODO: Well this is what SHOULD happen...
 > (a-vat 'run
          (lambda ()
            (define-values (foo-promise foo-resolver)
@@ -967,10 +966,10 @@ we'll need to fulfill or break it to see anything.
              (printf "Resolved: ~a\n" result))
            (define (declare-broken err)
              (printf "Broken: ~a\n" err))
-           (on (<- foo-promise)
+           (on foo-promise
                declare-resolved
                #:catch declare-broken)
-           (on (<- bar-promise)
+           (on bar-promise
                declare-resolved
                #:catch declare-broken)
            ($ foo-resolver 'fulfill 'yeah-foo)
@@ -978,9 +977,6 @@ we'll need to fulfill or break it to see anything.
 Resolved: yeah-foo
 Broken: oh-no-bar
 #+END_SRC
-
-*TODO: Something is wrong here and this isn't working.*
-*What is it?  Solve it before continuing.*
 
 ** Going low-level: actormaps
 
