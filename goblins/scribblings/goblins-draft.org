@@ -978,6 +978,50 @@ Resolved: yeah-foo
 Broken: oh-no-bar
 #+END_SRC
 
+Maybe we'd like to run something once a promise resolves, regardless
+of whether or not it succeds or fails.
+In such a case we can use the =#:finally= keyword:
+
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (define resolves-ok
+             (spawn (lambda (bcom)
+                      (lambda ()
+                        "This is fine!"))))
+           (define errors-out
+             (spawn (lambda (bcom)
+                      (lambda ()
+                        (error "I am error!")))))
+           (define (handle-it from-name vow)
+             (on vow
+                 (lambda (val)
+                   (displayln
+                    (format "Got from ~a: ~a" from-name val)))
+                 #:catch
+                 (lambda (err)
+                   (displayln
+                    (format "Error from ~a: ~a" from-name err)))
+                 #:finally
+                 (lambda ()
+                   (displayln
+                    (format "Done handling ~a." from-name)))))
+           (handle-it 'resolves-ok (<- resolves-ok))
+           (handle-it 'errors-out (<- errors-out))))
+=== While attempting to send message: ===
+; I am error!
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:967:0 actormap-turn-message86
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+Got from resolves-ok: This is fine!
+Done handling resolves-ok.
+Error from errors-out: #(struct:exn:fail I am error! #<continuation-mark-set>)
+Done handling errors-out.
+#+END_SRC
+
+
+
 ** Going low-level: actormaps
 
 *TODO: write this*
