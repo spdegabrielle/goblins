@@ -690,7 +690,12 @@
               (_spawn promise-pipeline-helper '() '() '()))
             ;; Wait, what will this do for us?  Wouldn't it
             ;; just return another void?
-            #:return-promise? #t)]))
+            #:return-promise? #t)]
+      ;; If it's broken, re-raise the problem.
+      ;; TODO: maybe re-raising isn't the right route?  Though I think
+      ;; it does work technically.  It's the easiest solution...
+      [(mactor:broken problem)
+       (raise problem)]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args)
