@@ -1312,6 +1312,50 @@ quote at the top of this subsection indicates) we may be limited in
 how much we can prevent network delays by physics itself.
 
 
+*** Broken promise contagion
+
+Of course, now that we know that we can pipe promises together, what
+happens if an error happens in the middle of the pipeline?
+
+#+BEGIN_SRC racket
+(define (^lessgood-car-factory bcom company-name)
+  (define ((^car bcom model color))
+    (format "*Vroom vroom!*  You drive your ~a ~a ~a!"
+            color company-name model))
+  (define (make-car model color)
+    (error "Your car exploded on the factory floor!  Ooops!")
+    (spawn ^car model color))
+  make-car)
+
+(define forked-motors
+  (a-vat 'spawn ^lessgood-car-factory "Forked"))
+#+END_SRC
+
+The answer is that the error is simply propagated to all pending promises:
+
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (define car-vow
+             (<- forked-motors "Exploder" "red"))
+           (define drive-noise-vow
+             (<- car-vow))
+           (on drive-noise-vow
+               displayln
+               #:catch
+               (lambda (err)
+                 (displayln (format "Caught: ~a" err))))))
+;; === While attempting to send message: ===
+; Your car exploded on the factory floor!  Ooops!
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:989:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:435:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+Caught: #(struct:exn:fail Your car exploded on the factory floor!  Ooops! #<continuation-mark-set>)
+#+END_SRC
+
+
 ** Going low-level: actormaps
 
 *TODO: write this*
