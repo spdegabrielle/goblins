@@ -936,6 +936,8 @@ Much better!
 
 *** More on promises
 
+**** Making and resolving our own promises
+
 So we know that =<-= can make promises, but it turns out we can
 make promises ourselves:
 
@@ -982,6 +984,8 @@ By the way, you may notice that there's a naming convention in Goblins
 (borrowed from E) to append a =-vow= suffix if something is a promise
 (or should be treated as one).
 That's a good practice for you to adopt, too.
+
+**** Finally we have #:finally
 
 Maybe we'd like to run something once a promise resolves, regardless
 of whether or not it succeds or fails.
