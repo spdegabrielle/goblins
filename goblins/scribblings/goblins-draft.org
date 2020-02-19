@@ -958,18 +958,18 @@ we'll need to fulfill or break it to see anything.
 #+BEGIN_SRC racket
 > (a-vat 'run
          (lambda ()
-           (define-values (foo-promise foo-resolver)
+           (define-values (foo-vow foo-resolver)
              (spawn-promise-pair))
-           (define-values (bar-promise bar-resolver)
+           (define-values (bar-vow bar-resolver)
              (spawn-promise-pair))
            (define (declare-resolved result)
              (printf "Resolved: ~a\n" result))
            (define (declare-broken err)
              (printf "Broken: ~a\n" err))
-           (on foo-promise
+           (on foo-vow
                declare-resolved
                #:catch declare-broken)
-           (on bar-promise
+           (on bar-vow
                declare-resolved
                #:catch declare-broken)
            ($ foo-resolver 'fulfill 'yeah-foo)
@@ -977,6 +977,11 @@ we'll need to fulfill or break it to see anything.
 Resolved: yeah-foo
 Broken: oh-no-bar
 #+END_SRC
+
+By the way, you may notice that there's a naming convention in Goblins
+(borrowed from E) to append a =-vow= suffix if something is a promise
+(or should be treated as one).
+That's a good practice for you to adopt, too.
 
 Maybe we'd like to run something once a promise resolves, regardless
 of whether or not it succeds or fails.
