@@ -1233,7 +1233,83 @@ Doing so seems extremely ugly:
 *Vroom vroom!*  You drive your blue Fork Explorist!
 #+END_SRC
 
+This is hard to follow.
+Maybe if we actually name some of those promises it'll be a bit easier
+to read:
 
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (define car-vow
+             (<- fork-motors "Explorist" "blue"))
+           (on car-vow
+               (lambda (our-car)
+                 (define drive-noise-vow
+                   (<- our-car))
+                 (on drive-noise-vow
+                     displayln)))))
+*Vroom vroom!*  You drive your blue Fork Explorist!
+#+END_SRC
+
+Hm, not so much better.
+Naming things helped us remember what each promise was for, but it
+seems to be the nesting of =on= handlers that's confusing.
+
+Fortunately, Goblins supports something called "promise pipelining".
+We can send an instruction to drive our car... before it even rolls
+off the factory lot!
+That's right... you can send messages to promises, before they have
+even resolved!
+
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (define car-vow
+             (<- fork-motors "Explorist" "blue"))
+           (define drive-noise-vow
+             (<- car-vow))
+           (on drive-noise-vow
+               displayln)))
+*Vroom vroom!*  You drive your blue Fork Explorist!
+#+END_SRC
+
+Wow... that's *much* easier to read!
+
+But readability is not the only goal of promise pipelining.
+Like many things in Goblins,
+[[http://erights.org/elib/distrib/pipeline.html][promise pipelining comes from the E programming language]].
+We're still working on distributed networked Goblins code, but the
+foundations are there to do the same thing that E does: send messages
+with less round trips!
+
+Think about it this way: if =a-vat= actually lived on a different
+server from =b-vat=, and both servers lived halfway across the globe
+with the first way we implemented things:
+
+ - =b-vat= would have to first send a message to the factory on
+   =a-vat= first asking to make a car
+ - then =a-vat= would have to respond, resolving the promise with the
+   location of the new car
+ - then =b-vat= would have to send /another/ message asking to drive
+   the car
+ - then =a-vat= would have to respond, resolving yet another promise
+   with the noise the car makes
+ - and finally =b-vat= can now display the car noise to the user.
+
+With promise pipelining, this merely becomes:
+
+ - =b-vat= would send a message to the factory on =a-vat= first asking
+   to make a car and /at the same time/ can say, "and once this car
+   is made, I'd like to send another message to it so I can drive it."
+ - then =a-vat= can make the car, drive the car, and then respond with
+   the noise the car makes
+ - and now =b-vat= can display the car noise to the user.
+
+Instead of going =B => A => B => A => B=, we have reduced our work to
+=B => A => B= ... a significant savings in round-trips.
+This can really add up in distributed applications, where (as Miller's
+quote at the top of this subsection indicates) we may be limited in
+how much we can prevent network delays by physics itself.
 
 
 ** Going low-level: actormaps
