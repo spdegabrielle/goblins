@@ -1029,6 +1029,32 @@ Error from errors-out: #(struct:exn:fail I am error! #<continuation-mark-set>)
 Done handling errors-out.
 #+END_SRC
 
+**** "on"'s on-fulfilled handler is optional
+
+Maybe all you care about is the =#:catch= or =#:finally= clause.
+The =on-fulfilled= argument to =on= is actually optional:
+
+#+BEGIN_SRC racket
+> (define ((^throws-error bcom))
+    (error "oh no"))
+> (define throws-error
+    (a-vat 'spawn ^throws-error))
+> (a-vat 'run
+         (lambda ()
+           (on (<- throws-error)
+               #:catch
+               (lambda (err)
+                 (displayln (format "The error is: ~a" err))))))
+;; === While attempting to send message: ===
+; oh no
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:985:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:435:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+The error is: #(struct:exn:fail oh no #<continuation-mark-set>)
+#+END_SRC
+
 **** "on" with non-promise values
 
 =on= works just fine if you pass in a non-promise value.
