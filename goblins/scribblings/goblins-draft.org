@@ -1071,9 +1071,118 @@ For example:
 Got: 5
 #+END_SRC
 
+
 **** "on" can return promises too
 
+It turns out that "on" can also return a promise!
+However, this isn't a very common use case, so you have to ask for it
+via the =#:promise?= keyword.
+
+#+BEGIN_SRC racket
+> (define ((^bakery bcom name) carb)
+    (format "~a's signature ~a baking" name carb))
+> (define petite-oven-bakery
+    (a-vat 'spawn ^bakery "The Petite Oven"))
+> (a-vat 'run
+         (lambda ()
+           (define smell-vow
+             (on (<- petite-oven-bakery "croissants")
+                 (lambda (what-you-smell)
+                   (format "You smell ~a.  Heavenly!!"
+                           what-you-smell))
+                 #:promise? #t))
+           (on smell-vow displayln)))
+You smell The Petite Oven's signature croissants baking.  Heavenly!!
+#+END_SRC
+
+The choice of whether or not to include =#:catch= in an =on= with
+=#:promise?= affects whether or how an error will propagate (or be
+cleaned up).
+
+Without catching an error:
+
+#+BEGIN_SRC racket
+> (define ((^throws-error bcom))
+    (error "oh no"))
+> (define throws-error
+    (spawn ^throws-error))
+> (a-vat 'run
+         (lambda ()
+           (on (on (<- throws-error)
+                   (lambda (val)
+                     (displayln "I won't run..."))
+                   #:promise? #t)
+               #:catch
+               (lambda (e)
+                 (displayln (format "Caught: ~a" e))))))
+;; === While attempting to send message: ===
+; oh no
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:985:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:435:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+Caught: #(struct:exn:fail oh no #<continuation-mark-set>)
+#+END_SRC
+
+However if we catch the error, we can return a value that will succeed
+if we like:
+
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (on (on (<- throws-error)
+                   #:catch
+                   (lambda (e)
+                     "An error?  Psh... this is fine.")
+                   #:promise? #t)
+               (lambda (val)
+                 (displayln (format "Got: ~a" val))))))
+;; === While attempting to send message: ===
+; oh no
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:985:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:435:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+Got: An error?  Psh... this is fine.
+#+END_SRC
+
+But if our =#:catch= handler raises an error, that error will simply
+propagate (instead of the original one):
+
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (on (on (<- throws-error)
+                   #:catch
+                   (lambda (e)
+                     (error "AAAAH!  This is NOT fine!"))
+                   #:promise? #t)
+               #:catch
+               (lambda (e)
+                 (displayln (format "Caught: ~a" e))))))
+;; === While attempting to send message: ===
+; oh no
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:985:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:435:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+;; === While attempting to send message: ===
+; AAAAH!  This is NOT fine!
+; Context:
+;  /home/cwebber/devel/goblins/goblins/core.rkt:897:11
+;  /home/cwebber/devel/goblins/goblins/core.rkt:500:5
+;  /home/cwebber/devel/goblins/goblins/core.rkt:985:3
+;  /home/cwebber/devel/goblins/goblins/core.rkt:435:0 call-with-fresh-syscaller
+;  /home/cwebber/devel/goblins/goblins/vat.rkt:135:11 lp
+Caught: #(struct:exn:fail AAAAH!  This is NOT fine! #<continuation-mark-set>)
+#+END_SRC
+
+
 **** Promise pipelining
+
 
 ** Going low-level: actormaps
 
