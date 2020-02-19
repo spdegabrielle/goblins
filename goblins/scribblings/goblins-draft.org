@@ -1029,7 +1029,25 @@ Error from errors-out: #(struct:exn:fail I am error! #<continuation-mark-set>)
 Done handling errors-out.
 #+END_SRC
 
+**** "on" with non-promise values
 
+=on= works just fine if you pass in a non-promise value.
+It'll just treat that value as if it were a promise that had
+resolved immediately.
+For example:
+
+#+BEGIN_SRC racket
+> (a-vat 'run
+         (lambda ()
+           (on 5
+               (lambda (v)
+                 (displayln (format "Got: ~a" v))))))
+Got: 5
+#+END_SRC
+
+**** "on" can return promises too
+
+**** Promise pipelining
 
 ** Going low-level: actormaps
 
