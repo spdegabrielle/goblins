@@ -935,9 +935,7 @@ conversation with his far-away friend Alice:
 Much better!
 
 
-*** More on promises
-
-**** Making and resolving our own promises
+*** Making and resolving our own promises
 
 So we know that =<-= can make promises, but it turns out we can
 make promises ourselves:
@@ -986,7 +984,7 @@ By the way, you may notice that there's a naming convention in Goblins
 (or should be treated as one).
 That's a good practice for you to adopt, too.
 
-**** Finally we have #:finally
+*** Finally we have #:finally
 
 Maybe we'd like to run something once a promise resolves, regardless
 of whether or not it succeds or fails.
@@ -1030,7 +1028,7 @@ Error from errors-out: #(struct:exn:fail I am error! #<continuation-mark-set>)
 Done handling errors-out.
 #+END_SRC
 
-**** "on"'s on-fulfilled handler is optional
+*** the on-fulfilled handler of "on" is optional
 
 Maybe all you care about is the =#:catch= or =#:finally= clause.
 The =on-fulfilled= argument to =on= is actually optional:
@@ -1070,7 +1068,7 @@ to that, these two definitions are equivalent:)
     (format "Hello ~a, my name is ~a!" your-name my-name))
 #+END_SRC
 
-**** "on" with non-promise values
+*** "on" with non-promise values
 
 =on= works just fine if you pass in a non-promise value.
 It'll just treat that value as if it were a promise that had
@@ -1086,8 +1084,7 @@ For example:
 Got: 5
 #+END_SRC
 
-
-**** "on" can return promises too
+*** "on" can return promises too
 
 It turns out that "on" can also return a promise!
 However, this isn't a very common use case, so you have to ask for it
@@ -1196,7 +1193,15 @@ Caught: #(struct:exn:fail AAAAH!  This is NOT fine! #<continuation-mark-set>)
 #+END_SRC
 
 
-**** Promise pipelining
+*** Promise pipelining
+
+#+BEGIN_QUOTE
+  Machines grow faster and memories grow larger.
+  But the speed of light is constant and New York is not getting any closer to Tokyo.
+
+   -- /from [[http://www.erights.org/talks/thesis/][Robust Composition: Towards a Unified Approach to Access Control and Concurrency Control]],/
+      /by Mark S. Miller/
+#+END_QUOTE
 
 Let's say we have a car factory that makes cars:
 
