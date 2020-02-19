@@ -1358,15 +1358,179 @@ Caught: #(struct:exn:fail Your car exploded on the factory floor!  Ooops! #<cont
 
 ** Going low-level: actormaps
 
+*** Spawning, peeking, poking, turning
+
+So far we have dealt with vats, but there is a lower level of
+abstraction in Goblins which is called an "actormap".
+
+The key differences are:
+
+ - *vats*: An event loop implementation that runs continuously
+   in its own thread.
+   Comes pre-built with tooling to handle message passing between
+   vats.
+   Actually wraps an actormap.
+ - *actormap*: The transactional datastructure that vats use.
+   But, useful on its own to either build your own event loop
+   or as a synchronous one-turn-at-a-time mapping of actor references
+   to their current implementations.
+
+The best way to learn is by doing, so let's make an actormap now:
+
+#+BEGIN_SRC racket
+(define am (make-actormap))
+#+END_SRC
+
+Let's add an actor to it.
+Since cells are simple, let's add one of those.
+
+#+BEGIN_SRC racket
+(define lunchbox
+  (actormap-spawn! am ^cell))
+#+END_SRC
+
+What's in the lunchbox?
+We could take a look with =actormap-peek=:
+
+#+BEGIN_SRC racket
+> (actormap-peek am lunchbox)
+#f
+#+END_SRC
+
+An empty lunchbox... we'd like to eat something later, so how about we
+pack ourselves a nice sandwich by using =actormap-poke=:
+
+#+BEGIN_SRC racket
+> (actormap-poke! am lunchbox 'peanut-butter-and-jelly)
+> (actormap-peek am lunchbox)
+'peanut-butter-and-jelly
+#+END_SRC
+
+What if we tried to look inside the lunchbox with actormap-poke!
+instead of actormap-peek?
+
+#+BEGIN_SRC racket
+> (actormap-poke! am lunchbox 'bbq-tofu)
+> (actormap-poke! am lunchbox)
+'bbq-tofu
+#+END_SRC
+
+Well that worked just fine.
+What happens if we do both operations with =actormap-peek=?
+
+#+BEGIN_SRC racket
+> (actormap-peek am lunchbox 'chickpea-salad)
+> (actormap-peek am lunchbox)
+'bbq-tofu
+#+END_SRC
+
+What the...???
+Our lunchbox didn't change!
+
+We said that actormaps were transactional.
+We have gotten a hint of this with the above:
+=actormap-poke!= returns a value and commits any changes.
+=actormap-peek= returns a value and throws any changes away.
+
+Actually, these two functions are just simple conveniences that wrap a
+more powerful (but cumbersome to use) tool, =actormap-turn=:
+
+#+BEGIN_SRC racket
+> (actormap-turn am lunchbox)
+'bbq-tofu
+#<transactormap>
+'()
+'()
+> (actormap-turn am lunchbox 'chickpea-salad)
+#<transactormap>
+'()
+'()
+#+END_SRC
+
+=actormap-turn= returns four values to its continuation: a return
+value (if any... Racket's REPL doesn't print out a =(void)=, which is
+what actually got returned in the second invocation), a
+"transactormap", and two lists representing messages queued for delivery.
+(*TODO:* Currently two, one for local and one for remote vats... we are
+likely to collapse down to just one list, so update this text when
+that changes!)
+
+This =#<transactormap>= is interesting... we haven't mentioned this
+before, but there are really two kinds of actormaps, "whactormaps"
+(weak-hash actormaps) and "transactormaps" (which hold a transaction
+which we can choose whether or not to commit).
+Actually our =am= is a whactormap:
+
+#+BEGIN_SRC racket
+> am
+#<whactormap>
+#+END_SRC
+
+It's a weak hashtable which stores the current mutable state of all
+actors.
+
+But we'd like to see about that transactormap... just running
+=actormap-turn= on its own won't update the lunchbox either:
+
+#+BEGIN_SRC racket
+> (actormap-turn am lunchbox 'chickpea-salad)
+#<transactormap>
+'()
+'()
+> (actormap-turn am lunchbox)
+'bbq-tofu
+#<transactormap>
+'()
+'()
+#+END_SRC
+
+We need to capture the transactormap and commit it.
+
+#+BEGIN_SRC racket
+> (define-values (_val tr-am _tl _tr)
+    (actormap-turn am lunchbox 'chickpea-salad))
+> tr-am
+#<transactormap>
+> (transactormap-merge! tr-am)
+#+END_SRC
+
+Now at least our =am= actormap should reflect that we've switched out
+our ='bbq-tofu= sandwich for a ='chickpea-salad= one:
+
+#+BEGIN_SRC racket
+> (actormap-peek am lunchbox)
+'chickpea-salad
+#+END_SRC
+
+Horray!
+
+
+*** Time travel: snapshotting and restoring
+
+
+*** So how does message passing work?
+
+*TODO: write this*
+
+
+
+** Advanced object patterns
+
+*TODO: write this*
+
+** How this relates to "object capability security"
+
+*TODO: write this*
+
+** Sealers/unsealers and rights amplification
+
 *TODO: write this*
 
 ** Networked object interactions
 
 *Big ol' TODO here since we need to implement it, too!*
 
-** Advanced object patterns
 
-*TODO: write this*
 
 * Core API
 
