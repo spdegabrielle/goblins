@@ -1218,8 +1218,6 @@ It will also generate a car that technically lives on =a-vat=.
 Let's say we live on b-vat... we'd still like to drive our car.
 Doing so seems extremely ugly:
 
-*TODO:* Oops, this doesn't work either.  Time to figure out why!
-
 #+BEGIN_SRC racket
 > (b-vat 'run
          (lambda ()
