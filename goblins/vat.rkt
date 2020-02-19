@@ -366,4 +366,41 @@
            (<-np (<- car-factory 'green))))
   (sleep 0.05)
   (check-equal? car-result-here
-                "The green car says: *vroom vroom*!"))
+                "The green car says: *vroom vroom*!")
+
+  (define (^car-factory2 bcom company-name)
+    (define ((^car bcom model color))
+      (format "*Vroom vroom!*  You drive your ~a ~a ~a!"
+              color company-name model))
+    (define (make-car model color)
+      (spawn ^car model color))
+    make-car)
+
+  (define fork-motors
+    (a-vat 'spawn ^car-factory2 "Fork"))
+
+  (let ([what-i-got #f])
+    (b-vat 'run
+           (lambda ()
+             (on (<- fork-motors "Explorist" "blue")
+                 (lambda (our-car)
+                   (on (<- our-car)
+                       (lambda (val)
+                         (set! what-i-got val)))))))
+    (sleep 0.05)
+    (test-equal?
+     "Cross-vat promise resolution involving symlink resolution"
+     what-i-got
+     "*Vroom vroom!*  You drive your blue Fork Explorist!"))
+
+  (let ([what-i-got #f])
+    (b-vat 'run
+           (lambda ()
+             (on (<- (<- fork-motors "Explorist" "blue"))
+                 (lambda (val)
+                   (set! what-i-got val)))))
+    (sleep 0.05)
+    (test-equal?
+     "Cross-vat promise pipelining involving symlink resolution"
+     what-i-got
+     "*Vroom vroom!*  You drive your blue Fork Explorist!")))

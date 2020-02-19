@@ -597,13 +597,17 @@
               (when (set-member? seen refr-id)
                 (error "Cycle in mactor symlinks"))
               ;; TODO: deal with far refrs
-              (match (actormap-ref actormap refr-id)
-                [(? mactor:symlink? mactor)
-                 (lp (mactor:symlink-link-to-refr mactor)
-                     (set-add seen refr-id))]
-                [#f (error "no actor with this id")]
-                ;; ok we found a non-symlink refr
-                [mactor (values refr-id mactor)])))
+              (if (near-refr? refr-id)
+                  (match (actormap-ref actormap refr-id)
+                    [(? mactor:symlink? mactor)
+                     (lp (mactor:symlink-link-to-refr mactor)
+                         (set-add seen refr-id))]
+                    [#f (error "no actor with this id")]
+                    ;; ok we found a non-symlink refr
+                    [mactor (values refr-id mactor)])
+                  ;; otherwise it's a far-refr, we can't really
+                  ;; de-symlink anymore.
+                  (values refr-id #f))))
           ;; Set up the symlink
           (actormap-set! actormap promise-id
                          (mactor:symlink link-to-refr))

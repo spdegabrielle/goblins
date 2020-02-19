@@ -1198,6 +1198,40 @@ Caught: #(struct:exn:fail AAAAH!  This is NOT fine! #<continuation-mark-set>)
 
 **** Promise pipelining
 
+Let's say we have a car factory that makes cars:
+
+#+BEGIN_SRC racket
+(define (^car-factory bcom company-name)
+  (define ((^car bcom model color))
+    (format "*Vroom vroom!*  You drive your ~a ~a ~a!"
+            color company-name model))
+  (define (make-car model color)
+    (spawn ^car model color))
+  make-car)
+
+(define fork-motors
+  (a-vat 'spawn ^car-factory "Fork"))
+#+END_SRC
+
+Now observe... in this scenario, Fork Motors exists on =a-vat=.
+It will also generate a car that technically lives on =a-vat=.
+Let's say we live on b-vat... we'd still like to drive our car.
+Doing so seems extremely ugly:
+
+*TODO:* Oops, this doesn't work either.  Time to figure out why!
+
+#+BEGIN_SRC racket
+> (b-vat 'run
+         (lambda ()
+           (on (<- fork-motors "Explorist" "blue")
+               (lambda (our-car)
+                 (on (<- our-car)
+                     displayln)))))
+*Vroom vroom!*  You drive your blue Fork Explorist!
+#+END_SRC
+
+
+
 
 ** Going low-level: actormaps
 
