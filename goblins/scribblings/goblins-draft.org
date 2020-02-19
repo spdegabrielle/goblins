@@ -1507,11 +1507,75 @@ Horray!
 
 *** Time travel: snapshotting and restoring
 
+But what does our actormap really look like?
+Right now it only has one thing in it, the lunchbox cell.
+We can see this by "snapshotting" the actormap.
+
+#+BEGIN_SRC racket
+> (snapshot-whactormap am)
+'#hasheq((#<live-refr ^cell> . #<ephemeron>))
+#+END_SRC
+
+This returns an immutable actormap, frozen in time.
+We can see that it only has one pairing in it, and yep... it looks
+like the key is our =lunchbox= reference:
+
+#+BEGIN_SRC racket
+> lunchbox
+#<live-refr ^cell>
+#+END_SRC
+
+So it seems our "refr" is just a "reference"... it isn't the state of
+the object itself, it's something that points to that state, through
+an indirection of the actormap.
+
+We now know that we can snapshot an actormap, we can freeze time and
+come back to it.
+First we'll freeze a snapshot of this period of time, change what's
+in the lunchbox, and then snapshot it again:
+
+#+BEGIN_SRC racket
+> (define am-snapshot1
+    (snapshot-whactormap am))
+> (actormap-poke! am lunchbox 'sloppy-jane)  ; sloppy joe w/ lentils
+> (define am-snapshot2
+    (snapshot-whactormap am))
+#+END_SRC
+
+Now let's restore them as separate whactormaps:
+
+#+BEGIN_SRC racket
+> (define am-restored1
+    (hasheq->whactormap am-snapshot1))
+> (define am-restored2
+    (hasheq->whactormap am-snapshot2))
+#+END_SRC
+
+Now it doesn't matter what we put in our lunchbox; we can always
+come back to life (and lunch) as it used to be.
+
+#+BEGIN_SRC racket
+> (actormap-poke! am lunchbox 'peanut-butter-and-pickles)
+> (actormap-peek am lunchbox)
+'peanut-butter-and-pickles
+> (actormap-peek am-restored2 lunchbox)
+'sloppy-jane
+> (actormap-peek am-restored1 lunchbox)
+'chickpea-salad
+#+END_SRC
+
+Why eat leftovers when you can simply travel back in time and eat
+yesterday's lunch?
+
 
 *** So how does message passing work?
 
 *TODO: write this*
 
+
+*** How can two actormaps communicate?  (How do vats do it?)
+
+*TODO: write this*
 
 
 ** Advanced object patterns
