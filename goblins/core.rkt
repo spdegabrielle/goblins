@@ -690,7 +690,7 @@
               (_spawn promise-pipeline-helper '() '() '()))
             ;; Wait, what will this do for us?  Wouldn't it
             ;; just return another void?
-            #:return-promise? #t)]
+            #:promise? #t)]
       ;; If it's broken, re-raise the problem.
       ;; TODO: maybe re-raising isn't the right route?  Though I think
       ;; it does work technically.  It's the easiest solution...
@@ -737,14 +737,11 @@
   (define (_on id-refr [on-fulfilled #f]
                #:catch [on-broken #f]
                #:finally [on-finally #f]
-               #:return-promise? [return-promise? #f])
+               #:promise? [promise? #f])
     (define-values (return-promise return-p-resolver)
-      (if return-promise?
+      (if promise?
           (spawn-promise-pair)
           (values #f #f)))
-
-    (define-values (subscribe-refr mactor)
-      (actormap-symlink-ref actormap id-refr))
 
     ;; These two procedures are called once the fulfillment
     ;; or break of the id-refr has actually occurred.
@@ -773,42 +770,57 @@
     (define handle-broken
       (handle-resolution on-broken 'break))
 
-    (match mactor
-      ;; This object is a local promise, so we should handle it.
-      [(mactor:local-promise listeners r-unsealer r-tm?)
-       ;; The purpose of this listener is that the promise
-       ;; *hasn't resolved yet*.  Because of that we need to
-       ;; queue something to happen *once* it resolves.
-       (define (^on-listener bcom)
-         (match-lambda*
-           [(list 'fulfill val)
-            (handle-fulfilled val)
-            (void)]
-           [(list 'break problem)
-            (handle-broken problem)
-            (void)]))
-       (define on-listener
-         ;; using _spawn here saves a very minor round
-         ;; trip which we can't do in the on-fulfilled
-         ;; ones because they'll be in a new syscaller
-         (_spawn ^on-listener '() '() '()))
-       ;; Set a new version of the local-promise with this
-       ;; object as
-       (define new-listeners
-         (cons on-listener listeners))
-       (actormap-set! actormap id-refr
-                      (mactor:local-promise new-listeners
-                                            r-unsealer r-tm?))]
-      [(? mactor:broken? mactor)
-       (handle-broken (mactor:broken-problem mactor))]
-      [(? mactor:encased? mactor)
-       (handle-fulfilled (mactor:encased-val mactor))]
-      [(? (or/c mactor:remote? mactor:local-actor?) mactor)
-       (handle-fulfilled subscribe-refr)]
-      ;; This involves invoking a vat-level method of the remote
-      ;; machine, right?
-      #;[(? mactor:remote-promise? mactor)
-       'TODO])
+    (match id-refr
+      [(? live-refr?)
+       (define-values (subscribe-refr mactor)
+         (actormap-symlink-ref actormap id-refr))
+
+       (match mactor
+         ;; This object is a local promise, so we should handle it.
+         [(mactor:local-promise listeners r-unsealer r-tm?)
+          ;; The purpose of this listener is that the promise
+          ;; *hasn't resolved yet*.  Because of that we need to
+          ;; queue something to happen *once* it resolves.
+          (define (^on-listener bcom)
+            (match-lambda*
+              [(list 'fulfill val)
+               (handle-fulfilled val)
+               (void)]
+              [(list 'break problem)
+               (handle-broken problem)
+               (void)]))
+          (define on-listener
+            ;; using _spawn here saves a very minor round
+            ;; trip which we can't do in the on-fulfilled
+            ;; ones because they'll be in a new syscaller
+            (_spawn ^on-listener '() '() '()))
+          ;; Set a new version of the local-promise with this
+          ;; object as
+          (define new-listeners
+            (cons on-listener listeners))
+          (actormap-set! actormap id-refr
+                         (mactor:local-promise new-listeners
+                                               r-unsealer r-tm?))]
+         [(? mactor:broken? mactor)
+          (handle-broken (mactor:broken-problem mactor))]
+         [(? mactor:encased? mactor)
+          (handle-fulfilled (mactor:encased-val mactor))]
+         [(? (or/c mactor:remote? mactor:local-actor?) mactor)
+          (handle-fulfilled subscribe-refr)]
+         ;; This involves invoking a vat-level method of the remote
+         ;; machine, right?
+         #;[(? mactor:remote-promise? mactor)
+            'TODO])]
+
+      ;; TODO: sturdy refr support goes here!
+      [(? sturdy-refr?)
+       (error "Sturdy refrs not supported yet :(")]
+
+      ;; Anything else?  Well, it's just some value then, we can
+      ;; immediately consider that the fulfillment (similar to if it
+      ;; were encased).
+      [val
+       (handle-fulfilled val)])
 
     ;; Unless an error was thrown, we now should return the promise
     ;; we made.
@@ -866,7 +878,7 @@
 (define (on id-refr [on-fulfilled #f]
             #:catch [on-broken #f]
             #:finally [on-finally #f]
-            #:return-promise? [return-promise? #f])
+            #:promise? [promise? #f])
   (define sys (get-syscaller-or-die))
   (define (maybe-actorize obj proc-name)
     (match obj
@@ -893,7 +905,7 @@
   (sys 'on id-refr (maybe-actorize on-fulfilled 'on-fulfilled)
        #:catch (maybe-actorize on-broken 'on-broken)
        #:finally (maybe-actorize on-finally 'on-finally)
-       #:return-promise? return-promise?))
+       #:promise? promise?))
 
 (define (extract id-refr)
   (define sys (get-syscaller-or-die))
@@ -1487,7 +1499,7 @@
      'oh-no))
 
   (test-equal?
-   "Passing #:return-promise? to `on` returns a promise that is resolved"
+   "Passing #:promise? to `on` returns a promise that is resolved"
    (actormap-extract
     am
     (actormap-full-run!
@@ -1502,6 +1514,25 @@
                 #:catch
                 (lambda (e)
                   "uhoh")
-                #:return-promise? #t))
+                #:promise? #t))
           the-on-promise)))
-   "got: 6"))
+   "got: 6")
+
+  (let ([what-i-got #f]
+        [finally-also-ran? #f])
+    (actormap-full-run!
+     am
+     (lambda ()
+       (on 42
+           (lambda (val)
+             (set! what-i-got (format "got: ~a" val)))
+           #:finally
+           (lambda ()
+             (set! finally-also-ran? #t)))))
+    (test-equal?
+     "A non-promise value passed to `on` merely resolves to that value"
+     what-i-got
+     "got: 42")
+    (test-true
+     "#:finally also runs in case of non-promise value passed to `on`"
+     finally-also-ran?)))
