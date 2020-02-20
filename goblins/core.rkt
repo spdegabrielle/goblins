@@ -123,6 +123,17 @@
 ;;; Meta-actors and miranda methods
 ;;; ===============================
 
+(module+ mactor-extra
+  (provide mactor mactor?
+           mactor:local mactor:local?
+           mactor:remote mactor:remote?
+           mactor:local-actor mactor:local-actor?
+           mactor:remote-actor mactor:remote-actor?
+           mactor:symlink mactor:symlink?
+           mactor:broken mactor:broken?
+           mactor:local-promise mactor:local-promise?
+           mactor:remote-promise mactor:remote-promise?))
+
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda rights":
 ;; http://www.erights.org/elang/blocks/miranda.html
