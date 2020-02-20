@@ -127,11 +127,28 @@
   (provide mactor mactor?
            mactor:local mactor:local?
            mactor:remote mactor:remote?
+
            mactor:local-actor mactor:local-actor?
+           mactor:local-actor-handler
+           mactor:local-actor-become-unsealer
+           mactor:local-actor-become?
+
+           mactor:encased mactor:encased?
+           mactor:encased-val
+
            mactor:remote-actor mactor:remote-actor?
+
            mactor:symlink mactor:symlink?
+           mactor:symlink-link-to-refr
+
            mactor:broken mactor:broken?
+           mactor:broken-problem
+
            mactor:local-promise mactor:local-promise?
+           mactor:local-promise-listeners
+           mactor:local-promise-resolver-unsealer
+           mactor:local-promise-resolver-tm?
+
            mactor:remote-promise mactor:remote-promise?))
 
 ;; We need these to have different behavior, equivalent to E's
@@ -160,7 +177,7 @@
 ;;; ---------------
 ;; once a local refr, always a local refr.
 (struct mactor:local-actor mactor:local
-  (handler become become-unsealer become?))
+  (handler become-unsealer become?))
 
 ;; Once encased, always encased.
 ;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
@@ -537,7 +554,6 @@
             (actormap-set! actormap update-refr
                            (mactor:local-actor
                             new-handler
-                            (mactor:local-actor-become mactor)
                             (mactor:local-actor-become-unsealer mactor)
                             (mactor:local-actor-become? mactor))))
 
@@ -1142,7 +1158,7 @@
 
   (actormap-set! actormap actor-refr
                  (mactor:local-actor actor-handler
-                                     become become-unseal become?))
+                                     become-unseal become?))
   actor-refr)
 
 ;; These two are user-facing procedures.  Thus, they set up
