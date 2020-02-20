@@ -184,7 +184,7 @@
 ;;   not a mactor is basically "encased"?  But having an official
 ;;   mactor type gives us a clearer answer I guess.
 (struct mactor:encased mactor (val))
-(struct mactor:remote-actor mactor:remote (vat-connid))
+(struct mactor:remote-actor mactor:remote ())
 (struct mactor:symlink mactor (link-to-refr))
 ;; Once broken, always broken.
 (struct mactor:broken mactor (problem))
@@ -193,7 +193,7 @@
 ;;; ---------------
 (struct mactor:local-promise mactor:local
   (listeners resolver-unsealer resolver-tm?))
-(struct mactor:remote-promise mactor (vat-connid))
+(struct mactor:remote-promise mactor:remote ())
 
 ;; TODO: Whatever procedure we make for these we need to
 ;;   operate with a refr indirection; we won't have the mactor
