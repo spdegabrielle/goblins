@@ -36,15 +36,15 @@
 
 ;; Not sure if there's any need to export this, but...
 (module+ actormap-extra
-  whactormap-ref
-  whactormap-set!
+  (provide whactormap-ref
+           whactormap-set!
 
-  actormap-ref
-  actormap-set!
+           actormap-ref
+           actormap-set!
 
-  transactormap-set! transactormap-ref
+           transactormap-set! transactormap-ref
 
-  actormap-vat-connector)
+           actormap-vat-connector))
 
 ;; The operating-on-actormap main functions
 (provide actormap-turn
