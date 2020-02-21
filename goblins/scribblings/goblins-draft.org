@@ -1567,6 +1567,26 @@ come back to life (and lunch) as it used to be.
 Why eat leftovers when you can simply travel back in time and eat
 yesterday's lunch?
 
+** Advanced object patterns
+
+*TODO: write this*
+
+** How this relates to "object capability security"
+
+*TODO: write this*
+
+** Sealers/unsealers and rights amplification
+
+*TODO: write this*
+
+** Networked object interactions
+
+*Big ol' TODO here since we need to implement it, too!*
+
+
+
+
+** A peek into Goblins' machinery
 
 *** Actors really are what they say they are
 
@@ -1827,23 +1847,6 @@ Yes, we deserve it!
 *** How can two actormaps communicate?  (How do vats do it?)
 
 *TODO: write this*
-
-
-** Advanced object patterns
-
-*TODO: write this*
-
-** How this relates to "object capability security"
-
-*TODO: write this*
-
-** Sealers/unsealers and rights amplification
-
-*TODO: write this*
-
-** Networked object interactions
-
-*Big ol' TODO here since we need to implement it, too!*
 
 
 
