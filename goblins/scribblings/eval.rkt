@@ -26,7 +26,7 @@
 (define-syntax-rule (run-codeblock e ...)
   (begin
     (goblins-evaluator
-     (call-with-input-string (string-join (list e ...) " ")
+     (call-with-input-string (string-join (list "(begin " e ... " )") " ")
        read))
     (codeblock e ...)))
 
