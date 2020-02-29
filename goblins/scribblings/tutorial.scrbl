@@ -566,3 +566,215 @@ It turns out it also opens us up, in general, to becoming
      {time wizards}.
 But more on that later.
 
+
+@section{Message passing, promises, and multiple vats}
+
+@subsection{The basics}
+
+Remember simpler times, when friends mostly just greeted us hello?
+
+@codeblock|{
+(define (^friend bcom my-name)
+  (lambda (your-name)
+    (format "Hello ~a, my name is ~a!" your-name my-name)))
+
+(define alice
+  (a-vat 'spawn ^friend "Alice"))}|
+
+We could of course make another friend that talks to Alice.
+
+@run-codeblock|{
+(define (^calls-friend bcom our-name)
+  (lambda (friend)
+    (define what-my-friend-said
+      ($ friend our-name))
+    (displayln (format "<~a>: I called my friend, and they said:"
+                       our-name))
+    (displayln (format "   \"~a\"" what-my-friend-said))))
+
+(define archie
+  (a-vat 'spawn ^calls-friend "Archie"))}|
+
+Now Archie can talk to Alice:
+
+@interact[
+(a-vat 'call archie alice)]
+
+Both Alice and Archie live in @id{a-vat}.
+But @id{a-vat} isn't the only vat in town.  One other such vat
+is @id{b-vat}, where Bob lives:
+
+@run-codeblock|{
+(define b-vat
+  (make-vat))
+
+(define bob
+  (b-vat 'spawn ^calls-friend "Bob"))}|
+
+Obviously, since Bob is in @id{b-vat}, we bootstrap a message call to
+Bob from @id{b-vat}.
+But what do you think happens when Bob tries to call Alice?
+
+@interact-errors[
+(b-vat 'call bob alice)]
+
+Oh no!
+It looks like Bob can't call Alice since they live in different
+places!
+From Archie's perspective, Alice was "near", aka "in the same vat".
+However from Bob's perspective Alice was "far", aka "in some other
+vat that isn't the one I'm in".
+This is a problem because using the @racket[$] operator performs a
+@emph{synchronous} call, but it's only safe to do synchronous calls for
+objects that are near each other (in the same vat).
+
+Fortunately there's something we can do: we can send a message from
+Bob to Alice.
+But we've never seen message sending in Goblins before, so what is that?
+
+To prototype this, let's use the @id{'run} method on @id{b-vat}.
+Remember, we saw the @id{'run} method used before, where it looked like:
+
+@interact[
+(a-vat 'run
+       (lambda ()
+         (define alyssa
+           (spawn ^friend "Alyssa"))
+         ($ alyssa "Ben")))]
+
+So @id{'run} is just a way to run some arbitrary code in an actor context.
+That sounds good enough for playing around with sending messages.
+We can send messages with @racket[<-] so let's try that:
+
+@interact[
+(b-vat 'run
+       (lambda ()
+         (<- alice "Brenda")))]
+
+Ah ok... so what @racket[<-] returns is something called a "Promise" which
+might eventually be resolved to something interesting.
+We want some way to be able to pull out that interesting thing.
+That's what @racket[on] is for: it resolves promises and pulls out their
+resolved value:
+
+@delayed-interact[
+(b-vat 'run
+       (lambda ()
+         (on (<- alice "Brenda")
+             (lambda (alice-says)
+               (displayln (format "Got from Alice: ~a" alice-says))))))]
+
+@racket[<-] works just fine with far references, but it also works
+just fine with near references too!
+So we can run the same code in a-vat (where Alice is "near") and it
+works there too:
+
+@delayed-interact[
+(a-vat 'run
+       (lambda ()
+         (on (<- alice "Arthur")
+             (lambda (alice-says)
+               (displayln (format "Got from Alice: ~a" alice-says))))))]
+
+So using @racket[on] and @racket[<-] seems to fit our needs.
+@; @note{However, we're glossing over something... we're now in the land of
+@; asynchronous communication.  In fact since this documentation you are
+@; reading is generated from real code examples, we had to kludgily add a
+@; delay into the code interpreter to render this section appropriately
+@; so that we had a better chance of the display output lining up with our
+@; representation of REPL evaluation!}
+But what would have happened if Alice had thrown an error?
+Indeed, if we remember earlier we made @id{buggy-gobliny-alice}
+so we can test for that.
+It turns out that on can take a @id{#:catch} argument:
+
+@delayed-interact[
+(b-vat 'run
+       (lambda ()
+         (on (<- buggy-gobliny-alice 'greet "Brenda")
+             (lambda (alice-says)
+               (displayln (format "Got from Alice: ~a" alice-says)))
+             #:catch
+             (lambda (err)
+               (displayln "Tried to talk to Alice, got an error :(")))))]
+
+Now this is a little bit confusing to read because we saw two separate
+messages here... it's important to realize that due to the way our vat
+is configured, the exception backtrace being printed out is coming
+from @id{a-vat}, not from our code being evaluated in @id{b-vat}.
+We could configure the @id{a-vat} loop to do something different when it
+hits errors, but currently it prints exceptions so we can debug them.
+Anyway, so that's helpful information, but actually the place we caught
+the error in @emph{our} code above was in the @racket[lambda] right
+after @id{#:catch}.
+As we can see, it did catch the error and we used that as an opportunity
+to print out a complaint.
+
+So @racket[<-] makes a promise for us.
+We don't always need a promise; sometimes we're just calling something
+for its effects.
+For instance we might have a parrot that we like to encourage to say
+silly things, maybe on the screen or even out loud, but we don't care
+much about the result.
+In that case we can use @racket[<-np] which sends a message but with
+"no promise":
+
+@delayed-interact[
+(define parrot
+  (a-vat 'spawn
+         (lambda (bcom)
+           (lambda (phrase)
+             (code:comment "Since we're using displayln, we're printing this phrase")
+             (code:comment "rather than returning it as a string")
+             (displayln (format "<parrot>: ~a... *SQWAK!*" phrase))))))
+(b-vat 'run
+       (lambda ()
+         (<-np parrot "Polly wants a chiptune")))]
+
+When we don't need a promise, @racket[<-np] is an optimization that saves us
+from some promise overhead.
+But in most of our code, @racket[<-] performs the more common case
+of returning a promise.
+
+Anyway, we should have enough information to make a better constructor
+for friends who are far away.
+Recall our definition of @id{^calls-friend}:
+
+@codeblock|{
+(define (^calls-friend bcom our-name)
+  (lambda (friend)
+    (define what-my-friend-said
+      ($ friend our-name))
+    (displayln (format "<~a>: I called my friend, and they said:"
+                       our-name))
+    (displayln (format "   \"~a\"" what-my-friend-said))))}|
+
+.. we'll make a few changes and name our constructor =^messages-friend=:
+
+@run-codeblock|{
+(define (^messages-friend bcom our-name)
+  (lambda (friend)
+    (on (<- friend our-name)
+        (lambda (what-my-friend-said)
+          (displayln (format "<~a>: I messaged my friend, and they said:"
+                             our-name))
+          (displayln (format "   \"~a\"" what-my-friend-said)))
+        #:catch
+        (lambda (err)
+          (displayln
+           "I messaged my friend but they broke their response promise...")))))}|
+
+(We even made it a bit more robust than our previous implementation
+by handling errors!)
+
+Now we can make a version of Bob that can do a better job of holding a
+conversation with his far-away friend Alice:
+
+@delayed-interact[
+  (define bob2
+    (b-vat 'spawn ^messages-friend "Bob"))
+  (b-vat 'call bob2 alice)]
+
+Much better!
+
+
