@@ -778,3 +778,350 @@ conversation with his far-away friend Alice:
 Much better!
 
 
+@subsection{Making and resolving our own promises}
+
+So we know that @racket{<-} can make promises, but it turns out we can
+make promises ourselves:
+
+@interact[
+  (a-vat 'run spawn-promise-cons)]
+
+As we can see, promises come in pairs: the promise object, which we
+can listen to with @racket[on], and the resolver object, which lets us
+fulfill or break a promise.
+
+We can also use @racket[spawn-promise-pair] to spawn a promise
+(TODO: add footnote about why we didn't earlier, multiple value return
+not being allowed from actors currently), which returns multiple
+values (which we can bind with @racket[define-values]).
+We can then try resolving a promise with @racket[on]... but of course
+we'll need to fulfill or break it to see anything.
+
+@delayed-interact[
+  (a-vat 'run
+         (lambda ()
+           (define-values (foo-vow foo-resolver)
+             (spawn-promise-pair))
+           (define-values (bar-vow bar-resolver)
+             (spawn-promise-pair))
+           (define (declare-resolved result)
+             (printf "Resolved: ~a\n" result))
+           (define (declare-broken err)
+             (printf "Broken: ~a\n" err))
+           (on foo-vow
+               declare-resolved
+               #:catch declare-broken)
+           (on bar-vow
+               declare-resolved
+               #:catch declare-broken)
+           ($ foo-resolver 'fulfill 'yeah-foo)
+           ($ bar-resolver 'break 'oh-no-bar)))]
+
+By the way, you may notice that there's a naming convention in Goblins
+(borrowed from E) to append a @id{-vow} suffix if something is a promise
+(or should be treated as one).
+That's a good practice for you to adopt, too.
+
+@subsection{Finally we have #:finally}
+
+Maybe we'd like to run something once a promise resolves, regardless
+of whether or not it succeds or fails.
+In such a case we can use the @id{#:finally} keyword:
+
+@delayed-interact-errors[
+  (a-vat 'run
+         (lambda ()
+           (define resolves-ok
+             (spawn (lambda (bcom)
+                      (lambda ()
+                        "This is fine!"))))
+           (define errors-out
+             (spawn (lambda (bcom)
+                      (lambda ()
+                        (error "I am error!")))))
+           (define (handle-it from-name vow)
+             (on vow
+                 (lambda (val)
+                   (displayln
+                    (format "Got from ~a: ~a" from-name val)))
+                 #:catch
+                 (lambda (err)
+                   (displayln
+                    (format "Error from ~a: ~a" from-name err)))
+                 #:finally
+                 (lambda ()
+                   (displayln
+                    (format "Done handling ~a." from-name)))))
+           (handle-it 'resolves-ok (<- resolves-ok))
+           (handle-it 'errors-out (<- errors-out))))]
+
+@subsection{The on-fulfilled handler of "on" is optional}
+
+Maybe all you care about is the @id{#:catch} or @id{#:finally} clause.
+The @id{on-fulfilled} argument (ie, the first positional argument) to
+@racket[on] is actually optional:
+
+@delayed-interact-errors[
+(define ((^throws-error bcom))
+  (error "oh no"))
+(define throws-error
+  (a-vat 'spawn ^throws-error))
+(a-vat 'run
+       (lambda ()
+         (on (<- throws-error)
+             #:catch
+             (lambda (err)
+               (displayln (format "The error is: ~a" err))))))]
+
+(Side note, this is the first time we've seen the procedure definition
+style used in @id{^throws-error}... it's a way in Racket of making a
+procedure that defines a procedure.  Handy in Goblins!  If you're new
+to that, these two definitions are equivalent:)
+
+@codeblock|{
+  (define (^friend bcom my-name)
+    (lambda (your-name)
+      (format "Hello ~a, my name is ~a!" your-name my-name)))
+
+  (define ((^friend bcom my-name) your-name)
+    (format "Hello ~a, my name is ~a!" your-name my-name))}|
+
+
+@subsection{"on" with non-promise values}
+
+@racket[on] works just fine if you pass in a non-promise value.
+It'll just treat that value as if it were a promise that had
+resolved immediately.
+For example:
+
+@delayed-interact[
+(a-vat 'run
+       (lambda ()
+         (on 5
+             (lambda (v)
+               (displayln (format "Got: ~a" v))))))]
+
+@subsection{"on" can return promises too}
+
+It turns out that @racket[on] can also return a promise!
+However, this isn't a very common use case, so you have to ask for it
+via the @id{#:promise?} keyword.
+
+@delayed-interact[
+(define ((^bakery bcom name) carb)
+  (format "~a's signature ~a baking" name carb))
+(define petite-oven-bakery
+  (a-vat 'spawn ^bakery "The Petite Oven"))
+(a-vat 'run
+       (lambda ()
+         (define smell-vow
+           (on (<- petite-oven-bakery "croissants")
+               (lambda (what-you-smell)
+                 (format "You smell ~a.  Heavenly!!"
+                         what-you-smell))
+               #:promise? #t))
+         (on smell-vow displayln)))]
+
+The choice of whether or not to include @id{#:catch} in an @racket[on]
+with @id{#:promise?} affects whether or how an error will propagate
+(or be cleaned up).
+
+Without catching an error:
+
+@delayed-interact-errors[
+(define ((^throws-error bcom))
+  (error "oh no"))
+(define throws-error
+  (a-vat 'spawn ^throws-error))
+(a-vat 'run
+       (lambda ()
+         (on (on (<- throws-error)
+                 (lambda (val)
+                   (displayln "I won't run..."))
+                 #:promise? #t)
+             #:catch
+             (lambda (e)
+               (displayln (format "Caught: ~a" e))))))]
+
+However if we catch the error, we can return a value that will succeed
+if we like:
+
+@delayed-interact-errors[
+(a-vat 'run
+       (lambda ()
+         (on (on (<- throws-error)
+                 #:catch
+                 (lambda (e)
+                   "An error?  Psh... this is fine.")
+                 #:promise? #t)
+             (lambda (val)
+               (displayln (format "Got: ~a" val))))))]
+
+But if our @racket{#:catch} handler raises an error, that error will
+simply propagate (instead of the original one):
+
+@delayed-interact-errors[
+  (a-vat 'run
+         (lambda ()
+           (on (on (<- throws-error)
+                   #:catch
+                   (lambda (e)
+                     (error "AAAAH!  This is NOT fine!"))
+                   #:promise? #t)
+               #:catch
+               (lambda (e)
+                 (displayln (format "Caught: ~a" e))))))]
+
+
+@subsection{Promise pipelining}
+
+@centered{
+  "Machines grow faster and memories grow larger.
+  But the speed of light is constant and New York is not getting any
+  closer to Tokyo."
+
+  @emph{from
+        @link["http://www.erights.org/talks/thesis/"]{
+              Robust Composition: Towards a Unified Approach
+              to Access Control and Concurrency Control}
+        by Mark S. Miller}}
+
+Let's say we have a car factory that makes cars:
+
+@run-codeblock|{
+(define (^car-factory bcom company-name)
+  (define ((^car bcom model color))
+    (format "*Vroom vroom!*  You drive your ~a ~a ~a!"
+            color company-name model))
+  (define (make-car model color)
+    (spawn ^car model color))
+  make-car)
+
+(define fork-motors
+  (a-vat 'spawn ^car-factory "Fork"))}|
+
+Now observe... in this scenario, Fork Motors exists on @id{a-vat}.
+It will also generate a car that technically lives on @id{a-vat}.
+Let's say we live on @id{b-vat}... we'd still like to drive our car.
+Doing so seems extremely ugly:
+
+@delayed-interact[
+  (b-vat 'run
+         (lambda ()
+           (on (<- fork-motors "Explorist" "blue")
+               (lambda (our-car)
+                 (on (<- our-car)
+                     displayln)))))]
+
+This is hard to follow.
+Maybe if we actually name some of those promises it'll be a bit easier
+to read:
+
+@delayed-interact[
+  (b-vat 'run
+         (lambda ()
+           (define car-vow
+             (<- fork-motors "Explorist" "blue"))
+           (on car-vow
+               (lambda (our-car)
+                 (define drive-noise-vow
+                   (<- our-car))
+                 (on drive-noise-vow
+                     displayln)))))]
+
+Hm, not so much better.
+Naming things helped us remember what each promise was for, but it
+seems to be the nesting of @racket[on] handlers that's confusing.
+
+Fortunately, Goblins supports something called "promise pipelining".
+We can send an instruction to drive our car... before it even rolls
+off the factory lot!
+That's right... you can send messages to promises, before they have
+even resolved!
+
+@delayed-interact[
+  (b-vat 'run
+         (lambda ()
+           (define car-vow
+             (<- fork-motors "Explorist" "blue"))
+           (define drive-noise-vow
+             (<- car-vow))
+           (on drive-noise-vow
+               displayln)))]
+
+Wow... that's *much* easier to read!
+
+But readability is not the only goal of promise pipelining.
+Like many things in Goblins,
+@link["http://erights.org/elib/distrib/pipeline.html"]{
+  promise pipelining comes from the E programming language}.
+We're still working on distributed networked Goblins code, but the
+foundations are there to do the same thing that E does: send messages
+with less round trips!
+
+Think about it this way: if @id{a-vat} actually lived on a different
+server from @id{b-vat}, and both servers lived halfway across the globe
+with the first way we implemented things:
+
+@itemize[
+  @item{@id{b-vat} would have to first send a message to the factory
+        on @id{a-vat} first asking to make a car}
+  @item{then @id{a-vat} would have to respond, resolving the promise
+        with the location of the new car}
+  @item{then @id{b-vat} would have to send @emph{another} message
+        asking to drive the car}
+  @item{then @id{a-vat} would have to respond, resolving yet another
+        promise with the noise the car makes}
+  @item{and finally =b-vat= can now display the car noise to the user.}]
+
+With promise pipelining, this merely becomes:
+
+@itemize[
+  @item{@id{b-vat} would send a message to the factory on @id{a-vat}
+        first asking to make a car and /at the same time/ can say,
+        "and once this car is made, I'd like to send another message
+        to it so I can drive it."}
+  @item{then =a-vat= can make the car, drive the car, and then respond
+        with the noise the car makes}
+  @item{and now =b-vat= can display the car noise to the user.}]
+
+Instead of going @id{B => A => B => A => B}, we have reduced our work to
+@id{B => A => B} ... a significant savings in round-trips.
+This can really add up in distributed applications, where (as Miller's
+quote at the top of this subsection indicates) we may be limited in
+how much we can prevent network delays by physics itself.
+
+
+@subsection{Broken promise contagion}
+
+Of course, now that we know that we can pipe promises together, what
+happens if an error happens in the middle of the pipeline?
+
+@run-codeblock|{
+(define (^lessgood-car-factory bcom company-name)
+  (define ((^car bcom model color))
+    (format "*Vroom vroom!*  You drive your ~a ~a ~a!"
+            color company-name model))
+  (define (make-car model color)
+    (error "Your car exploded on the factory floor!  Ooops!")
+    (spawn ^car model color))
+  make-car)
+
+(define forked-motors
+  (a-vat 'spawn ^lessgood-car-factory "Forked"))}|
+
+The answer is that the error is simply propagated to all pending promises:
+
+@delayed-interact-errors[
+  (b-vat 'run
+         (lambda ()
+           (define car-vow
+             (<- forked-motors "Exploder" "red"))
+           (define drive-noise-vow
+             (<- car-vow))
+           (on drive-noise-vow
+               displayln
+               #:catch
+               (lambda (err)
+                 (displayln (format "Caught: ~a" err))))))]
+
