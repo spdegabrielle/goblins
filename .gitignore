@@ -1,3 +1,11 @@
 /goblins/doc/
 /goblins/scribblings/compiled/
 compiled/
+/goblins/scribblings/racket.css
+/goblins/scribblings/scribble.css
+/goblins/scribblings/scribble-common.js
+/goblins/scribblings/manual-fonts.css
+/goblins/scribblings/manual-racket.css
+/goblins/scribblings/manual-racket.js
+/goblins/scribblings/manual-style.css
+/goblins/scribblings/goblins.html
