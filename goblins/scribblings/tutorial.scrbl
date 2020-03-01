@@ -1298,3 +1298,26 @@ come back to life (and lunch) as it used to be.
 Why eat leftovers when you can simply travel back in time and eat
 yesterday's lunch?
 
+
+@section{Advanced object patterns}
+
+@subsection{Extending our methods}
+
+@subsection{Mixins}
+
+@subsection{Behavior pivoting as a kind of state machine}
+
+@section{How this relates to "object capability security"}
+
+@section{Sealers/unsealers and rights amplification}
+
+@section{Networked object interactions}
+
+@section{A peek into Goblins' machinery}
+
+@subsection{Actors really are what they say they are}
+
+@subsection{So how does message passing work}
+
+@subsection{How can two actormaps communicate?  (How do vats do it?)}
+
