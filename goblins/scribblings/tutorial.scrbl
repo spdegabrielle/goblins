@@ -1244,3 +1244,57 @@ our @id{'bbq-tofu} sandwich for a @id{'chickpea-salad} one:
 
 Horray!
 
+
+@subsection{Time travel: snapshotting and restoring}
+
+But what does our actormap really look like?
+Right now it only has one thing in it, the lunchbox cell.
+We can see this by "snapshotting" the actormap.
+
+@interact[
+  (snapshot-whactormap am)]
+
+This returns an immutable actormap, frozen in time.
+We can see that it only has one pairing in it, and yep... it looks
+like the key is our @id{lunchbox} reference:
+
+@interact[lunchbox]
+
+So it seems our "refr" is just a "reference"... it isn't the state of
+the object itself, it's something that points to that state, through
+an indirection of the actormap.
+
+We now know that we can snapshot an actormap, we can freeze time and
+come back to it.
+First we'll freeze a snapshot of this period of time, change what's
+in the lunchbox, and then snapshot it again:
+
+@interact[
+  (define am-snapshot1
+    (snapshot-whactormap am))
+  (actormap-poke! am lunchbox
+                  (code:comment "sloppy joe w/ lentils")
+                  'sloppy-jane)
+  (define am-snapshot2
+    (snapshot-whactormap am))]
+
+Now let's restore them as separate whactormaps:
+
+@interact[
+  (define am-restored1
+    (hasheq->whactormap am-snapshot1))
+  (define am-restored2
+    (hasheq->whactormap am-snapshot2))]
+
+Now it doesn't matter what we put in our lunchbox; we can always
+come back to life (and lunch) as it used to be.
+
+@interact[
+  (actormap-poke! am lunchbox 'peanut-butter-and-pickles)
+  (actormap-peek am lunchbox)
+  (actormap-peek am-restored2 lunchbox)
+  (actormap-peek am-restored1 lunchbox)]
+
+Why eat leftovers when you can simply travel back in time and eat
+yesterday's lunch?
+
