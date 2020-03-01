@@ -1125,3 +1125,122 @@ The answer is that the error is simply propagated to all pending promises:
                (lambda (err)
                  (displayln (format "Caught: ~a" err))))))]
 
+@section{Going low-level: actormaps}
+
+@subsection{Spawning, peeking, poking, turning}
+
+So far we have dealt with vats, but there is a lower level of
+abstraction in Goblins which is called an "actormap".
+
+The key differences are:
+
+@itemize[
+  @item{
+    @bold{vat}: An event loop implementation that runs continuously
+    in its own thread.
+    Comes pre-built with tooling to handle message passing between
+    vats.
+    Actually wraps an actormap.}
+  @item{
+    @bold{actormap}: The transactional datastructure that vats use.
+    But, useful on its own to either build your own event loop
+    or as a synchronous one-turn-at-a-time mapping of actor references
+    to their current implementations.}]
+
+The best way to learn is by doing, so let's make an actormap now:
+
+@run-codeblock|{
+(define am (make-actormap))}|
+
+Let's add an actor to it.
+Since cells are simple, let's add one of those.
+
+@run-codeblock|{
+(define lunchbox
+  (actormap-spawn! am ^cell))}|
+
+What's in the lunchbox?
+We could take a look with @racket[actormap-peek]:
+
+@interact[
+  (actormap-peek am lunchbox)]
+
+An empty lunchbox... we'd like to eat something later, so how about we
+pack ourselves a nice sandwich by using @racket[actormap-poke]:
+
+@interact[
+  (actormap-poke! am lunchbox 'peanut-butter-and-jelly)
+  (actormap-peek am lunchbox)]
+
+What if we tried to look inside the lunchbox with @racket[actormap-poke!]
+instead of @racket[actormap-peek]?
+
+@interact[
+  (actormap-poke! am lunchbox 'bbq-tofu)
+  (actormap-poke! am lunchbox)]
+
+Well that worked just fine.
+What happens if we do both operations with @racket[actormap-peek]?
+
+@interact[
+  (actormap-peek am lunchbox 'chickpea-salad)
+  (actormap-peek am lunchbox)]
+
+What the...???
+Our lunchbox didn't change!
+
+We said that actormaps were transactional.
+We have gotten a hint of this with the above:
+@racket[actormap-poke!] returns a value and commits any changes.
+@racket[actormap-peek] returns a value and throws any changes away.
+
+Actually, these two functions are just simple conveniences that wrap a
+more powerful (but cumbersome to use) tool, @racket[actormap-turn]:
+
+@interact[
+  (actormap-turn am lunchbox)
+  (actormap-turn am lunchbox 'chickpea-salad)]
+
+@racket[actormap-turn] returns four values to its continuation: a
+return value (if any... Racket's REPL doesn't print out a
+@racket[(void)], which is what actually got returned in the second
+invocation), a "transactormap", and two lists representing messages
+queued for delivery.
+(*TODO:* Currently two, one for local and one for remote vats... we are
+likely to collapse down to just one list, so update this text when
+that changes!)
+
+This @id{#<transactormap>} is interesting... we haven't mentioned this
+before, but there are really two kinds of actormaps, "whactormaps"
+(weak-hash actormaps) and "transactormaps" (which hold a transaction
+which we can choose whether or not to commit).
+Actually our @id{am} is a whactormap:
+
+@interact[am]
+
+It's a weak hashtable which stores the current mutable state of all
+actors.
+
+But we'd like to see about that transactormap... just running
+@racket[actormap-turn] on its own won't update the lunchbox either:
+
+@interact[
+  (actormap-turn am lunchbox 'chickpea-salad)
+  (actormap-turn am lunchbox)]
+
+We need to capture the transactormap and commit it.
+
+@interact[
+  (define-values (_val tr-am _tl _tr)
+    (actormap-turn am lunchbox 'chickpea-salad))
+  tr-am
+  (transactormap-merge! tr-am)]
+
+Now at least our @id{am} actormap should reflect that we've switched out
+our @id{'bbq-tofu} sandwich for a @id{'chickpea-salad} one:
+
+@interact[
+  (actormap-peek am lunchbox)]
+
+Horray!
+
