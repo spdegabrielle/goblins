@@ -1317,6 +1317,219 @@ yesterday's lunch?
 
 @subsection{Actors really are what they say they are}
 
+Now at last we will pull the curtain aside and see that the (hu?)man
+standing behind the curtain is who we thought it was all along.
+(This particular section is totally "optional", but hopefully
+illuminates some of the guts of Goblins itself.)
+
+Here is a suitable test subject:
+
+@run-codeblock|{
+(define (^the-wizard bcom)
+  ;; High and mighty
+  (define the-wizard-behind-the-curtain
+    (methods
+     [(request-gift what)
+      "HOW DARE YOU APPROACH THE ALL POWERFUL WIZARD?"]
+     [(pull-back-curtain)
+      (bcom the-man
+            "Er... I can explain...")]))
+  ;; Just a person after all
+  (define the-man
+    (methods
+     [(request-gift what)
+      (match what
+        ['heart
+         "Here's a clock shaped like a heart!"]
+        ['brain
+         "Here's a diploma!"]
+        ['courage
+         "The courage was inside you all along!"]
+        [anything-else
+         "I don't know what that is..."])]
+     [(pull-back-curtain)
+      "... you already pulled it back."]))
+  ;; we start out obscured
+  the-wizard-behind-the-curtain)
+
+(define wizard
+  (actormap-spawn! am ^the-wizard))}|
+
+We humbly approach the wizard asking for the gift of a heart:
+
+@interact[
+  (actormap-peek am wizard 'request-gift 'heart)]
+
+Is that so?
+Let's snapshot time both before and after we pull back the curtain
+so we can remember how he changes his tone:
+
+@interact[
+  (define am-wizard-snapshot1
+    (snapshot-whactormap am))
+  (actormap-poke! am wizard 'pull-back-curtain)
+  (define am-wizard-snapshot2
+    (snapshot-whactormap am))]
+
+Of course now, if we request a gift of the wizard, the conversation is
+a bit different:
+
+@interact[
+  (actormap-peek am wizard 'request-gift 'heart)
+  (actormap-peek am wizard 'request-gift 'brain)
+  (actormap-peek am wizard 'request-gift 'courage)]
+
+Of course, this isn't too much of a surprise, since, well, we wrote
+the code for the wizard.
+
+Both actormaps show our new wizard resident (and the old lunchbox
+cell):
+
+@interact[
+  am-wizard-snapshot1
+  am-wizard-snapshot2]
+
+Referencing the wizard from either hashtable gives us this
+weird-looking "ephemeron" thing:
+
+@interact[
+  (hash-ref am-wizard-snapshot1 wizard)]
+
+Well, an
+@tech[#:doc '(lib "scribblings/reference/reference.scrbl") "ephemeron"]
+is just
+@link["https://en.wikipedia.org/wiki/Ephemeron"]{a datastructure}
+to help the garbage collection in the weak hashtable of whactormaps
+work right.  So we can peel that off:
+
+@interact[
+  (ephemeron-value
+   (hash-ref am-wizard-snapshot1 wizard))]
+
+What's a... "mactor"?
+Well, it stands for "meta-actor"... there are a few of these
+kinds of things.
+A @id{mactor:local-actor} is one kind of mactor (actually the most common
+kind), one that works in the usual way of wrapping a procedure.
+
+It would be wonderful to be able to look at that procedure.
+Unfortunately, we haven't pulled in all the tools to do it yet, but
+there is a way to do so:
+
+@interact[
+  (require (submod goblins/core mactor-extra))]
+
+This gives us access to @racket[mactor:local-actor-handler], which is what
+we want.
+
+@interact[
+  (mactor:local-actor-handler
+   (ephemeron-value
+    (hash-ref am-wizard-snapshot1 wizard)))]
+
+Let's give names to both snapshotted wizard handlers:
+
+@interact[
+  (define wizard-handler1
+    (mactor:local-actor-handler
+     (ephemeron-value
+      (hash-ref am-wizard-snapshot1 wizard))))
+  (define wizard-handler2
+    (mactor:local-actor-handler
+     (ephemeron-value
+      (hash-ref am-wizard-snapshot2 wizard))))]
+
+Since these are just procedures, we can try calling them directly.
+As we can see, the first wizard is petulant in response to our request
+for a gift, whereas the second wizard, having had the curtain pulled
+away, is happy to assist.
+
+@interact[
+  (wizard-handler1 'request-gift 'heart)
+  (wizard-handler2 'request-gift 'heart)]
+
+So this really was the procedure we thought it was!
+
+But wait... if we remember correctly, our first wizard version,
+@id{the-wizard-behind-the-curtain}, returned its request to "become"
+something (as well as its return value) wrapped by its =bcom=
+capability when we called the @id{'pull-back-curtain} method.
+So what happens if we try calling that again on the unwrapped
+procedure?
+
+@interact[
+  (wizard-handler1 'pull-back-curtain)]
+
+That's interesting... it returned a "become" object!
+How can we unwrap it?
+
+Well, here's the secret about @id{bcom}: as we said, it is a capability,
+but it's actually using a "sealer" (we'll get to what those are later,
+which as it sounds like is a kind of capability to "seal" an object in
+a certain way).
+To unseal it, we need the corresponding "unsealer".
+@id{mactor:local-actor} has a way of detecting that the value is wrapped
+in this sealer, as well as a way of unsealing it:
+
+@interact[
+  (define wizard-become?
+    (mactor:local-actor-become?
+     (ephemeron-value
+      (hash-ref am-wizard-snapshot1 wizard))))
+  (define wizard-become-unsealer
+    (mactor:local-actor-become-unsealer
+     (ephemeron-value
+      (hash-ref am-wizard-snapshot1 wizard))))]
+
+Now we can see that the value returned from the ='pull-back-curtain=
+method is from the wizard's @id{bcom} sealer:
+
+@interact[
+  (wizard-become? (wizard-handler1 'pull-back-curtain))]
+
+And now, at last!
+We can peer into its contents:
+
+@interact[
+  (wizard-become-unsealer (wizard-handler1 'pull-back-curtain))]
+
+Aha!
+It looks like it returns two values to its continuation...
+the procedure that the actor would like to become, as well as
+an extra (and optional, defaulting to @racket[(void)]) return value.
+Let's bind the first of those to a useful name:
+
+@interact[
+  (define-values (new-wizard-handler _wizval)
+    (wizard-become-unsealer (wizard-handler1 'pull-back-curtain)))]
+
+Now as you've probably guessed, this ought to be the same procedure as
+@id{wizard-handler2}.
+Is it?
+
+@interact[
+  (code:comment "Works just like wizard-handler2...")
+  (new-wizard-handler 'request-gift 'courage)
+  (code:comment "... because it *is* wizard-handler2!")
+  (eq? new-wizard-handler wizard-handler2)]
+
+Woohoo!
+
+Of course, the tools we've seen in this subsection are not really
+tools that we expect users of Goblins to use very regularly.
+(Indeed, when we implement better module-level security, rarely will
+they have access to them.)
+But now we've gotten a peek inside of Goblins' machinery, and seen
+that it was mostly what we expected all along.
+
+I feel like all that learning is was worth a reward, don't you?
+
+@interact[
+  (new-wizard-handler 'request-gift 'brain)]
+
+Yes, we deserve it!
+
+
 @subsection{So how does message passing work}
 
 @subsection{How can two actormaps communicate?  (How do vats do it?)}
