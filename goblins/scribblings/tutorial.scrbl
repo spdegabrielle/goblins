@@ -260,7 +260,7 @@ and use it:
 You'll observe that there was no need to go through the vat here, our
 object was able to use @racket[spawn] and @racket[$] (which is
 pronounced "call", "immediate call", or "money call") directly.
-xoThat's because our actor is operating within a goblins context, so
+That's because our actor is operating within a goblins context, so
 there's no reason to do so by bootstrapping through the vat (indeed,
 trying to do so would cause an exception to be raised).
 
