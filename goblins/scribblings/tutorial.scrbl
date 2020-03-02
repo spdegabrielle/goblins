@@ -197,7 +197,7 @@ happen?
 Let's look at the body of that add1 method in detail:
 
 @codeblock|{
-  (bcom (next (add1 count)))}|
+  (bcom (^counter bcom (add1 count)))}|
 
 @id{bcom} (pronounced "be-come" or "be-comm") is the capability to
 @id{become} a new version of ourselves; more explicitly, to give a
