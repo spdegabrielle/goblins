@@ -11,7 +11,8 @@
          delayed-interact
          delayed-interact-errors
          run-codeblock
-         hidden-eval)
+         hidden-eval
+         reset-eval!)
 
 (define goblins-evaluator
   (make-base-eval #:lang 'racket))
@@ -49,3 +50,6 @@
   (examples #:eval goblins-evaluator
             #:hidden #t
             e ...))
+
+(define (reset-eval!)
+  (set! goblins-evaluator (make-base-eval #:lang 'racket)))
