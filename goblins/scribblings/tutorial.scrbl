@@ -23,7 +23,7 @@ Let's open a Racket REPL and import Goblins:
   (require goblins racket))
 
 First we're going to need something to store our objects in.
-We'll boot up an event loop, called a "vat" (TODO: explain why it's
+We'll boot up an event loop, called a @tech{vat} (TODO: explain why it's
 called that), which can manage our objects.
 
 @interact[
@@ -1130,7 +1130,7 @@ The answer is that the error is simply propagated to all pending promises:
 @subsection{Spawning, peeking, poking, turning}
 
 So far we have dealt with vats, but there is a lower level of
-abstraction in Goblins which is called an "actormap".
+abstraction in Goblins which is called an @tech{actormap}.
 
 The key differences are:
 
