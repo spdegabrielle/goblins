@@ -906,7 +906,7 @@
      #'(define id
          (spawn (procedure-rename constructor 'id) args ...))]))
 
-(define (on id-refr [on-fulfilled #f]
+(define (on vow [on-fulfilled #f]
             #:catch [on-broken #f]
             #:finally [on-finally #f]
             #:promise? [promise? #f])
@@ -933,7 +933,7 @@
       ;; Otherwise, this doesn't belong here
       [_ (error 'invalid-on-handler
                 "Invalid handler for on: ~a" obj)]))
-  (sys 'on id-refr (maybe-actorize on-fulfilled 'on-fulfilled)
+  (sys 'on vow (maybe-actorize on-fulfilled 'on-fulfilled)
        #:catch (maybe-actorize on-broken 'on-broken)
        #:finally (maybe-actorize on-finally 'on-finally)
        #:promise? promise?))
