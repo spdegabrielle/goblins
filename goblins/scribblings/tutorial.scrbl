@@ -7,7 +7,7 @@
 
 @(define id racketidfont)
 
-@title{A tutorial}
+@title{Tutorial}
 
 @section{Vats, actors, spawning, and immediate calls}
 
