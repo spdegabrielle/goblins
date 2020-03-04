@@ -45,6 +45,8 @@ to set up a new message handler for future invocations.
 
 @section{Core procedures}
 
+@define-footnote[core-api-note make-core-api-note]
+
 The following procedures are the core API used to write Goblins code.
 All of them must be run within an "actor context", which is to say
 either from an actor running within a @tech{vat} or an @tech{actormap}
@@ -64,6 +66,12 @@ is passed the remaining @racket[argument]s.}
 @; call $  ; $ is an alias
 
 @defproc[($ [actor-refr near-refr?] [arg any/c] ...) any/c]{
+Pronounced "call" or "money-call".@core-api-note{
+Why "money call"?
+Because you need @racket[$] to make
+@link["http://erights.org/elib/capability/ode/index.html"]{
+distributed ocap financial instruments}!}
+
 Provide a synchronous call against the current message handler of
 @racket[actor-refr], which must be a @tech{near} @racket[live-refr?]
 in the same vat as the currently running actor context.
@@ -140,6 +148,7 @@ The promise will be resolved as follows:
         will be broken with its error-value set to this exception (which
         may even be the original exception).}]}
 
+@make-core-api-note[]
 
 @section{References}
 
