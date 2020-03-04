@@ -146,14 +146,43 @@ The promise will be resolved as follows:
 
 @section{References}
 
+A @deftech{reference} is a capability to communicate with an actor.
+References are an indirection and abstractly correspond to an actor handler
+in an @tech{actormap} somewhere, often in a @tech{vat}.
+
 @; refr?
+@defproc[(refr? [obj any/c]) bool?]{
+Returns @racket[#t] if @racket[obj] is a @tech{reference}}.
+
+@subsection{Live vs Sturdy references}
+
+The most common kind of reference is a @deftech{live} reference,
+meaning that they correspond to some actor which we have an
+established connection to.
+However some references may be @deftech{sturdy} references, meaning
+they are serialized in such a way that they probably refer to some
+actor, but the connection to it is dormant in this reference itself.
+A sturdy reference must be enlivened with @racket[enliven] before it
+can be used.
+(@bold{TODO:} or do we just want to reuse @racket[<-]?  Dunno.)
+
+@bold{NOTE:} Sturdy references aren't implemented yet, and neither is
+@racket[enliven].
+Change that!
+
+@defproc[(live-refr? [obj any/c]) bool?]{
+Returns @racket[#t] if @racket[obj] is @tech{live}.}
+
+@defproc[(sturdy-refr? [obj any/c]) bool?]{
+Returns @racket[#t] if @racket[obj] is @tech{sturdy}.}
+
+@bold{TODO:} Define and document @racket[enliven], maybe.
+
 @; live-refr?
 @; sturdy-refr?
 @; near-refr?
 
-@subsection{Live vs sturdy references}
-
-@subsection{Near and far}
+@subsection{Near vs far references}
 
 An actor is @deftech{near} if it is in the same vat as the actor being
 called in an actor context.
@@ -161,6 +190,15 @@ An actor is @deftech{far} if it is not.
 The significance here is that only @tech{near} actors may perform immediate
 calls with @racket[$], whereas any actor may perform asynchronous message
 sends with @racket[<-] and @racket[<-np].
+
+@subsection{Local vs remote references}
+
+Well, once @tech{machine}s exist, this will matter, but they don't yet :P
+
+
+@section{Actormaps}
+
+An @deftech{actormap} is a blah blah
 
 
 @section{Vats}
@@ -177,12 +215,12 @@ The returned procedure uses symbol-based method dispatch.
 @bold{TODO:} document all the methods.}
 
 
-@section{Actormaps}
-
-An @deftech{actormap} is a blah blah
-
-
 @section{Promises}
 
 A @deftech{promise} ...
 
+
+@section{Machines}
+
+A @deftech{machine} is another layer of abstraction you don't need to
+worry about... yet! ;)
