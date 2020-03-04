@@ -6,16 +6,96 @@
 
 @reset-eval![]
 
-@title[#:tag "api"]{API}
+@title[#:tag "api"]{Goblins API}
 
 @defmodule[goblins]
 
-@section{Actor constructors}
+@section[#:tag "actors"]{Actors}
+
+@define-footnote[actors-note make-actors-note]
+
+@subsection{What is an "actor" in Goblins?}
+
+Goblins implements the
+@link["https://en.wikipedia.org/wiki/Actor_model"]{actor model}
+on top of Racket / scheme.@actors-note{
+  Sussman and Steele famously came to the conclusion that there was in
+  fact no difference between actor-style message passing and procedure
+  application in the lambda calculus, and indeed both are similar.
+  However, there is a significant difference between synchronous
+  call-and-return procedure application (which is what scheme implements
+  in its most general form, and between actors in Goblins is handled
+  by @racket[$]) and asynchronous message passing (which in Goblins
+  is handled with @racket[<-]).}
+
+The
+@link["https://en.wikipedia.org/wiki/Actor_model#Fundamental_concepts"]{fundamental operations of actors}@actors-note{
+Emphasis on "fundamental" operations.
+Extensions happen from here and vary widely between different systems
+that call themselves "actors".}
+are:
+
+@itemize[
+  @item{An actor can send messages to other actors of which it has the
+        address.
+        (In Goblins, @racket[<-], possibly arguably @racket[$] as well.)}
+  @item{An actor may create new actors.
+        (In Goblins, @racket[spawn].)}
+  @item{An actor may designate its behavior for the next message it
+        handles.
+        (In Goblins, this means returning a new message handler by
+        wrapping that message handler in the actor's @tech{bcom}
+        capability.)}]
+
+Goblins' extensions to these ideas are:
+
+@itemize[
+  @item{@emph{Both} synchronous and asynchronous calls are defined and
+        supported, between @racket[$] and @racket[<-] respectively.
+        However, @racket[$] is both convenient and important for systems
+        that much be transactionally atomic (eg
+        @link["http://erights.org/elib/capability/ode/ode-capabilities.html"]{implementing money}),
+        it is limited to objects that are within the same @tech{vat}.
+        @racket[<-] is more universal in that any actor on any @tech{vat}
+        may communicate with each other, but is asynchronous and cannot
+        immediately return a resolved value.@actors-note{
+          For more on why this is, see chapters 13-15 of
+          @link["http://www.erights.org/talks/thesis/"]{Mark Miller's dissertation}..
+          This was very influential on Goblins' design, including the decision
+          to move from a coroutine-centric approach to an
+          @link["http://www.erights.org/"]{E}-style promise approach.
+          It could be that coroutines are re-added, but would have to be done
+          with extreme care; section 18.2 of that same thesis for an
+          explaination of the challenges and a possible solution for
+          introducing coroutines.}}
+  @item{Raw message passing without a clear way to get values back can
+        be painful.
+        For this reason, @racket[<-] implicitly returns a promise that
+        can be resolved with @racket[on] (and, for extra convenience and
+        fewer round trips, supports
+        @secref["promise pipelining (tutorial)"]).@actors-note{
+          In this sense, @racket[<-np], which does not return a promise,
+          is closer to the foundational actors message passing.
+          The kind of value that promises give us can be constructed manually
+          by providing return addresses to @racket[<-np], but this is painful
+          given how common needing to operate on the result of an operation is.}}
+  @item{Goblins composes with all the existing machinery of Racket/scheme,
+        including normal procedure calls.
+        Instead, Goblins builds its abstractions on top of it, but none of this
+        needs to be thrown away.@actors-note{
+          Scheme is a beautiful language to build Goblins on top of, but
+          actually we could build a Goblins-like abstraction layer on top
+          of any programming language with sane lexical scoping and weak
+          hash tables (so that actors which are no longer referenced can be
+          garbage collected).}}]
+
+
+@subsection{Constructors and bcom}
 
 A @deftech{constructor} is a procedure which builds the first message
 handler an actor will use to process messages / invocations.
 The constructor has one mandatory argument, traditionally called
-@racket[bcom] (pronounced "become" or "bee-com") which can be used
+@tech{bcom} (pronounced "become" or "bee-com") which can be used
 to set up a new message handler for future invocations.
 
 @interact[
@@ -42,6 +122,19 @@ to set up a new message handler for future invocations.
 (define incr2
   (actormap-spawn! am ^noisy-incrementer 18))
 (actormap-poke! am incr2 42)]
+
+@deftech{bcom}, as shown above, is a capability (or technically a
+"sealer") to become another object.
+However, @tech{bcom} does not apply a side effect; instead,
+it wraps the procedure and must be returned from the actor handler
+to set that to be its new message handler.
+Since this clobbers the space we would normally use to return a value
+(for whatever is waiting on the other end of a @racket[$] or a @tech{promise}),
+@tech{bcom} supports an optional second argument, which is that return value.
+If not provided, this defaults to @racket[(void)].
+
+
+@make-actors-note[]
 
 @section{Core procedures}
 
