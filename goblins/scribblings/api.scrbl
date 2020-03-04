@@ -266,9 +266,20 @@ Commits its result immediately, barring an exceptional condition.}
 @defproc[(actormap-peek [actormap actormap?] [to-refr live-refr?] [args any/c] ...)
          void?]{
 Like @racket[actormap-poke!], but does not commit its result.
-Useful for interrogating an actormap without allowing for become-effects
-within it.}
+Useful for interrogating an actor in an actormap without allowing for
+become-effects within it.}
 
+@defproc[(actormap-run [actormap actormap?] [proc (-> any/c)]) any/c]{
+Run @racket[proc], which is a thunk (procedure with no arguments) in the
+actormap context, but do not commit its results, instead returning its
+value.
+
+Like @racket[actormap-peek], this is useful for interrogating an
+actormap, but can be useful for doing several things at once.}
+
+@defproc[(actormap-run! [actormap actormap?] [proc (-> any/c)]) any/c]{
+Like @racket[actormap-run] but, barring exceptional conditions, does
+commit its results.}
 
 
 @subsection{whactormap}
