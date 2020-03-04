@@ -330,6 +330,9 @@
 
 ;; Not threadsafe, but probably doesn't matter
 (define (transactormap-merge! transactormap)
+  ;; Serves two functions:
+  ;;  - to extract the root weak-hasheq
+  ;;  - to merge this transaction on top of the weak-hasheq
   (define (do-merge! transactormap)
     (define parent
       (transactormap-parent transactormap))
