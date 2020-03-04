@@ -496,11 +496,62 @@ actormap.
 
 @bold{TODO:} document.
 
+
+@subsection{Vat connectors}
+
+Somewhat awkwardly named since they most visibly show up in actormaps,
+a @deftech{vat connector} is a procedure (or @racket[#f]) which is
+attached to an actormap.  It serves two purposes:
+
+@itemize[
+  @item{To tell whether or not two actor references are @tech{near}
+        each other.
+        If both share the same @tech{vat connector}, then they are
+        considered @tech{near}.@actormaps-note{
+          There is one case in which this could be misleading: if both
+          references are spawned in different actormaps that have no
+          vat connector (ie, it is @racket[#f]), then they likely
+          won't appear in each others' vats.}}
+  @item{In case actors are not near each other, this specifies how to
+        reach the actor.
+        The procedure is called to communicate with the remote actormap,
+        probably by dropping a message into the queue of its vat event
+        loop.}]
+
+If you are using @racket[make-actormap], this defaults to @racket[#f],
+meaning that all other actors that also have no vat connector will
+assume they are likewise near.
+This of course also means that an actor which @emph{is} in a vat will
+have no way of communicate with an actor which isn't.
+
+On the other hand, @tech[#:key "vat"]{vats} built with
+@racket[make-vat] set up their own vat connectors for you.
+
 @make-actormaps-note[]
 
 @section{Vats}
 
-A @deftech{vat} is an event loop that wraps an @tech{actormap}.
+@define-footnote[vat-note make-vat-note]
+
+A @deftech{vat}@vat-note{
+"Vat" might strike you as a strange name; if so, you're not alone.
+The term apparently refers to the musing, "How do you know if you're a
+brain in a vat?"
+Previously "vat" was called "hive" in Goblins (and its predecessors,
+@link["https://www.gnu.org/software/8sync/"]{8sync} and
+@link["https://xudd.readthedocs.io/en/latest/"]{XUDD});
+it was an independent discovery of the same concept in
+@link["http://www.erights.org/"]{E}.
+Initially, Goblins stuck with "hive" because the primary author of
+Goblins thought it was a more descriptive term; various ocap people
+implored the author to not further fragment ocap vocabulary and so
+the term was switched.
+Since then, a number of readers of this documentation have complained
+that "vat" is confusing, and upon hearing this story have asked for
+the term to be switched back.
+Whether it's better to avoid naming fragmentation or possibly increase
+naming clarity is currently up for debate; your feedback welcome!}
+is an event loop that wraps an @tech{actormap}.
 In most cases, users will use vats rather than the more low-level
 actormaps.
 
@@ -536,6 +587,7 @@ methods:
   @item{@racket['halt]: Stops the next turn from happening in the vat loop.
         Does not terminate the current turn, but maybe it should.}]
 
+@make-vat-note[]
 
 @section{Promises}
 
