@@ -171,10 +171,10 @@ can be used.
 Change that!
 
 @defproc[(live-refr? [obj any/c]) bool?]{
-Returns @racket[#t] if @racket[obj] is @tech{live}.}
+Returns @racket[#t] if @racket[obj] is a @tech{live} reference.}
 
 @defproc[(sturdy-refr? [obj any/c]) bool?]{
-Returns @racket[#t] if @racket[obj] is @tech{sturdy}.}
+Returns @racket[#t] if @racket[obj] is a @tech{sturdy} reference.}
 
 @bold{TODO:} Define and document @racket[enliven], maybe.
 
@@ -218,6 +218,63 @@ actormaps for time-traveling purposese.
 
 @subsection{Actormap methods}
 
+@defproc[(actormap? [obj any/c]) bool?]{
+Determines if @racket[obj] is an @tech{actormap}.}
+
+@defproc[(actormap-spawn [actormap actormap?] [constructor procedure?]
+                         [arg any/c] ...)
+         (values [actor-refr live-refr?] [new-actormap transactormap?])]{
+Like @racket[spawn], but low-level and transactional.
+Returns two values to its continuation, the new actor @tech{live}
+@tech{reference}, and a @tech{transactormap} representing the change.}
+
+@defproc[(actormap-spawn! [actormap actormap?] [constructor procedure?]
+                          [arg any/c] ...)
+         [actor-refr live-refr?]]{
+Like @racket[actormap-spawn!], but directly commits the actor to
+@racket[actormap].
+Only returns the tech{reference} of the new actor.
+No changes are committed in an exceptional condition.}
+
+@defproc[(actormap-turn [actormap actormap?] [to-refr live-refr?] [args any/c] ...)
+         (values [result any/c] [new-actormap transactormap?]
+                 [to-near (listof message?)] [to-far (listof message?)])]{
+Similar to performing @racket[$], applying @racket[args] to
+@racket[to-refr], but transactional and a little bit cumbersome to use.
+(In many cases, you'll prefer to use @racket[actormap-peek],
+@racket[actormap-poke!], @racket[actormap-run], or @racket[actormap-run!]
+which are easier.)
+Returns four values to its continuation: the result of applying
+@racket[args] to @racket[to-refr], a transactional new actormap, and
+two lists of messages that may need to be sent (one to near actors, one
+to far actors).}
+
+
+@defproc[(actormap-reckless-poke! [actormap whactormap?] [to-refr live-refr?]
+                                  [arg any/c] ...)
+         [actor-refr live-refr?]]{
+Like @racket[actormap-poke!], but only usable on a @tech{whactormap}
+and mutates all bcom-effects immediately to the mapping.
+A little bit faster but non-transactional... corrupt state can occur
+in the case of exceptional conditions, as the system will not "roll
+back".
+@emph{Use with caution!}}
+
+@defproc[(actormap-poke! [actormap actormap?] [to-refr live-refr?] [args any/c] ...)
+         any/c]{
+Similar to performing @racket[$], applying @racket[args] to
+@racket[to-refr].
+Commits its result immediately, barring an exceptional condition.}
+
+@defproc[(actormap-peek [actormap actormap?] [to-refr live-refr?] [args any/c] ...)
+         void?]{
+Like @racket[actormap-poke!], but does not commit its result.
+Useful for interrogating an actormap without allowing for become-effects
+within it.}
+
+
+
+
 @subsection{whactormap}
 
 A @deftech{whactormap} is the default kind of actormap; uses a weak
@@ -236,7 +293,6 @@ Determines if @racket[obj] is a @tech{whactormap}.}
 
 @subsection{transactormap}
 
-@subsection{Extra whactormap methods}
 
 @defmodule[(submod goblins/core actormap-extra)]
 
