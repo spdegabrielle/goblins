@@ -75,7 +75,7 @@
 
          spawn-proc spawn-const
 
-         spawn-promise-pair spawn-promise-cons)
+         spawn-promise-values spawn-promise-cons)
 
 
 (module+ debug
@@ -754,7 +754,7 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
        (define-values (promise resolver)
-         (spawn-promise-pair))
+         (spawn-promise-values))
        (_send-message kws kw-args to-refr resolver args)
        promise)))
 
@@ -767,7 +767,7 @@
                #:promise? [promise? #f])
     (define-values (return-promise return-p-resolver)
       (if promise?
-          (spawn-promise-pair)
+          (spawn-promise-values)
           (values #f #f)))
 
     ;; These two procedures are called once the fulfillment
@@ -1313,7 +1313,7 @@
 ;; TODO: Should this return multiple values to its continuation
 ;;   or do so as a list?  We might be able to speed things up
 ;;   by not doing the destructuring.
-(define (spawn-promise-pair)
+(define (spawn-promise-values)
   (define-values (sealer unsealer tm?)
     (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
@@ -1342,7 +1342,7 @@
   (values promise resolver))
 
 (define (spawn-promise-cons)
-  (call-with-values spawn-promise-pair cons))
+  (call-with-values spawn-promise-values cons))
 
 (module+ test
   (define bob (actormap-spawn! am ^cell "Hi, I'm bob!"))
@@ -1412,7 +1412,7 @@
          (define broken-cell (spawn ^cell #f))
          (define finally-cell (spawn ^cell #f))
          (define-values (a-vow a-resolver)
-           (spawn-promise-pair))
+           (spawn-promise-values))
          (on a-vow
              (lambda args
                ($ fulfilled-cell args))

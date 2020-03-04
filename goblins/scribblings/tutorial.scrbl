@@ -790,7 +790,7 @@ As we can see, promises come in pairs: the promise object, which we
 can listen to with @racket[on], and the resolver object, which lets us
 fulfill or break a promise.
 
-We can also use @racket[spawn-promise-pair] to spawn a promise
+We can also use @racket[spawn-promise-values] to spawn a promise
 (TODO: add footnote about why we didn't earlier, multiple value return
 not being allowed from actors currently), which returns multiple
 values (which we can bind with @racket[define-values]).
@@ -801,9 +801,9 @@ we'll need to fulfill or break it to see anything.
   (a-vat 'run
          (lambda ()
            (define-values (foo-vow foo-resolver)
-             (spawn-promise-pair))
+             (spawn-promise-values))
            (define-values (bar-vow bar-resolver)
-             (spawn-promise-pair))
+             (spawn-promise-values))
            (define (declare-resolved result)
              (printf "Resolved: ~a\n" result))
            (define (declare-broken err)
