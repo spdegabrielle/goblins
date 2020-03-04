@@ -328,10 +328,6 @@
              key val)
   (void))
 
-;; Serves two functions:
-;;  - to extract the root weak-hasheq
-;;  - to merge this transaction on top of the weak-hasheq
-
 ;; Not threadsafe, but probably doesn't matter
 (define (transactormap-merge! transactormap)
   (define (do-merge! transactormap)
