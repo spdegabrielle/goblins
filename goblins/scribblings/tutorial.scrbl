@@ -9,9 +9,35 @@
 
 @title[#:tag "tutorial"]{A tutorial}
 
+@section{Getting going}
+
+First you will need to download and install
+@link["https://racket-lang.org/"]{Racket}, if you haven't already.
+You will want an editor that you can comfortably program Racket in.
+If you are already a user of
+@link["https://www.gnu.org/software/emacs/"]{GNU Emacs},
+@link["https://github.com/greghendershott/racket-mode"]{racket-mode}
+is most excellent.
+If you aren't already an Emacs user, Racket ships with an excellent
+built-in IDE called DrRacket.
+Use that.
+
+Next you will need to install Goblins.
+At the command line you can type:
+
+@verbatim{raco pkg install goblins}
+
+Alternately, from DrRacket you can go to @racketidfont{File => Install Package}.
+
+If you are totally new to Racket, see the
+@link["https://docs.racket-lang.org/getting-started/index.html"]{Getting Started}
+documentation page.
+Otherwise, let's go!
+
+
 @section{Vats, actors, spawning, and immediate calls}
 
-Let's open a Racket REPL and import Goblins:
+Open a Racket REPL and import Goblins:
 
 @codeblock|{
 #lang racket
