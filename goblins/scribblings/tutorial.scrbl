@@ -780,7 +780,7 @@ Much better!
 
 @subsection{Making and resolving our own promises}
 
-So we know that @racket{<-} can make promises, but it turns out we can
+So we know that @racket[<-] can make promises, but it turns out we can
 make promises ourselves:
 
 @interact[
@@ -957,7 +957,7 @@ if we like:
              (lambda (val)
                (displayln (format "Got: ~a" val))))))]
 
-But if our @racket{#:catch} handler raises an error, that error will
+But if our @id{#:catch} handler raises an error, that error will
 simply propagate (instead of the original one):
 
 @delayed-interact-errors[
