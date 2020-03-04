@@ -51,7 +51,6 @@
          actormap-poke!
          actormap-reckless-poke!
          actormap-peek
-         actormap-extract
          actormap-turn-message
 
          actormap-run
@@ -73,7 +72,6 @@
 
          on
          <-np <-
-         extract
 
          spawn-proc spawn-const
 
@@ -506,7 +504,6 @@
            ['send-message _send-message]
            ['handle-message _handle-message]
            ['on _on]
-           ['extract _extract]
            ['vat-connector get-vat-connector]
            ['near-refr? near-refr?]
            [else (error "invalid syscaller method")]))
@@ -857,11 +854,6 @@
     ;; we made.
     (or return-promise (void)))
 
-  (define (_extract to-refr)
-    (unless (near-refr? to-refr)
-      (error 'not-a-near-refr "Not a near refr: ~a" to-refr))
-    (actormap-extract actormap to-refr))
-
   (define (get-internals)
     (list actormap to-near to-far))
 
@@ -938,10 +930,6 @@
        #:finally (maybe-actorize on-finally 'on-finally)
        #:promise? promise?))
 
-(define (extract id-refr)
-  (define sys (get-syscaller-or-die))
-  (sys 'extract id-refr))
-
 
 ;;; actormap turning and utils
 ;;; ==========================
@@ -990,14 +978,6 @@
        (actormap-turn* (make-transactormap actormap)
                        to-refr kws kw-args args))
      returned-val)))
-
-(define (actormap-extract actormap id-refr)
-  (define-values (_refr mactor)
-    (actormap-symlink-ref actormap id-refr))
-  (match mactor
-    [(? mactor:encased? mactor)
-     (mactor:encased-val mactor)]
-    [mactor (error "Not an encased val" mactor)]))
 
 ;; TODO: We might want to return one of the following:
 ;;   (values ('call-success val) ('resolve-success val)
@@ -1402,17 +1382,12 @@
     (actormap-run! am spawn-promise-cons))
   (actormap-poke! am encase-me-resolver 'fulfill 'encase-me)
   (test-eq?
-   "actormap-extract on encased value"
-   (actormap-extract am encase-me-vow)
+   "extracting encased value via actormap-peek"
+   (actormap-peek am encase-me-vow)
    'encase-me)
-  (test-exn
-   "actormap-extract on non-encased value throws exception"
-   #rx"^Not an encased val"
-   (lambda ()
-     (actormap-extract am bob)))
   (test-eq?
-   "extract procedure works"
-   (actormap-run am (lambda () (extract encase-me-vow)))
+   "extracting encased value via $"
+   (actormap-run am (lambda () ($ encase-me-vow)))
    'encase-me)
 
   (define on-resolved-encased-arg #f)
@@ -1531,7 +1506,7 @@
 
   (test-equal?
    "Passing #:promise? to `on` returns a promise that is resolved"
-   (actormap-extract
+   (actormap-peek
     am
     (actormap-full-run!
      am (lambda ()

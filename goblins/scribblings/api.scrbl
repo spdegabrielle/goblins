@@ -140,9 +140,6 @@ The promise will be resolved as follows:
         will be broken with its error-value set to this exception (which
         may even be the original exception).}]}
 
-@; TODO: Do we document this?  Do we even keep it around? :P
-@; extract
-
 
 @section{References}
 
@@ -271,7 +268,6 @@ Commits its result immediately, barring an exceptional condition.}
 Like @racket[actormap-poke!], but does not commit its result.
 Useful for interrogating an actormap without allowing for become-effects
 within it.}
-
 
 
 
