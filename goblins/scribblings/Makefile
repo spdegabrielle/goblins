@@ -1,2 +1,5 @@
 html:
-	scribble +m --html goblins.scrbl
+	scribble +m --htmls goblins.scrbl
+
+pdf:
+	scribble --pdf goblins.scrbl
