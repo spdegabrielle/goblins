@@ -4,7 +4,7 @@
 
 @define-footnote[intro-note make-intro-note]
 
-@title{What is Goblins?}
+@title[#:tag "intro"]{What is Goblins?}
 
 Goblins is a quasi-functional distributed object system.
 Its design allows for object-capability security, allowing for safe

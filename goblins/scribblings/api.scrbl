@@ -6,7 +6,7 @@
 
 @reset-eval![]
 
-@title{API}
+@title[#:tag "api"]{API}
 
 @defmodule[goblins]
 

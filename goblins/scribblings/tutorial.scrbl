@@ -7,7 +7,7 @@
 
 @(define id racketidfont)
 
-@title{Tutorial}
+@title[#:tag "tutorial"]{A tutorial}
 
 @section{Vats, actors, spawning, and immediate calls}
 

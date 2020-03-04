@@ -9,4 +9,5 @@
 @include-section["intro.scrbl"]
 @include-section["tutorial.scrbl"]
 @include-section["api.scrbl"]
+@include-section["actor-lib.scrbl"]
 
