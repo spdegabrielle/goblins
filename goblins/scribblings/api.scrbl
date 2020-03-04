@@ -14,7 +14,7 @@
 
 @define-footnote[actors-note make-actors-note]
 
-@subsection{What is an "actor" in Goblins?}
+@subsection[#:tag "what-is-an-actor"]{What is an "actor" in Goblins?}
 
 Goblins implements the
 @link["https://en.wikipedia.org/wiki/Actor_model"]{actor model}
@@ -136,7 +136,7 @@ If not provided, this defaults to @racket[(void)].
 
 @make-actors-note[]
 
-@section{Core procedures}
+@section[#:tag "core-procedures"]{Core procedures}
 
 @define-footnote[core-api-note make-core-api-note]
 
@@ -159,7 +159,7 @@ is passed the remaining @racket[argument]s.}
 @; call $  ; $ is an alias
 
 @defproc[($ [actor-refr near-refr?] [arg any/c] ...) any/c]{
-Pronounced "call" or "money-call".@core-api-note{
+Pronounced "call", "dollar call", or "money-call".@core-api-note{
 Why "money call"?
 Because you need @racket[$] to make
 @link["http://erights.org/elib/capability/ode/index.html"]{
@@ -301,6 +301,8 @@ Well, once @tech{machine}s exist, this will matter, but they don't yet :P
 
 @section{Actormaps}
 
+@define-footnote[actormaps-note make-actormaps-note]
+
 An @deftech{actormap} is the key abstraction that maps actor
 references to their current method handlers.
 There are actually two kinds of actormaps, @tech{whactormap}s and
@@ -318,6 +320,37 @@ More commonly, users will use vats than actormaps directly; however,
 there are some powerful aspects to doing so, namely for
 strictly-synchronous programs (such as games) or for snapshotting
 actormaps for time-traveling purposese.
+
+In general, there are really two key operations for operating on
+actormaps.
+The first is @racket[actormap-spawn], which is really just used to
+bootstrap an actormap with some interesting actors.
+Actors then operate on @deftech[#:key "turn"]{turns}, which are
+basically a top-level invocation; the core operation for that is
+@racket[actormap-turn].
+This can be thought of as like a toplevel invocation of a procedure at
+a REPL: the procedure called may create other objects, instantiate and
+call other procedures, etc, but (unless some portion of computation
+goes into an infinite loop) will eventually return to the REPL with
+some value.
+Actormap turns are similar; actors may do
+@seclink["core-procedures"]{anything that actors can normally do}
+within the turn, including spawning new actors and calling other actors,
+but the turn should ideally end in some result (as well as some new
+messages to possibly dispatch).@actormaps-note{
+  Due to the
+  @link["https://en.wikipedia.org/wiki/Halting_problem"]{halting problem},
+  this cannot be pre-guaranteed in a turing-complete environment such as
+  what Goblins runs in.
+  Actors can indeed go into an infinite loop; in general the security model
+  of Goblins is to assume that actors in the same @tech{vat} can
+  thus "hose their vat" (but really this means, an actormap turn might not
+  end on its own, and vats currently don't try to stop it).
+  Pre-emption can be layered manually though when operating on the actormap
+  directly; if you want to do this, see
+  @secref[#:doc '(lib "scribblings/reference/reference.scrbl")
+          "threadkill"].}
+
 
 @subsection{Actormap methods}
 
@@ -463,6 +496,7 @@ actormap.
 
 @bold{TODO:} document.
 
+@make-actormaps-note[]
 
 @section{Vats}
 
