@@ -539,8 +539,50 @@ methods:
 
 @section{Promises}
 
-A @deftech{promise} ...
+@define-footnote[promise-note make-promise-note]
 
+An eventual send with @racket[<-] returns a @deftech{promise}
+whose resolution will happen at some future time, either being
+@deftech{fulfilled} or @deftech{broken}.
+Fulfilled promises have resolved to a value, whereas broken promises
+have been resolved with an error.
+
+Every @tech{promise} has a corresponding @deftech{resolver} which is
+messaged (often implicitly on completion of a turn)
+
+It turns out that it is possible to make your own promises using
+@racket[spawn-promise-values] or @racket[spawn-promise-cons],
+both of which return a @tech{promise} / @tech{resolver} pair.
+
+@defproc[(spawn-promise-values)
+         (values [promise live-refr?] [resolver live-refr?])]{
+Spawns and returns two values to its continuation: a
+@racket{promise} and a @racket{resolver}.}
+
+@defproc[(spawn-promise-cons)
+         (cons/c [promise live-refr?] [resolver live-refr?])]{
+Just like @racket[spawn-promise-values] but returns a cons cell of the
+@racket{promise}/@racket{resolver} pair rather than returning multiple
+values.
+This requires an extra allocation (and thus destructuring on the
+receiving side) but can be convenient since actors can only return
+one value from their message handler at a time.}
+
+Promises in Goblins work closer to @link["http://erights.org/"]{E}
+than some other languages like
+@link["https://en.wikipedia.org/wiki/JavaScript"]{Javascript};
+notable exceptions are that @racket[on] is used rather than
+".then() sausages".
+Likewise, having a separate resolver object also comes from E.
+
+One major, but perhaps not very important, difference that may not be
+obvious is that once a promise pointed to by a @tech{reference} is
+resolved to something, it for all intents and purposes appears to act
+just like that thing.
+If the resolution is to a @tech{near} reference, it can even be
+immediately called with @racket{$}.
+However, you still need to know when you can finally dollar-call such
+a thing, thus you still need to use @racket[on] anyway.
 
 @section{Machines}
 
