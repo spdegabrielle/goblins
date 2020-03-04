@@ -76,8 +76,8 @@ propagated and can be captured.
 
 Note that excape continuations can be set up between a caller of
 @racket[$] and can be used by the callee.  However, a 
-@tech{continuation barrier} is installed and so capturing of the
-continuation is not possible.
+@tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{continuation barrier}
+is installed and so capturing of the continuation is not possible.
 (Note that in the future this may be relaxed so that async/await
 coroutines can be used with mutual consent of caller/callee; whether
 or not this is a good idea is up for debate.)}
@@ -121,7 +121,7 @@ argument, the error value.
 @racket[on-finally] will run when a promise is resolved, no matter the
 outcome and is called with no arguments.
 
-If @racketidfont{#:promise?} is set to @racket{#t}, then @racket[on]
+If @racketidfont{#:promise?} is set to @racket[#t], then @racket[on]
 will itself return a promise.
 The promise will be resolved as follows:
 
@@ -187,6 +187,10 @@ An actor is @deftech{far} if it is not.
 The significance here is that only @tech{near} actors may perform immediate
 calls with @racket[$], whereas any actor may perform asynchronous message
 sends with @racket[<-] and @racket[<-np].
+
+@defproc[(near-refr? [obj any/c]) bool?]{
+Returns @racket[#t] if @racket[obj] is a @tech{near} @tech{reference}.}
+
 
 @subsection{Local vs remote references}
 
@@ -284,7 +288,7 @@ commit its results.}
 
 @subsection{whactormap}
 
-A @deftech{whactormap} is the default kind of actormap; uses a weak
+A @deftech{whactormap} is the default kind of @tech{actormap}; uses a weak
 hashtable for mapping.
 
 @defproc[(make-whactormap [#:vat-connector vat-connector
@@ -300,6 +304,26 @@ Determines if @racket[obj] is a @tech{whactormap}.}
 
 @subsection{transactormap}
 
+A @deftech{transactormap} is an @tech{actormap} that stores a delta of
+its changes and points at a previous actormap.
+It must be committed using @racket[transactormap-commit!] before its changes
+officially make it into its parent.
+
+@defproc[(transactormap? [obj any/c]) bool?]{
+Returns @racket[#t] if @racket[obj] is a @tech{transactormap}.}
+
+@defproc[(make-transactormap [parent actormap?]
+                             [#:vat-connector vat-connector
+                              (or/c procedure? #f)
+                              #f])
+         transactormap?]{
+Makes a new transactormap which is not yet committed and does not have
+any new changes.
+It is unlikely you will need this procedure, since @racket[actormap-turn],
+@racket[actormap-spawn] and friends produce it for you.}
+
+
+@subsection{Extra actormap procedures}
 
 @defmodule[(submod goblins/core actormap-extra)]
 
