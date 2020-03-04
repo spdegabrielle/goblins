@@ -198,7 +198,50 @@ Well, once @tech{machine}s exist, this will matter, but they don't yet :P
 
 @section{Actormaps}
 
-An @deftech{actormap} is a blah blah
+An @deftech{actormap} is the key abstraction that maps actor
+references to their current method handlers.
+There are actually two kinds of actormaps, @tech{whactormap}s and
+@tech{transactormap}s.
+
+@defproc[(make-actormap [#:vat-connector vat-connector
+                         (or/c procedure? #f)
+                         #f])
+         whactormap?]{
+Alias for @racket[make-whactormap], since this is the most common
+actormap users make.}
+
+Actormaps are also wrapped by @tech{vat}s.
+More commonly, users will use vats than actormaps directly; however,
+there are some powerful aspects to doing so, namely for
+strictly-synchronous programs (such as games) or for snapshotting
+actormaps for time-traveling purposese.
+
+@subsection{Actormap methods}
+
+@subsection{whactormap}
+
+A @deftech{whactormap} is the default kind of actormap; uses a weak
+hashtable for mapping.
+
+@defproc[(make-whactormap [#:vat-connector vat-connector
+                            (or/c procedure? #f)
+                            #f])
+         whactormap?]{
+Makes a weak hashtable actormap.
+Used to mutably track the current state of actors.}
+
+@defproc[(whactormap? [obj any/c]) bool?]{
+Determines if @racket[obj] is a @tech{whactormap}.}
+
+
+@subsection{transactormap}
+
+@subsection{Extra whactormap methods}
+
+@defmodule[(submod goblins/core actormap-extra)]
+
+These are very low level but can be useful for interrogating an
+actormap.
 
 
 @section{Vats}
