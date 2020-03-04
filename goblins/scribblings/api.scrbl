@@ -341,6 +341,25 @@ whactormap and merging them may corrupt your whactormap.}
 @defproc[(transactormap-merged? [transactormap transactormap?]) bool?]{
 Returns @racket[#t] if this @tech{transactormap} has been merged.}
 
+@defproc[(transactormap-parent [transactormap transactormap?]) actormap?]{
+Returns the parent actormap of this transactormap.}
+
+@defproc[(transactormap-delta [transactormap transactormap?]) hasheq?]{
+Returns the delta of changes to this transactormap.
+Mutating this yourself is not prevented but is highly inadvisable.}
+
+
+@subsection{Snapshotting and restoring actormaps}
+
+@defproc[(snapshot-whactormap [whactormap whactormap?]) hasheq?]{
+Snapshots a whactormap by transforming it into a @racket[hasheq?]
+table mapping @tech{reference}s to
+@tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{ephemeron}
+wrapped actor handlers.}
+
+@defproc[(hasheq->whactormap [ht hasheq?]) whactormap?]{
+Restores a @tech{whactormap} from the @racket[ht] snapshot.}
+
 
 @subsection{Extra actormap procedures}
 
