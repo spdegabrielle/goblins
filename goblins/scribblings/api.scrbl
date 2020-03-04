@@ -322,6 +322,16 @@ any new changes.
 It is unlikely you will need this procedure, since @racket[actormap-turn],
 @racket[actormap-spawn] and friends produce it for you.}
 
+@defproc[(transactormap-merge! [transactormap transactormap?]) void/c]{
+Recursively merges this and any parent @tech{transactormap}s until it reaches
+the root @tech{whactormap}.
+
+Note that creating two forking timelines of transactormaps upon a
+whactormap and merging them may corrupt your whactormap.}
+
+@defproc[(transactormap-merged? [transactormap transactormap?]) bool?]{
+Returns @racket[#t] if this @tech{transactormap} has been merged.}
+
 
 @subsection{Extra actormap procedures}
 
