@@ -973,7 +973,7 @@ simply propagate (instead of the original one):
                  (displayln (format "Caught: ~a" e))))))]
 
 
-@subsection{Promise pipelining}
+@subsection[#:tag "promise pipelining (tutorial)"]{Promise pipelining}
 
 @centered{
   "Machines grow faster and memories grow larger.
