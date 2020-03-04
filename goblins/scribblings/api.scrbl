@@ -368,19 +368,46 @@ Restores a @tech{whactormap} from the @racket[ht] snapshot.}
 These are very low level but can be useful for interrogating an
 actormap.
 
+@bold{TODO:} document.
+
 
 @section{Vats}
 
-A @deftech{vat} is a blah blah
+A @deftech{vat} is an event loop that wraps an @tech{actormap}.
+In most cases, users will use vats rather than the more low-level
+actormaps.
+
+Actors in vats can communicate with actors in other vats on the same
+machine over a @tech{vat connector}.
+For inter-machine communication, see @tech{machines}.
+Nonetheless, for the most part users don't need to worry about this
+as most inter-vat communication happens using @racket[<-].
 
 @; TODO: Document the #:private-key option?
 @defproc[(make-vat) procedure?]{
 Starts up a vat event loop.
-Returns a procedure that can be invoked to communicate with the vat.
 
-The returned procedure uses symbol-based method dispatch.
+Returns a procedure that can be invoked to communicate with the vat
+(documented below).
 
-@bold{TODO:} document all the methods.}
+The returned procedure uses symbol-based method dispatch.}
+
+The procedure returned from @racket[make-vat] is called the
+@deftech{vat dispatcher} and is mostly used for bootstrapping or
+otherwise poking at a vat.
+Once the actors are bootstrapped in a vat they tend to do their
+own thing.
+
+The @tech{vat dispatcher} supports the following symbol-dispatched
+methods:
+
+@itemize[
+  @item{@racket['spawn]: Behaves like @racket[spawn] or @racket[actormap-spawn!].}
+  @item{@racket['run]: Behaves like @racket[actormap-run!]}
+  @item{@racket['call]: Behaves like @racket[$] or @racket[actormap-poke!]}
+  @item{@racket['is-running?]: Is this vat still running?}
+  @item{@racket['halt]: Stops the next turn from happening in the vat loop.
+        Does not terminate the current turn, but maybe it should.}]
 
 
 @section{Promises}
