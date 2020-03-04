@@ -6,7 +6,8 @@
 
 @title[#:tag "intro"]{What is Goblins?}
 
-Goblins is a quasi-functional distributed object system.
+Goblins is a quasi-functional distributed object system, mostly
+following the @seclink["what-is-an-actor"]{actor model}.
 Its design allows for object-capability security, allowing for safe
 distributed programming environments.@intro-note{
   By now you may have noticed that we've used the term "object"
@@ -32,8 +33,8 @@ distributed programming environments.@intro-note{
 Its design is inspired by the
 @link["http://www.erights.org/"]{E programming language}
 and by the observation that
-@link["http://mumble.net/~jar/pubs/secureos/secureos.html"]
-     {lambda is already the ultimate security mechanism}
+@link["http://mumble.net/~jar/pubs/secureos/secureos.html"]{
+  lambda is already the ultimate security mechanism}
 (ie, normal argument-passing in programs, if taken seriously/purely,
 is already all the security system we need).
 
