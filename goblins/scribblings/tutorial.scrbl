@@ -482,8 +482,10 @@ This code looks mostly the same too, and indeed maybe even a little
 simpler with @racket[set!] (no mucking around with that @racket[$]
 malarky).
 
-Let's introduce a couple of bugs into both the cell-using and
-the @racket[set!] using imperative versions of these friends:
+Let's introduce a couple of bugs into both the cell-using and the
+@racket[set!] using imperative versions of these friends (we'll cheat
+and introduce them by simply raising them as exceptions with
+@racket[error]):
 
 @run-codeblock|{
 (define (^buggy-memory-friend bcom my-name)
