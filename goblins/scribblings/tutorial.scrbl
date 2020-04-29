@@ -1100,7 +1100,7 @@ with the first way we implemented things:
         asking to drive the car}
   @item{then @id{a-vat} would have to respond, resolving yet another
         promise with the noise the car makes}
-  @item{and finally =b-vat= can now display the car noise to the user.}]
+  @item{and finally @id{b-vat} can now display the car noise to the user.}]
 
 With promise pipelining, this merely becomes:
 
