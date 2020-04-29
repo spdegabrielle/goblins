@@ -850,11 +850,11 @@ By the way, you may notice that there's a naming convention in Goblins
 (or should be treated as one).
 That's a good practice for you to adopt, too.
 
-@subsection{Finally we have #:finally}
+@subsection{Finally we have #:regardless}
 
 Maybe we'd like to run something once a promise resolves, regardless
 of whether or not it succeds or fails.
-In such a case we can use the @id{#:finally} keyword:
+In such a case we can use the @id{#:regardless} keyword:
 
 @delayed-interact-errors[
   (a-vat 'run
@@ -876,7 +876,7 @@ In such a case we can use the @id{#:finally} keyword:
                  (lambda (err)
                    (displayln
                     (format "Error from ~a: ~a" from-name err)))
-                 #:finally
+                 #:regardless
                  (lambda ()
                    (displayln
                     (format "Done handling ~a." from-name)))))
@@ -885,7 +885,7 @@ In such a case we can use the @id{#:finally} keyword:
 
 @subsection{The on-fulfilled handler of "on" is optional}
 
-Maybe all you care about is the @id{#:catch} or @id{#:finally} clause.
+Maybe all you care about is the @id{#:catch} or @id{#:regardless} clause.
 The @id{on-fulfilled} argument (ie, the first positional argument) to
 @racket[on] is actually optional:
 

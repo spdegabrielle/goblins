@@ -204,13 +204,13 @@ needed, using @racket[<-np] over @racket[<-] is a good idea.}
 @defproc[(on [vow (or/c live-refr? any/c)]
              [on-fulfilled (or/c procedure? refr? #f) #f]
              [#:catch on-broken (or/c procedure? refr? #f) #f]
-             [#:finally on-finally (or/c procedure? refr? #f) #f]
+             [#:regardless on-regardless (or/c procedure? refr? #f) #f]
              [#:promise? promise? bool? #f])
          (or/c live-refr? void?)]{
 Sets up promise handlers for @racket[vow], which is typically a
 @racket[live-refr?] to a @tech{promise} but may be anything.
 
-@racket[on-fulfilled], @racket[on-broken], and @racket[on-finally]
+@racket[on-fulfilled], @racket[on-broken], and @racket[on-regardless]
 all, if specified, may be either a procedure (the most common case)
 which is run when @racket[vow] becomes resolved, or a reference to an
 actor that should be messaged when the promise is resolved with the
@@ -219,7 +219,7 @@ As their names suggest, @racket[on-fulfilled] will run if a promise is
 fulfilled and takes one argument, the fulfilled value.
 @racket[on-broken] will run if a promise is broken and takes one
 argument, the error value.
-@racket[on-finally] will run when a promise is resolved, no matter the
+@racket[on-regardless] will run when a promise is resolved, no matter the
 outcome and is called with no arguments.
 
 If @racketidfont{#:promise?} is set to @racket[#t], then @racket[on]

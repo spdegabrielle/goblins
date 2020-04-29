@@ -758,12 +758,12 @@
        (_send-message kws kw-args to-refr resolver args)
        promise)))
 
-  ;; At THIS stage, on-fulfilled, on-broken, on-finally should
+  ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
   ;; `on' procedure.
   (define (_on id-refr [on-fulfilled #f]
                #:catch [on-broken #f]
-               #:finally [on-finally #f]
+               #:regardless [on-regardless #f]
                #:promise? [promise? #f])
     (define-values (return-promise return-p-resolver)
       (if promise?
@@ -783,13 +783,13 @@
                         ;; Which may be #f!
                         return-p-resolver
                         (list val))
-             (when on-finally
-               (<-np on-finally))]
+             (when on-regardless
+               (<-np on-regardless))]
             ;; There's no on-resolution, which means we can just fulfill
             ;; the promise immediately!
             [else
-             (when on-finally
-               (<-np on-finally))
+             (when on-regardless
+               (<-np on-regardless))
              (when return-p-resolver
                (<-np return-p-resolver resolve-fulfill-command val))]))
     (define handle-fulfilled
@@ -899,7 +899,7 @@
 
 (define (on vow [on-fulfilled #f]
             #:catch [on-broken #f]
-            #:finally [on-finally #f]
+            #:regardless [on-regardless #f]
             #:promise? [promise? #f])
   (define sys (get-syscaller-or-die))
   (define (maybe-actorize obj proc-name)
@@ -926,7 +926,7 @@
                 "Invalid handler for on: ~a" obj)]))
   (sys 'on vow (maybe-actorize on-fulfilled 'on-fulfilled)
        #:catch (maybe-actorize on-broken 'on-broken)
-       #:finally (maybe-actorize on-finally 'on-finally)
+       #:regardless (maybe-actorize on-regardless 'on-regardless)
        #:promise? promise?))
 
 
@@ -1410,7 +1410,7 @@
        (lambda ()
          (define fulfilled-cell (spawn ^cell #f))
          (define broken-cell (spawn ^cell #f))
-         (define finally-cell (spawn ^cell #f))
+         (define regardless-cell (spawn ^cell #f))
          (define-values (a-vow a-resolver)
            (spawn-promise-values))
          (on a-vow
@@ -1419,11 +1419,11 @@
              #:catch
              (lambda args
                ($ broken-cell args))
-             #:finally
+             #:regardless
              (lambda ()
-               ($ finally-cell #t)))
+               ($ regardless-cell #t)))
          (apply <-np a-resolver resolve-args)
-         (list fulfilled-cell broken-cell finally-cell))))
+         (list fulfilled-cell broken-cell regardless-cell))))
     (map (lambda (cell)
            (actormap-peek actormap cell))
          resolved-cells))
@@ -1524,20 +1524,20 @@
    "got: 6")
 
   (let ([what-i-got #f]
-        [finally-also-ran? #f])
+        [regardless-also-ran? #f])
     (actormap-full-run!
      am
      (lambda ()
        (on 42
            (lambda (val)
              (set! what-i-got (format "got: ~a" val)))
-           #:finally
+           #:regardless
            (lambda ()
-             (set! finally-also-ran? #t)))))
+             (set! regardless-also-ran? #t)))))
     (test-equal?
      "A non-promise value passed to `on` merely resolves to that value"
      what-i-got
      "got: 42")
     (test-true
-     "#:finally also runs in case of non-promise value passed to `on`"
-     finally-also-ran?)))
+     "#:regardless also runs in case of non-promise value passed to `on`"
+     regardless-also-ran?)))
