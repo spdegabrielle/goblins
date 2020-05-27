@@ -32,7 +32,9 @@
          transactormap-merged?
          transactormap-merge!
 
-         actormap?)
+         actormap?
+
+         syscaller-free-thread)
 
 ;; Not sure if there's any need to export this, but...
 (module+ actormap-extra
@@ -466,6 +468,12 @@
   (begin0 (parameterize ([current-syscaller sys])
             (proc sys get-sys-internals))
     (close-up!)))
+
+;; In case you want to spawn PROC right off of your vat without
+;; involving the syscaller at all
+(define (syscaller-free-thread proc)
+  (parameterize ([current-syscaller #f])
+    (thread proc)))
 
 (define (actormap-symlink-ref actormap refr-id)
   (let lp ([refr-id refr-id]
