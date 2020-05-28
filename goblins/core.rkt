@@ -311,15 +311,18 @@
 (define (transactormap-ref transactormap key [dflt #f])
   (when (transactormap-merged? transactormap)
     (error "Can't use transactormap-ref on merged transactormap"))
-  (or (hash-ref (transactormap-delta transactormap)
-                key #f)
+  (define tm-delta
+    (transactormap-delta transactormap))
+  (if (hash-has-key? tm-delta key)
+      ;; we got it, it's in our delta
+      (hash-ref tm-delta key)
+      ;; search parents for key
       (let ([parent (transactormap-parent transactormap)])
         (match parent
           [(? transactormap?)
-           (transactormap-ref parent key #f)]
+           (transactormap-ref parent key dflt)]
           [(? whactormap?)
-           (whactormap-ref parent key #f)]))
-      dflt))
+           (whactormap-ref parent key dflt)]))))
 
 (define (transactormap-set! transactormap key val)
   (when (transactormap-merged? transactormap)
