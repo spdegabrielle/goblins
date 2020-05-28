@@ -1126,19 +1126,23 @@
     (object-name actor-constructor))
   (define vat-connector
     (actormap-vat-connector actormap))
-  (define actor-refr
-    (make-live-refr debug-name vat-connector))
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (define actor-handler
     (keyword-apply actor-constructor kws kw-args become args))
-  (unless (procedure? actor-handler)
-    (error 'invalid-actor-handler "Not a procedure: ~a" actor-handler))
-
-  (actormap-set! actormap actor-refr
-                 (mactor:local-actor actor-handler
-                                     become-unseal become?))
-  actor-refr)
+  (match actor-handler
+    ;; New procedure, so let's set it
+    [(? procedure?)
+     (define actor-refr
+       (make-live-refr debug-name vat-connector))
+     (actormap-set! actormap actor-refr
+                    (mactor:local-actor actor-handler
+                                        become-unseal become?))
+     actor-refr]
+    [(? live-refr? pre-existing-refr)
+     pre-existing-refr]
+    [_
+     (error 'invalid-actor-handler "Not a procedure or live refr: ~a" actor-handler)]))
 
 ;; These two are user-facing procedures.  Thus, they set up
 ;; their own syscaller.
@@ -1294,7 +1298,20 @@
   (test-equal?
    "Spawn when we actormap-spawn(!) (yo dawg)"
    (actormap-peek am sdc)
-   '(got foo)))
+   '(got foo))
+
+  (let ([inner-refr #f])
+    (test-eq?
+     "Spawn can instead just return another actor refr instead of a new object"
+     (actormap-spawn! am
+                      (lambda (bcom)
+                        (define ir
+                          (spawn (lambda (bcom)
+                                   (lambda ()
+                                     'hi-friend))))
+                        (set! inner-refr ir)
+                        ir))
+     inner-refr)))
 
 ;;; Some simple helpers
 ;;; ===================
