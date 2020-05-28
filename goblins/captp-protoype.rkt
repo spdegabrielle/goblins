@@ -50,7 +50,8 @@
    redirector  ; a resolver...?
    target-pos
    method
-   args)
+   args
+   kw-args)
   marshall::op:deliver unmarshall::op:deliver)
 
 (define-recordable-struct op:abort
@@ -84,14 +85,66 @@
 ;;     [(op:deliver-only target-pos method args kw-args)
 ;;      (record* 'op:deliver-only target-pos method args kw-args)]))
 
+(define marshallers
+  (list marshall::op:bootstrap
+        marshall::op:deliver-only
+        marshall::op:deliver
+        marshall::op:abort
+        marshall::op:return-fulfill
+        marshall::op:return-break
+        marshall::desc:new-far-desc
+        marshall::desc:new-remote-promise))
 
-(define (make-marshalling-pair convert-val-to-slot convert-slot-to-val)
-  'TODO
-  )
+(define unmarshallers
+  (list unmarshall::op:bootstrap
+        unmarshall::op:deliver-only
+        unmarshall::op:deliver
+        unmarshall::op:abort
+        unmarshall::op:return-fulfill
+        unmarshall::op:return-break
+        unmarshall::desc:new-far-desc
+        unmarshall::desc:new-remote-promise))
 
 
-(define (^craptp bcom in-port out-port)
-  #;(syscaller-free-thread)
+(define (^craptp-conn bcom in-port out-port
+                      ;; We need a way to send messages to ourselves from the
+                      ;; incoming message listener thread (promises not used, so
+                      ;; a <-np equivalent is good).
+                      ;; The easiest way to do this is to reuse an existing
+                      ;; vat dispatcher reference.
+                      self-send-np)
+  (syscaller-free-thread
+   (lambda ()
+     (define last-export-id 0)
+     ;; (define last-question-id 0)
+     ;; (define last-promise-id 0)
+
+     (define exports-val2slot (make-weak-hasheq))
+     (define exports-slot2val (make-hasheqv))
+     (define imports (make-hasheqv))
+     ;; (define questions (make-hasheqv))
+     ;; (define answers (make-hasheqv))
+
+     (define (next-message)
+       (syrup-read in-port #:unmarshallers unmarshallers))
+
+     (call/ec
+      (lambda (escape-lp)
+        (let lp ()
+          (match (pk 'next-message (next-message))
+            [(op:bootstrap question-id)
+             (pk 'bootstrapped)
+             'TODO]
+            [(op:deliver-only target-pos method args kw-args)
+             (pk 'deliver-onlyed)
+             'TODO]
+            [(op:deliver answer-pos redirector target-pos method args kw-args)
+             (pk 'delivered)
+             'TODO]
+            [(op:abort reason)
+             (pk 'aborted)
+             'TODO])
+          (lp))))))
   'TODO
   )
 
@@ -100,8 +153,20 @@
   (require rackunit)
   (define vat-a
     (make-vat))
+  (define vat-b
+    (make-vat))
 
-  (define-values (ctp-ip ctp-op)
+  (define-values (a->b-ip a->b-op)
     (make-pipe))
+  (define-values (b->a-ip b->a-op)
+    (make-pipe))
+
+  (define ((^greeter bcom my-name) your-name)
+    (format "<~a> Hello ~a!" my-name your-name))
+
+  (define alice
+    (vat-a 'spawn ^greeter "Alice"))
+
+
 
   )
