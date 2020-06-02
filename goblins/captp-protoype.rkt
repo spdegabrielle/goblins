@@ -7,6 +7,7 @@
          "core.rkt"
          "vat.rkt"
          "actor-lib/methods.rkt"
+         "utils/simple-sealers.rkt"
          syrup)
 
 (require pk)
@@ -110,12 +111,30 @@
         unmarshall::desc:new-far-desc
         unmarshall::desc:new-remote-promise))
 
+;; utility for splitting up keyword argument hashtable in a way usable by
+;; keyword-apply
+(define (split-kws-and-vals kw-args)
+  (for/fold ([kws '()]
+             [kw-vals '()])
+            ([(key val) kw-args])
+    (values (cons key kws)
+            (cons val kw-vals))))
 
-(define (make-machinetp-thread network-in-port network-out-port
-                               machine-vat-connector
-                               bootstrap-refr)
-  (define send-to-machinetp-channel
+#;(struct exported (refr count))
+
+;; TODO: This is really mixing up both captp and vattp into one thing.
+;;   Kind of a mess... we should separate them.
+;;   The biggest challenge is how to handle the (un)marshalling correctly.
+(define (make-captp-thread to-remote-channel
+                           machine-vat-connector
+                           bootstrap-refr)
+  (define to-this-captp-thread
     (make-async-channel))
+
+  ;; Internal-only calls
+  (define-values (internal-msg-seal internal-msg-unseal internal-msg?)
+    (make-sealer-triplet))
+
   (syscaller-free-thread
    (lambda ()
      (define last-export-id 0)
@@ -136,9 +155,6 @@
      ;; TODO: This should really be some kind of box that the other side
      ;;   can query, right?
      (define running? #t)
-
-     (define (next-message)
-       (syrup-read network-in-port #:unmarshallers unmarshallers))
 
      (define/contract (maybe-install-export! refr)
        (-> live-refr? any/c)  ; TODO: Maybe de-contract this and manually check for speed
@@ -174,7 +190,7 @@
           (set! running? #f)
           (escape-lp))
         (let lp ()
-          (match (pk 'next-message (next-message))
+          (match (async-channel-get to-this-captp-thread)
             ;; For now we'll just assume a bootstrap object.
             #;[(op:bootstrap question-id)
              (pk 'bootstrapped)
@@ -185,11 +201,7 @@
              (define target
                (hash-ref exports-val2slot target-pos))
              (define-values (kws kw-vals)
-               (for/fold ([kws '()]
-                          [kw-vals '()])
-                         ([(key val) kw-args])
-                 (values (cons key kws)
-                         (cons val kw-vals))))
+               (split-kws-and-vals kw-args))
              ;; TODO: support distinction between method sends and procedure sends
              (if method
                  (keyword-apply machine-vat-connector
@@ -200,16 +212,82 @@
                                 kws kw-vals
                                 '<-np target
                                 args))]
-            [(op:deliver answer-pos redirector target-pos method args kw-args)
+            #;[(op:deliver answer-pos redirector target-pos method args kw-args)
              (pk 'delivered)
+             ;; TODO: Handle case where the target doesn't exist
+             (define target
+               (hash-ref exports-val2slot target-pos))
+             (define-values (kws kw-vals)
+               (split-kws-and-vals kw-args))
+             ;; TODO: support distinction between method sends and procedure sends
+             (define local-promise
+               (if method
+                   (keyword-apply machine-vat-connector
+                                  kws kw-vals
+                                  '<- target
+                                  method args)
+                   (keyword-apply machine-vat-connector
+                                  kws kw-vals
+                                  '<- target
+                                  args)))
+             (machine-vat-connector
+              'run
+              (lambda ()
+                (on local-promise
+                    (lambda (val)
+                      
+                      )
+                    #:catch
+                    (lambda (err)
+                      )
+                    )))
+             
+
              'TODO]
             [(op:abort reason)
              (pk 'aborted)
              'TODO]
+            [(? internal-msg? internal-msg)
+             'TODO]
             [other-message
              (pk 'unknown-message-type other-message)])
           (lp))))))
-  send-to-machinetp-channel)
+  to-this-captp-thread)
+
+(define (make-machinetp-thread network-in-port network-out-port
+                               machine-vat-connector
+                               bootstrap-refr)
+  (define to-remote-channel
+    (make-async-channel))
+  (define to-this-captp-thread
+    (make-captp-thread to-remote-channel machine-vat-connector
+                       bootstrap-refr))
+
+  ;; Now spawn threads that read/write to these ports
+  (syscaller-free-thread
+   (lambda ()
+     (let lp ()
+       (define msg
+         ;; TODO: The marshalling/unmarshalling will have to move to
+         ;;   another step inside the captp stuff rather than just on
+         ;;   datastructure parsing to work right once we introduce
+         ;;   more advanced input/output stuff...?
+         ;;   Or at least, this will merely represent the "naive"
+         ;;   structure from the wire.
+         ;;   We will need another "reification" step in addition
+         ;;   to this.
+         (syrup-read network-in-port #:unmarshallers unmarshallers))
+       (async-channel-put to-this-captp-thread msg)
+       (lp))))
+
+  (syscaller-free-thread
+   (lambda ()
+     (let lp ()
+       (define msg
+         (async-channel-get to-remote-channel))
+       (syrup-write msg network-out-port #:marshallers marshallers)
+       (lp))))
+  (void))
 
 ;; TODO: Need to think this through more.
 ;; Things machines need:
@@ -283,6 +361,7 @@
     (spawn ^nonce-locator))
   (cons registry locator))
 
+;; TODO: these aren't really tests yet, just a working area...
 (module+ test
   (require rackunit)
   (define a-vat
@@ -310,10 +389,14 @@
     (pk 'bawwwwk args))
   (define parrot (a-vat 'spawn ^parrot))
 
-  (define a-machinetp-thread-ch
-    (make-machinetp-thread b->a-ip a->b-op
-                           a-vat
-                           alice))
+  ;; TODO: This apparently will need to register itself with the base
+  ;;   ^machine...
+  (make-machinetp-thread b->a-ip a->b-op
+                         a-vat
+                         alice)
 
+  (syrup-write (op:deliver-only 0 #f '("George") #hasheq())
+               b->a-op
+               #:marshallers marshallers)
 
   )
