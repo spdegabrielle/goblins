@@ -120,7 +120,12 @@
     (values (cons key kws)
             (cons val kw-vals))))
 
-#;(struct exported (refr count))
+;; TODO: use me when we add gc support!
+#;(struct export (refr count))
+;; (struct question (refr [resolution #:mutable]))
+;; (struct answer (refr [resolution #:mutable]))
+(struct resolved-val (val))
+(struct resolved-err (err))
 
 ;; TODO: This is really mixing up both captp and vattp into one thing.
 ;;   Kind of a mess... we should separate them.
@@ -149,8 +154,8 @@
      ;;   reference... I think this also needs to go in both directions to work
      ;;   from a GC perspective
      (define imports (make-hasheqv))               ; imports:        chosen by peer
-     ;; (define questions (make-hasheqv))             ; questions:      chosen by us
-     ;; (define answers (make-hasheqv))               ; answers:        chosen by peer
+     (define questions (make-hasheqv))             ; questions:      chosen by us
+     (define answers (make-hasheqv))               ; answers:        chosen by peer
 
      ;; TODO: This should really be some kind of box that the other side
      ;;   can query, right?
@@ -189,6 +194,12 @@
           (set! imports #f)
           (set! running? #f)
           (escape-lp))
+
+        (define (abort-because reason)
+          (async-channel-put to-remote-channel
+                             (op:abort reason))
+          (tear-it-down))
+
         (let lp ()
           (match (async-channel-get to-this-captp-thread)
             ;; For now we'll just assume a bootstrap object.
@@ -212,6 +223,7 @@
                                 kws kw-vals
                                 '<-np target
                                 args))]
+            ;;  Let's finish on this one once we get bootstrapping working
             #;[(op:deliver answer-pos redirector target-pos method args kw-args)
              (pk 'delivered)
              ;; TODO: Handle case where the target doesn't exist
@@ -219,6 +231,9 @@
                (hash-ref exports-val2slot target-pos))
              (define-values (kws kw-vals)
                (split-kws-and-vals kw-args))
+             ;; @@: Is this what goes into the answers table...?
+             ;;   It doesn't completely seem that way because when 
+
              ;; TODO: support distinction between method sends and procedure sends
              (define local-promise
                (if method
@@ -235,19 +250,28 @@
               (lambda ()
                 (on local-promise
                     (lambda (val)
-                      
-                      )
+                      (async-channel-put to-this-captp-thread
+                                         (internal-msg-seal
+                                          `#(resolved-val ,answer-pos ,val))))
                     #:catch
                     (lambda (err)
-                      )
-                    )))
-             
-
-             'TODO]
+                      (async-channel-put to-this-captp-thread
+                                         (internal-msg-seal
+                                          `#(resolved-err ,answer-pos ,err)))))))]
             [(op:abort reason)
              (pk 'aborted)
              'TODO]
-            [(? internal-msg? internal-msg)
+            #;[(? internal-msg? internal-msg)
+             (match internal-msg
+               [(vector 'resolved-val answer-pos val)
+                ;; ok what needs to happen here?
+                ;;  - we need to resolve
+
+
+                ]
+               [(vector 'resolved-err answer-pos err)
+                ]
+               )
              'TODO]
             [other-message
              (pk 'unknown-message-type other-message)])
