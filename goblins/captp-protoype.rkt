@@ -34,7 +34,7 @@
 
 
 (define-recordable-struct op:bootstrap
-  (question-id)
+  (answer-id)
   marshall::op:bootstrap unmarshall::op:bootstrap)
 
 ;; Queue a delivery of verb(args..) to recip, discarding the outcome.
