@@ -130,10 +130,12 @@
 ;; TODO: This is really mixing up both captp and vattp into one thing.
 ;;   Kind of a mess... we should separate them.
 ;;   The biggest challenge is how to handle the (un)marshalling correctly.
-(define (make-captp-thread to-remote-channel
+(define (make-captp-thread captp-outgoing-ch from-machine-actor-ch
                            machine-vat-connector
                            bootstrap-refr)
-  (define to-this-captp-thread
+  (define captp-incoming-ch
+    (make-async-channel))
+  (define internal-ch
     (make-async-channel))
 
   ;; Internal-only calls
@@ -185,6 +187,9 @@
        (hash-set! exports-slot2val bootstrap-refr 0)
        (hash-set! exports-val2slot 0 bootstrap-refr))
 
+     (define (send-to-remote msg)
+       (async-channel-put captp-outgoing-ch msg))
+
      (call/ec
       (lambda (escape-lp)
         ;; TODO: Also inform the parent machine that we are dead
@@ -192,20 +197,19 @@
           (set! exports-val2slot #f)
           (set! exports-slot2val #f)
           (set! imports #f)
+          (set! questions #f)
+          (set! answers #f)
           (set! running? #f)
           (escape-lp))
 
         (define (abort-because reason)
-          (async-channel-put to-remote-channel
-                             (op:abort reason))
+          (send-to-remote (op:abort reason))
           (tear-it-down))
 
-        (let lp ()
-          (match (async-channel-get to-this-captp-thread)
-            ;; For now we'll just assume a bootstrap object.
-            #;[(op:bootstrap question-id)
-             (pk 'bootstrapped)
-             'TODO]
+        (define (handle-captp-incoming msg)
+          (match msg
+            [(op:bootstrap answer-id)
+             (pk 'bootstrapped)]
             [(op:deliver-only target-pos method args kw-args)
              (pk 'deliver-onlyed)
              ;; TODO: Handle case where the target doesn't exist
@@ -250,12 +254,12 @@
               (lambda ()
                 (on local-promise
                     (lambda (val)
-                      (async-channel-put to-this-captp-thread
+                      (async-channel-put captp-incoming-ch
                                          (internal-msg-seal
                                           `#(resolved-val ,answer-pos ,val))))
                     #:catch
                     (lambda (err)
-                      (async-channel-put to-this-captp-thread
+                      (async-channel-put captp-incoming-ch
                                          (internal-msg-seal
                                           `#(resolved-err ,answer-pos ,err)))))))]
             [(op:abort reason)
@@ -274,17 +278,32 @@
                )
              'TODO]
             [other-message
-             (pk 'unknown-message-type other-message)])
+             (pk 'unknown-message-type other-message)]))
+
+        (define (handle-internal msg)
+          'TODO)
+
+        (define (handle-from-machine-actor msg)
+          'TODO)
+
+        (let lp ()
+          (sync (choice-evt (handle-evt captp-incoming-ch
+                                        handle-captp-incoming)
+                            (handle-evt internal-ch
+                                        handle-internal)
+                            (handle-evt from-machine-actor-ch
+                                        handle-from-machine-actor)))
           (lp))))))
-  to-this-captp-thread)
+  captp-incoming-ch)
 
 (define (make-machinetp-thread network-in-port network-out-port
                                machine-vat-connector
                                bootstrap-refr)
-  (define to-remote-channel
+  (define captp-outgoing-ch
     (make-async-channel))
-  (define to-this-captp-thread
-    (make-captp-thread to-remote-channel machine-vat-connector
+  (define captp-incoming-ch
+    (make-captp-thread captp-outgoing-ch 'TODO
+                       machine-vat-connector
                        bootstrap-refr))
 
   ;; Now spawn threads that read/write to these ports
@@ -301,14 +320,14 @@
          ;;   We will need another "reification" step in addition
          ;;   to this.
          (syrup-read network-in-port #:unmarshallers unmarshallers))
-       (async-channel-put to-this-captp-thread msg)
+       (async-channel-put captp-incoming-ch msg)
        (lp))))
 
   (syscaller-free-thread
    (lambda ()
      (let lp ()
        (define msg
-         (async-channel-get to-remote-channel))
+         (async-channel-get captp-outgoing-ch))
        (syrup-write msg network-out-port #:marshallers marshallers)
        (lp))))
   (void))
