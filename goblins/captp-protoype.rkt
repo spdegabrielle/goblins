@@ -146,7 +146,7 @@
 ;; TODO: This is really mixing up both captp and vattp into one thing.
 ;;   Kind of a mess... we should separate them.
 ;;   The biggest challenge is how to handle the (un)marshalling correctly.
-(define (make-captp-thread captp-outgoing-ch from-machine-actor-ch
+(define (make-captp-thread captp-outgoing-ch from-machine-representative-ch
                            machine-vat-connector
                            bootstrap-refr)
   (define captp-incoming-ch
@@ -318,7 +318,7 @@
         (define (handle-internal msg)
           'TODO)
 
-        (define (handle-from-machine-actor msg)
+        (define (handle-from-machine-representative msg)
           (match msg
             [(vector 'deliver-only remote-live-refr target-pos method args kw-args)
              'TODO]
@@ -347,20 +347,20 @@
                                         handle-captp-incoming)
                             (handle-evt internal-ch
                                         handle-internal)
-                            (handle-evt from-machine-actor-ch
-                                        handle-from-machine-actor)))
+                            (handle-evt from-machine-representative-ch
+                                        handle-from-machine-representative)))
           (lp))))))
   captp-incoming-ch)
 
 (define (make-machinetp-thread network-in-port network-out-port
                                machine-vat-connector
                                bootstrap-refr)
-  (define from-machine-actor-ch
+  (define from-machine-representative-ch
     (make-async-channel))
   (define captp-outgoing-ch
     (make-async-channel))
   (define captp-incoming-ch
-    (make-captp-thread captp-outgoing-ch from-machine-actor-ch
+    (make-captp-thread captp-outgoing-ch from-machine-representative-ch
                        machine-vat-connector
                        bootstrap-refr))
 
@@ -388,19 +388,19 @@
          (async-channel-get captp-outgoing-ch))
        (syrup-write msg network-out-port #:marshallers marshallers)
        (lp))))
-  from-machine-actor-ch)
+  from-machine-representative-ch)
 
 ;; TODO: Need to think this through more.
 ;; Things machines need:
 ;;  - a way to start connections to (known) external machines
 ;;  - something something drivers?  (Nah can come later)
-(define (spawn-machine external-vat-send)
-  (define (^machine bcom)
+(define (spawn-machine-representative external-vat-send)
+  (define (^machine-representative bcom)
     
 
     'TODO)
-  (define machine
-    (spawn ^machine))
+  (define machine-representative
+    (spawn ^machine-representative))
   machine)
 
 
@@ -492,7 +492,7 @@
 
   ;; TODO: This apparently will need to register itself with the base
   ;;   ^machine...
-  (define machine-actor->machine-thread-ch
+  (define machine-representative->machine-thread-ch
     (make-machinetp-thread b->a-ip a->b-op
                            a-vat
                            alice))
