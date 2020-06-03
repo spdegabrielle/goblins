@@ -111,8 +111,9 @@
         marshall::op:abort
         marshall::op:return-fulfill
         marshall::op:return-break
-        marshall::desc:new-far-desc
-        marshall::desc:new-remote-promise))
+        ;; marshall::desc:new-import
+        marshall::desc:import
+        marshall::desc:new-to-be-answered))
 
 (define unmarshallers
   (list unmarshall::op:bootstrap
@@ -121,8 +122,9 @@
         unmarshall::op:abort
         unmarshall::op:return-fulfill
         unmarshall::op:return-break
-        unmarshall::desc:new-far-desc
-        unmarshall::desc:new-remote-promise))
+        ;; unmarshall::desc:new-import
+        unmarshall::desc:import
+        unmarshall::desc:new-to-be-answered))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
