@@ -72,14 +72,27 @@
   (answer-id problem)
   marshall::op:return-break unmarshall::op:return-break)
 
-(define-recordable-struct desc:new-far-desc
-  (import-pos)
-  marshall::desc:new-far-desc unmarshall::desc:new-far-desc)
+;;; Descriptions of references sent across the wire
+;;; (from receiver's perspective)
 
-(define-recordable-struct desc:new-remote-promise
-  (import-pos
-   redirector-pos) ;; ?
-  marshall::desc:new-remote-promise unmarshall::desc:new-remote-promise)
+;; New import which we shouldn't have seen yet (if we have, it's an error)
+(define-recordable-struct desc:new-import
+  (import-pos)
+  marshall::desc:new-import unmarshall::desc:new-import)
+
+;; Import we've already seen (but we still need to increment the wire count)
+(define-recordable-struct desc:import
+  (import-pos)
+  marshall::desc:import unmarshall:desc:import)
+
+;; Something to answer that we haven't seen before.
+;; As such, we need to set up both the promise import and this resolver/redirector
+(define-recordable-struct desc:new-to-be-answered
+  (questioners-promise              ; the promise
+   questioners-resolver)            ; the resolver (goes in answers table)
+  marshall::desc:new-to-be-answer unmarshall::desc:new-to-be-answered)
+
+;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
 
 
 ;; (define op:bootstrap->record
