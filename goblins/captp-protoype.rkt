@@ -89,8 +89,7 @@
 ;; Something to answer that we haven't seen before.
 ;; As such, we need to set up both the promise import and this resolver/redirector
 (define-recordable-struct desc:answerable
-  (questioners-promise              ; the promise
-   questioners-resolver)            ; the resolver (goes in answers table)
+  (answer-pos)
   marshall::desc:answerable unmarshall::desc:answerable)
 
 ;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
@@ -139,9 +138,12 @@
 ;; TODO: use me when we add gc support!
 #;(struct export (refr count))
 ;; (struct question (refr [resolution #:mutable]))
-;; (struct answer (refr [resolution #:mutable]))
+
+#;(struct answer (local-promise [resolution #:mutable]))
+
 (struct resolved-val (val))
 (struct resolved-err (err))
+
 
 ;; TODO: This is really mixing up both captp and vattp into one thing.
 ;;   Kind of a mess... we should separate them.
@@ -160,9 +162,9 @@
 
   (syscaller-free-thread
    (lambda ()
-     (define last-export-id 0)
-     (define last-question-id 0)
-     (define last-promise-id 0)
+     (define next-export-id 0)
+     (define next-question-id 0)
+     ;; (define next-promise-id 0)
 
      ;; TODO: We need to wrap this in a structure that keeps track of when it
      ;;   can GC
@@ -186,41 +188,40 @@
      (define/contract (maybe-install-export! refr)
        (-> live-refr? any/c)  ; TODO: Maybe de-contract this and manually check for speed
        (cond
-         ;; Already have it, no need to increment last-export-id
+         ;; Already have it, no need to increment next-export-id
          [(hash-has-key? exports-val2slot refr)
           (hash-ref exports-val2slot refr)]
          ;; Nope, let's export this
          [else
+          ;; get this export-id and increment next-export-id
           (define export-id
-            (add1 last-export-id))
+            next-export-id)
+          (set! next-export-id (add1 export-id))
           ;; install in both export tables
           (hash-set! exports-slot2val export-id
                      refr)
           (hash-set! exports-val2slot refr
                      export-id)
-          ;; increment last-export-id
-          (set! last-export-id export-id)
           export-id]))
 
      ;; Questions are kind of weird because:
      ;;   a) they only happen via captp and
      ;;   b) they have both a question and resolver pair
      (define (install-question! question-promise question-resolver)
-       ;; Now we need to install in the questions table...
+       ;; get this question-id and increment next-question-id
        (define question-id
-         (add1 last-question-id))
+         next-question-id)
+       (set! next-question-id (add1 next-question-id))
 
        (hash-set! questions question-id
                   (cons question-promise question-resolver))
 
-       (set! last-question-id question-id)
-
        question-id)
 
-     ;; Install bootstrap object
-     (when bootstrap-refr
-       (hash-set! exports-slot2val bootstrap-refr 0)
-       (hash-set! exports-val2slot 0 bootstrap-refr))
+     ;; ;; Install bootstrap object
+     ;; (when bootstrap-refr
+     ;;   (hash-set! exports-slot2val bootstrap-refr 0)
+     ;;   (hash-set! exports-val2slot 0 bootstrap-refr))
 
      (define (send-to-remote msg)
        (async-channel-put captp-outgoing-ch msg))
@@ -244,12 +245,23 @@
         (define (handle-captp-incoming msg)
           (match msg
             [(op:bootstrap answer-id)
-             (pk 'bootstrapped)]
+             (pk 'bootstrapped)
+             ;; TODO: Dramatically incorrect, but we'll fix in the next step.
+             ;;   The values in the answers table shouldn't be just local references,
+             ;;   because we usually won't know yet.  This is just an intermediately
+             ;;   incorrect stepping stone...
+             (hash-set! answers answer-id bootstrap-refr)]
             [(op:deliver-only target-desc method args kw-args)
              (pk 'deliver-onlyed)
              ;; TODO: Handle case where the target doesn't exist
              (define target
-               (hash-ref exports-val2slot target-desc))
+               (match target-desc
+                 [(desc:import import-pos)
+                  (hash-ref exports-val2slot import-pos)]
+                 [(desc:answerable answer-pos)
+                  ;; TODO: Super, super wrong; this won't remain a direct value.
+                  ;;    See op:bootstrap about what we need to change here...
+                  (hash-ref answers answer-pos)]))
              (define-values (kws kw-vals)
                (split-kws-and-vals kw-args))
              ;; TODO: support distinction between method sends and procedure sends
@@ -321,9 +333,12 @@
         (define (handle-from-machine-representative msg)
           (match msg
             [(vector 'deliver-only remote-live-refr target-pos method args kw-args)
+             (pk 'repr-deliver-only)
              'TODO]
             [(vector 'bootstrap-deliver-only method args kw-args)
-             (send-to-remote (op:deliver-only (desc:answerable bootstrap-question-id)))
+             (pk 'repr-bootstrap-deliver-only)
+             (send-to-remote (op:deliver-only (desc:answerable bootstrap-question-id)
+                                              method args kw-args))
              'TODO]))
 
         ;;; BEGIN REMOTE BOOTSTRAP OPERATION
@@ -465,40 +480,93 @@
 ;; TODO: these aren't really tests yet, just a working area...
 (module+ test
   (require rackunit)
-  (define a-vat
-    (make-vat))
-  (define b-vat
-    (make-vat))
 
-  (define-values (a->b-ip a->b-op)
+  ;; Testing against a machine representative with nothing real on the other side.
+  ;; We're calling our end the "repl" end even if inaccurate ;)
+  (define-values (repl->test1-ip repl->test1-op)
     (make-pipe))
-  (define-values (b->a-ip b->a-op)
+  (define-values (test1->repl-ip test1->repl-op)
     (make-pipe))
+  (define test1-vat
+    (make-vat))
 
-  (match-define (cons a-nonce-loc a-nonce-reg)
-    (a-vat 'run spawn-nonce-registry-locator-pair))
-  (match-define (cons b-nonce-loc b-nonce-reg)
-    (a-vat 'run spawn-nonce-registry-locator-pair))
+  ;; We'll use this to see if the bootstrap object ever gets our message
+  (define test1-bootstrap-response-ch
+    (make-channel))
+  (define test1-bootstrap-actor
+    (test1-vat 'spawn
+               (lambda (bcom)
+                 (lambda (name)
+                   (channel-put test1-bootstrap-response-ch
+                                `(hello ,name))))))
 
-  (define ((^greeter bcom my-name) your-name)
-    (displayln (format "<~a> Hello ~a!" my-name your-name)))
-  (define alice
-    (a-vat 'spawn ^greeter "Alice"))
+  (define repl-mach->test1-thread-ch
+    (make-machinetp-thread repl->test1-ip test1->repl-op
+                           test1-vat
+                           test1-bootstrap-actor))
 
-  ;; WIP WIP WIP WIP WIP
-  (define ((^parrot bcom) . args)
-    (pk 'bawwwwk args))
-  (define parrot (a-vat 'spawn ^parrot))
+  ;; It should send us (the REPL) a bootstrap message with answer slot 0
+  (test-equal?
+   "test machine should send a bootstrap message"
+   (syrup-read test1->repl-ip
+               #:unmarshallers unmarshallers)
+   (op:bootstrap 0))
 
-  ;; TODO: This apparently will need to register itself with the base
-  ;;   ^machine...
-  (define machine-representative->machine-thread-ch
-    (make-machinetp-thread b->a-ip a->b-op
-                           a-vat
-                           alice))
-
-  (syrup-write (op:deliver-only 0 #f '("George") #hasheq())
-               b->a-op
+  ;; Now we should bootstrap it such that it allocates an answer for us
+  (syrup-write (op:bootstrap 0)
+               repl->test1-op
                #:marshallers marshallers)
+
+  ;; Now we should be able to submit a test message
+  (syrup-write (op:deliver-only (desc:answerable 0) #f '(REPL-friend) #hasheq())
+               repl->test1-op
+               #:marshallers marshallers)
+
+  (test-equal?
+   "bootstrap actor is able to get messages from us"
+   (sync/timeout
+    0.5
+    test1-bootstrap-response-ch)
+   '(hello REPL-friend))
+  
+
+  ;; ;; Vat A -> Vat B tests
+  ;; ;; (TODO: Replace this with machines in separate places)
+  ;; (define a-vat
+  ;;   (make-vat))
+  ;; (define b-vat
+  ;;   (make-vat))
+
+  ;; (define-values (a->b-ip a->b-op)
+  ;;   (make-pipe))
+  ;; (define-values (b->a-ip b->a-op)
+  ;;   (make-pipe))
+
+  ;; (match-define (cons a-nonce-loc a-nonce-reg)
+  ;;   (a-vat 'run spawn-nonce-registry-locator-pair))
+  ;; (match-define (cons b-nonce-loc b-nonce-reg)
+  ;;   (a-vat 'run spawn-nonce-registry-locator-pair))
+
+  ;; (define ((^greeter bcom my-name) your-name)
+  ;;   (displayln (format "<~a> Hello ~a!" my-name your-name)))
+  ;; (define alice
+  ;;   (a-vat 'spawn ^greeter "Alice"))
+
+  ;; ;; WIP WIP WIP WIP WIP
+  ;; (define ((^parrot bcom) . args)
+  ;;   (pk 'bawwwwk args))
+  ;; (define parrot (a-vat 'spawn ^parrot))
+
+  ;; ;; TODO: This apparently will need to register itself with the base
+  ;; ;;   ^machine...
+  ;; (define machine-representative->machine-thread-ch
+  ;;   (make-machinetp-thread b->a-ip a->b-op
+  ;;                          a-vat
+  ;;                          alice))
+
+  ;; (syrup-write (op:deliver-only 0 #f '("George") #hasheq())
+  ;;              b->a-op
+  ;;              #:marshallers marshallers)
+
 
   )
