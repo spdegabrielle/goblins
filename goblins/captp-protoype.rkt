@@ -401,7 +401,7 @@
     'TODO)
   (define machine-representative
     (spawn ^machine-representative))
-  machine)
+  machine-representative)
 
 
 #;(define (^craptp-conn _bcom in-port out-port
