@@ -41,7 +41,7 @@
 (define-recordable-struct op:deliver-only
   (;; Position in the table for the target
    ;; (sender's imports, reciever's exports)
-   target-pos
+   target-desc
    ;; Either the method name, or #f if this is a procedure call
    method
    ;; Either arguments to the method or to the procedure, depending
@@ -54,7 +54,7 @@
 (define-recordable-struct op:deliver
   (answer-pos
    redirector  ; a resolver...?
-   target-pos
+   target-desc
    method
    args
    kw-args)
@@ -88,10 +88,10 @@
 
 ;; Something to answer that we haven't seen before.
 ;; As such, we need to set up both the promise import and this resolver/redirector
-(define-recordable-struct desc:new-to-be-answered
+(define-recordable-struct desc:answerable
   (questioners-promise              ; the promise
    questioners-resolver)            ; the resolver (goes in answers table)
-  marshall::desc:new-to-be-answered unmarshall::desc:new-to-be-answered)
+  marshall::desc:answerable unmarshall::desc:answerable)
 
 ;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
 
@@ -114,7 +114,7 @@
         marshall::op:return-break
         ;; marshall::desc:new-import
         marshall::desc:import
-        marshall::desc:new-to-be-answered))
+        marshall::desc:answerable))
 
 (define unmarshallers
   (list unmarshall::op:bootstrap
@@ -125,7 +125,7 @@
         unmarshall::op:return-break
         ;; unmarshall::desc:new-import
         unmarshall::desc:import
-        unmarshall::desc:new-to-be-answered))
+        unmarshall::desc:answerable))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
@@ -179,6 +179,10 @@
      ;;   can query, right?
      (define running? #t)
 
+     ;; Possibly install an export for this local refr, and return
+     ;; this export id
+     ;; TODO: we maybe need to differentiate between local-live-refr and
+     ;;   remote-live-proxy-refr (once we set that up)?
      (define/contract (maybe-install-export! refr)
        (-> live-refr? any/c)  ; TODO: Maybe de-contract this and manually check for speed
        (cond
@@ -187,16 +191,31 @@
           (hash-ref exports-val2slot refr)]
          ;; Nope, let's export this
          [else
-          (define next-export-id
+          (define export-id
             (add1 last-export-id))
           ;; install in both export tables
-          (hash-set! exports-slot2val next-export-id
+          (hash-set! exports-slot2val export-id
                      refr)
           (hash-set! exports-val2slot refr
-                     next-export-id)
+                     export-id)
           ;; increment last-export-id
-          (set! last-export-id next-export-id)
-          next-export-id]))
+          (set! last-export-id export-id)
+          export-id]))
+
+     ;; Questions are kind of weird because:
+     ;;   a) they only happen via captp and
+     ;;   b) they have both a question and resolver pair
+     (define (install-question! question-promise question-resolver)
+       ;; Now we need to install in the questions table...
+       (define question-id
+         (add1 last-question-id))
+
+       (hash-set! questions question-id
+                  (cons question-promise question-resolver))
+
+       (set! last-question-id question-id)
+
+       question-id)
 
      ;; Install bootstrap object
      (when bootstrap-refr
@@ -226,11 +245,11 @@
           (match msg
             [(op:bootstrap answer-id)
              (pk 'bootstrapped)]
-            [(op:deliver-only target-pos method args kw-args)
+            [(op:deliver-only target-desc method args kw-args)
              (pk 'deliver-onlyed)
              ;; TODO: Handle case where the target doesn't exist
              (define target
-               (hash-ref exports-val2slot target-pos))
+               (hash-ref exports-val2slot target-desc))
              (define-values (kws kw-vals)
                (split-kws-and-vals kw-args))
              ;; TODO: support distinction between method sends and procedure sends
@@ -300,7 +319,28 @@
           'TODO)
 
         (define (handle-from-machine-actor msg)
-          'TODO)
+          (match msg
+            [(vector 'deliver-only remote-live-refr target-pos method args kw-args)
+             'TODO]
+            [(vector 'bootstrap-deliver-only method args kw-args)
+             (send-to-remote (op:deliver-only (desc:answerable bootstrap-question-id)))
+             'TODO]))
+
+        ;;; BEGIN REMOTE BOOTSTRAP OPERATION
+        ;;; ================================
+        ;; First we need a promise/resolver pair for the bootstrap
+        ;; object (wait... is this true for this one though?  Don't we
+        ;; just need the id?)
+        #;(match-define (cons bootstrap-promise bootstrap-resolver)
+          (machine-vat-connector 'run spawn-promise-cons))
+        ;; Now install this question
+        (define bootstrap-question-id
+          #;(install-question! bootstrap-promise bootstrap-resolver)
+          (install-question! #f #f)) ; don't actually correspond to a real promise/resolver...?
+        ;; Now send the bootstrap message to the other side
+        (send-to-remote (op:bootstrap bootstrap-question-id))
+        ;;; END REMOTE BOOTSTRAP OPERATION
+        ;;; ==============================
 
         (let lp ()
           (sync (choice-evt (handle-evt captp-incoming-ch
@@ -452,9 +492,10 @@
 
   ;; TODO: This apparently will need to register itself with the base
   ;;   ^machine...
-  (make-machinetp-thread b->a-ip a->b-op
-                         a-vat
-                         alice)
+  (define machine-actor->machine-thread-ch
+    (make-machinetp-thread b->a-ip a->b-op
+                           a-vat
+                           alice))
 
   (syrup-write (op:deliver-only 0 #f '("George") #hasheq())
                b->a-op
