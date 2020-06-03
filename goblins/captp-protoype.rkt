@@ -76,21 +76,22 @@
 ;;; (from receiver's perspective)
 
 ;; New import which we shouldn't have seen yet (if we have, it's an error)
-(define-recordable-struct desc:new-import
+;; TODO: I'm not sure if this actually is necessary or useful
+#;(define-recordable-struct desc:new-import
   (import-pos)
   marshall::desc:new-import unmarshall::desc:new-import)
 
 ;; Import we've already seen (but we still need to increment the wire count)
 (define-recordable-struct desc:import
   (import-pos)
-  marshall::desc:import unmarshall:desc:import)
+  marshall::desc:import unmarshall::desc:import)
 
 ;; Something to answer that we haven't seen before.
 ;; As such, we need to set up both the promise import and this resolver/redirector
 (define-recordable-struct desc:new-to-be-answered
   (questioners-promise              ; the promise
    questioners-resolver)            ; the resolver (goes in answers table)
-  marshall::desc:new-to-be-answer unmarshall::desc:new-to-be-answered)
+  marshall::desc:new-to-be-answered unmarshall::desc:new-to-be-answered)
 
 ;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
 
@@ -314,10 +315,12 @@
 (define (make-machinetp-thread network-in-port network-out-port
                                machine-vat-connector
                                bootstrap-refr)
+  (define from-machine-actor-ch
+    (make-async-channel))
   (define captp-outgoing-ch
     (make-async-channel))
   (define captp-incoming-ch
-    (make-captp-thread captp-outgoing-ch 'TODO
+    (make-captp-thread captp-outgoing-ch from-machine-actor-ch
                        machine-vat-connector
                        bootstrap-refr))
 
@@ -345,7 +348,7 @@
          (async-channel-get captp-outgoing-ch))
        (syrup-write msg network-out-port #:marshallers marshallers)
        (lp))))
-  (void))
+  from-machine-actor-ch)
 
 ;; TODO: Need to think this through more.
 ;; Things machines need:
