@@ -490,15 +490,22 @@
   (define test1-vat
     (make-vat))
 
+  (match-define (cons test1-registry test1-locator)
+    (test1-vat 'run spawn-nonce-registry-locator-pair))
+
   ;; We'll use this to see if the bootstrap object ever gets our message
   (define test1-bootstrap-response-ch
     (make-channel))
+
+  ;; We add an extra method here just for testing for basic communication
   (define test1-bootstrap-actor
     (test1-vat 'spawn
                (lambda (bcom)
-                 (lambda (name)
+                 (methods
+                  #:extends test1-locator
+                  [(respond-to name)
                    (channel-put test1-bootstrap-response-ch
-                                `(hello ,name))))))
+                                `(hello ,name))]))))
 
   (define repl-mach->test1-thread-ch
     (make-machinetp-thread repl->test1-ip test1->repl-op
@@ -518,7 +525,7 @@
                #:marshallers marshallers)
 
   ;; Now we should be able to submit a test message
-  (syrup-write (op:deliver-only (desc:answerable 0) #f '(REPL-friend) #hasheq())
+  (syrup-write (op:deliver-only (desc:answerable 0) #f '(respond-to REPL-friend) #hasheq())
                repl->test1-op
                #:marshallers marshallers)
 
@@ -528,7 +535,27 @@
     0.5
     test1-bootstrap-response-ch)
    '(hello REPL-friend))
+
+  ;; Now we want to experiment with using the bootstrap actor like it was a
+  ;; normal bootstrap actor... ie, for (proto-)sturdyref lookup across the wire.
+  (define ((^greeter bcom my-name) your-name)
+    (displayln (format "<~a> Hello ~a!" my-name your-name)))
+  (define terrance
+    (test1-vat 'spawn ^greeter "Terrance"))
+  (define trisha
+    (test1-vat 'spawn ^greeter "trisha"))
+
+  (define terrance-nonce
+    (test1-vat 'call test1-registry 'register terrance))
+  (define trisha-nonce
+    (test1-vat 'call test1-registry 'register trisha))
+
+  ;; Now, let's just make sure this registry / thing works
+
   
+
+
+
 
   ;; ;; Vat A -> Vat B tests
   ;; ;; (TODO: Replace this with machines in separate places)
