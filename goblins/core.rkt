@@ -125,18 +125,14 @@
 
 (module+ mactor-extra
   (provide mactor mactor?
-           mactor:local mactor:local?
-           mactor:remote mactor:remote?
 
-           mactor:local-actor mactor:local-actor?
-           mactor:local-actor-handler
-           mactor:local-actor-become-unsealer
-           mactor:local-actor-become?
+           mactor:local-object mactor:local-object?
+           mactor:local-object-handler
+           mactor:local-object-become-unsealer
+           mactor:local-object-become?
 
            mactor:encased mactor:encased?
            mactor:encased-val
-
-           mactor:remote-actor mactor:remote-actor?
 
            mactor:symlink mactor:symlink?
            mactor:symlink-link-to-refr
@@ -147,76 +143,75 @@
            mactor:local-promise mactor:local-promise?
            mactor:local-promise-listeners
            mactor:local-promise-resolver-unsealer
-           mactor:local-promise-resolver-tm?
-
-           mactor:remote-promise mactor:remote-promise?))
+           mactor:local-promise-resolver-tm?))
 
 ;; We need these to have different behavior, equivalent to E's
-;; "miranda rights":
+;; "miranda methods":
 ;; http://www.erights.org/elang/blocks/miranda.html
 ;;
 ;; However we haven't implemented all that functionality *quite* yet.
 
-;;; Mactors fall into two general categories:
-;;;  - eventual
-;;;  - resolved
+;; A lot of these correspond to the categories in:
+;;   http://erights.org/elib/concurrency/refmech.html
 
-;;; Additionally, location-wise:
-;;;  - near?:       same vat
-;;;  - far?:        different vat
-;;;  - local?:      same machine
-;;;  - remote?:     different machine
 
 (struct mactor ())
-(struct mactor:local mactor ())
-;; TODO: Will this ever exist?  It might only ever be a symlink.
 (struct mactor:remote mactor (vat-connid))
-
 
 ;;; Resolved things
 ;;; ---------------
-;; once a local refr, always a local refr.
-(struct mactor:local-actor mactor:local
+
+;; local-objects are the most common type, have a message handler
+;; which specifies how to respond to the next message, as well as
+;; a predicate and unsealer to identify and unpack when a message
+;; handler specifies that this actor would like to "become" a new
+;; version of itself (get a new handler)
+(struct mactor:local-object
   (handler become-unsealer become?))
 
-;; Once encased, always encased.
-;; TODO: Maybe we don't need mactors for this.  Maybe anything that's
-;;   not a mactor is basically "encased"?  But having an official
-;;   mactor type gives us a clearer answer I guess.
-(struct mactor:encased mactor (val))
-(struct mactor:remote-actor mactor:remote ())
-(struct mactor:symlink mactor (link-to-refr))
-;; Once broken, always broken.
-(struct mactor:broken mactor (problem))
-
-;;; Eventual things
-;;; ---------------
-(struct mactor:local-promise mactor:local
+;; promises are the other most common type, though a local-promise
+;; is really just an intermediate state; a local-promise really is
+;; (and maybe should be renamed to) an unfulfilled local promise.
+;; Since this isn't fulfilled yet, we need to track pending
+;; listeners for when some form of resolution is available.
+;; The counter-part to an unfulfilled promise is its resolver;
+;; resolvers are just actors, but within their scope they have
+;; access to a sealer which gives them the authority to seal a
+;; resolution (either fulfillment or breakage).
+(struct mactor:local-promise
   (listeners resolver-unsealer resolver-tm?))
-(struct mactor:remote-promise mactor:remote ())
 
-;; TODO: Whatever procedure we make for these we need to
-;;   operate with a refr indirection; we won't have the mactor
-#;(define local-refr?
-  (procedure-rename mactor:local? 'local-refr?))
-#;(define far-refr?
-  (procedure-rename mactor:remote? 'far-refr?))
+;; The following three are things that a local-promise mactor might
+;; turn into upon resolution.  Really, a promise can either:
+;;
+;;  - be fulfilled:
+;;    - to point at another live actor (which could be another promise!)
+;;    - to settle at some sort of non-actor-reference "data"...
+;;      list, string, number, blah blah...
+;;  - be broken
+;;
+;; The following three mactor types handle these cases:
 
-;; Determines whether immediately callable within the current
-;; syscaller context
-;; TODO: Needs tests!  Well, we could do them in vat.rkt...
-#;(define (callable? obj)
-  (let ([sys (current-syscaller)])
-    (and sys
-         (sys 'callable? obj))))
+;; Fulfillment by pointing at another referenced live actor
+;; reference (which could be a promise).  A chain of symlinks is
+;; shortened where possible.
+(struct mactor:symlink
+  (link-to-refr))
+;; Fulfillment by settling on some kind of data.
+(struct mactor:encased
+  (val))
+;; Breakage (and remember why!)
+(struct mactor:broken
+  (problem))
 
 ;; Presumes this is a mactor already
 (define (callable-mactor? mactor)
-  (or (mactor:local-actor? mactor)
+  (or (mactor:local-object? mactor)
       (mactor:encased? mactor)))
 
 (define (near-refr? refr)
   ((current-syscaller) 'near-refr? refr))
+
 
 ;;; "Become" special sealers
 ;;; ========================
@@ -534,13 +529,13 @@
     (call-with-continuation-barrier
      (λ ()
        (match mactor
-         [(? mactor:local-actor?)
+         [(? mactor:local-object?)
           (define actor-handler
-            (mactor:local-actor-handler mactor))
+            (mactor:local-object-handler mactor))
           (define become?
-            (mactor:local-actor-become? mactor))
+            (mactor:local-object-become? mactor))
           (define become-unsealer
-            (mactor:local-actor-become-unsealer mactor))
+            (mactor:local-object-become-unsealer mactor))
 
           ;; I guess watching for this guarantees that an immediate call
           ;; against a local actor will not be tail recursive.
@@ -559,10 +554,10 @@
           ;; let's replace it
           (when new-handler
             (actormap-set! actormap update-refr
-                           (mactor:local-actor
+                           (mactor:local-object
                             new-handler
-                            (mactor:local-actor-become-unsealer mactor)
-                            (mactor:local-actor-become? mactor))))
+                            (mactor:local-object-become-unsealer mactor)
+                            (mactor:local-object-become? mactor))))
 
           return-val]
          ;; If it's an encased value, "calling" it just returns the
@@ -843,7 +838,7 @@
           (handle-broken (mactor:broken-problem mactor))]
          [(? mactor:encased? mactor)
           (handle-fulfilled (mactor:encased-val mactor))]
-         [(? (or/c mactor:remote? mactor:local-actor?) mactor)
+         [(? (or/c mactor:remote? mactor:local-object?) mactor)
           (handle-fulfilled subscribe-refr)]
          ;; This involves invoking a vat-level method of the remote
          ;; machine, right?
@@ -1147,8 +1142,8 @@
      (define actor-refr
        (make-live-refr debug-name vat-connector))
      (actormap-set! actormap actor-refr
-                    (mactor:local-actor actor-handler
-                                        become-unseal become?))
+                    (mactor:local-object actor-handler
+                                         become-unseal become?))
      actor-refr]
     [(? live-refr? pre-existing-refr)
      pre-existing-refr]
