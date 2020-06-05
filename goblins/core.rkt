@@ -609,7 +609,7 @@
      (lambda (kws kw-args to-refr . args)
        ;; Restrict to live-refrs which appear to have the same
        ;; vat-connector as us
-       (unless (live-refr? to-refr)
+       (unless (local-refr? to-refr)
          (error 'not-callable
                 "Not a live reference: ~a" to-refr))
 
@@ -774,13 +774,15 @@
     ;; TODO: This is really a matter of dispatching on mactors
     ;;   mostly now
     (match to-refr
-      [(? live-refr?)
+      [(? local-refr?)
        (define in-same-vat?
          (eq? (local-refr-vat-connector to-refr)
               vat-connector))
        (if in-same-vat?
            (set! to-near (cons new-message to-near))
            (set! to-far (cons new-message to-far)))]
+      
+      ;; TODO: Yeah the remote refr stuff would go here...
       #;[(? far-refr?)
        (set! to-far (cons new-message to-far))]
       [_ (error 'vat-send-message
