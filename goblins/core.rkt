@@ -99,9 +99,7 @@
 ;;; Refrs
 ;;; =====
 
-(struct refr ())
-
-(struct live-refr refr (debug-name vat-connector)
+(struct live-refr (debug-name vat-connector)
   #:constructor-name _make-live-refr
   #:methods gen:custom-write
   [(define (write-proc refr port mode)
@@ -115,10 +113,8 @@
 (define (make-live-refr [debug-name #f] [vat-connector #f])
   (_make-live-refr debug-name vat-connector))
 
-(struct sturdy-refr refr (swiss-num vat-id conn-hints))
+(struct sturdy-refr (swiss-num vat-id conn-hints))
 
-(struct vat-connid ()
-  #:constructor-name make-vat-connid)
 
 ;;; Meta-actors and miranda methods
 ;;; ===============================
@@ -617,7 +613,7 @@
        ;; Now we "become" that value!
        (match val
          ;; It's a reference now, so let's set up a symlink
-         [(? refr?)
+         [(? live-refr?)
           ;; for efficiency, let's make it as direct of a symlink
           ;; as possible
           (define-values (link-to-refr link-to-mactor)
@@ -911,7 +907,7 @@
   (define (maybe-actorize obj proc-name)
     (match obj
       ;; if it's a reference, it's already fine
-      [(? refr?)
+      [(? live-refr?)
        obj]
       ;; if it's a procedure, let's spawn it
       [(? procedure?)

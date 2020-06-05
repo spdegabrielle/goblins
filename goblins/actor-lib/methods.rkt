@@ -16,7 +16,7 @@
      (error 'method-not-found "~a" method))))
 
 (define/contract (make-extends-handler extend-refr)
-  (-> refr? any/c)
+  (-> live-refr? any/c)
   (define $/<-
     (select-$/<- extend-refr))
   (define extends-handler
@@ -82,7 +82,7 @@
         ;; If it's a refr, we need to wrap it in something that will
         ;; call the refr
         (define real-not-found-handler
-          (if (refr? #,method-not-found-handler)
+          (if (live-refr? #,method-not-found-handler)
               (make-extends-handler #,method-not-found-handler)
               #,method-not-found-handler))
         (if method-proc
