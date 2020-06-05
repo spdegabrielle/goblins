@@ -627,8 +627,10 @@
   (define (_spawn constructor kws kw-args args)
     (actormap-spawn!* actormap constructor kws kw-args args))
 
-  (define (spawn-mactor mactor [debug-name #f])
-    (actormap-spawn-mactor! actormap mactor debug-name))
+  (define (spawn-mactor mactor [debug-name #f]
+                        #:promise? [promise? #f])
+    (actormap-spawn-mactor! actormap mactor debug-name
+                            #:promise? promise?))
 
   (define (fulfill-promise promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
@@ -1221,11 +1223,15 @@
      (transactormap-merge! new-actormap)
      actor-refr)))
 
-(define (actormap-spawn-mactor! actormap mactor [debug-name #f])
+(define (actormap-spawn-mactor! actormap mactor
+                                [debug-name #f]
+                                #:promise? [promise? #f])
   (define vat-connector
     (actormap-vat-connector actormap))
   (define actor-refr
-    (make-local-object-refr debug-name vat-connector))
+    (if promise?
+        (make-local-promise-refr vat-connector)
+        (make-local-object-refr debug-name vat-connector)))
   (actormap-set! actormap actor-refr mactor)
   actor-refr)
 
@@ -1383,7 +1389,7 @@
   (define promise
     (sys 'spawn-mactor
          (mactor:local-promise '() unsealer tm?)
-         'promised))
+         #:promise? #t))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
   ;;  - throw an error
