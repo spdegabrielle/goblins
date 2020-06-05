@@ -551,7 +551,7 @@
        (keyword-apply method kws kw-args args))))
 
   (define (near-refr? obj)
-    (and (live-refr? obj)
+    (and (local-refr? obj)
          (eq? (local-refr-vat-connector obj)
               vat-connector)))
 
