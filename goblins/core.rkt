@@ -842,7 +842,7 @@
       (handle-resolution on-broken 'break))
 
     (match id-refr
-      [(? live-refr?)
+      [(? local-refr?)
        (define-values (subscribe-refr mactor)
          (actormap-symlink-ref actormap id-refr))
 
@@ -884,6 +884,8 @@
             'TODO])]
 
       ;; TODO: sturdy refr support goes here!
+      ;; TODO: Or maybe actually not because we might "require enlivening"
+      ;;   of sturdyrefs?
       [(? sturdy-refr?)
        (error "Sturdy refrs not supported yet :(")]
 
