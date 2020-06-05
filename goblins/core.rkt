@@ -10,11 +10,23 @@
 
 ;; Refrs
 ;; Same as E refs, but -ref is already meaningful in scheme
-(provide refr?
-         live-refr?
+(provide live-refr?
          sturdy-refr?
-         near-refr?
-         #;callable?)
+         local-refr?
+         remote-refr?
+
+         ;; From an external user perspective, most users won't think
+         ;; of these much as being refrs, but conceptually as if they
+         ;; are actually objects and promises.
+         (rename-out [local-object-refr? local-object?])
+         (rename-out [local-promise-refr? local-promise?])
+         (rename-out [remote-object-refr? remote-object?])
+         (rename-out [remote-promise-refr? remote-promise?])
+
+         ;; TODO: define then export these
+         ;; near-refr?
+         ;; far-refr?
+         )
 
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
@@ -85,7 +97,7 @@
 
 ;; meh...
 (module+ for-vats
-  (provide live-refr-vat-connector))
+  (provide local-refr-vat-connector))
 
 ;;; Imports
 ;;; =======
@@ -99,19 +111,47 @@
 ;;; Refrs
 ;;; =====
 
-(struct live-refr (debug-name vat-connector)
-  #:constructor-name _make-live-refr
+(struct live-refr ())
+
+(struct local-refr live-refr (vat-connector))
+
+;; TODO: Should we shorten to just local-object and friends?
+;;   Drop the -refr?
+(struct local-object-refr local-refr (debug-name)
+  #:constructor-name _make-local-object-refr
   #:methods gen:custom-write
   [(define (write-proc refr port mode)
      (define str-to-write
-       (match (live-refr-debug-name refr)
-         [#f "#<live-refr>"]
+       (match (local-object-refr-debug-name refr)
+         [#f "#<local-object>"]
          ;; TODO: Do we need to do escaping?
-         [debug-name (format "#<live-refr ~a>" debug-name)]))
+         [debug-name (format "#<local-object ~a>" debug-name)]))
      (write-string str-to-write port))])
 
-(define (make-live-refr [debug-name #f] [vat-connector #f])
-  (_make-live-refr debug-name vat-connector))
+(struct local-promise-refr local-refr ()
+  #:constructor-name _make-local-promise-refr
+  #:methods gen:custom-write
+  [(define (write-proc refr port mode)
+     (write-string "#<local-promise>" port))])
+
+(define (make-local-object-refr [debug-name #f] [vat-connector #f])
+  (_make-local-object-refr vat-connector debug-name))
+(define (make-local-promise-refr [vat-connector #f])
+  (_make-local-promise-refr vat-connector))
+
+(struct remote-refr live-refr (machine-connector))
+
+(struct remote-object-refr remote-refr ()
+  #:constructor-name make-remote-object-refr
+  #:methods gen:custom-write
+  [(define (write-proc refr port mode)
+     (write-string "#<remote-object>" port))])
+
+(struct remote-promise-refr remote-refr ()
+  #:constructor-name make-remote-promise-refr
+  #:methods gen:custom-write
+  [(define (write-proc refr port mode)
+     (write-string "#<remote-promise>" port))])
 
 (struct sturdy-refr (swiss-num vat-id conn-hints))
 
@@ -351,22 +391,22 @@
 
   ;; set up actormap base with beeper and booper
   (define actormap-base (make-whactormap))
-  (define beeper-refr (make-live-refr 'beeper))
+  (define beeper-refr (make-local-object-refr 'beeper))
   (define (beeper-proc . args)
     'beep)
   (whactormap-set! actormap-base beeper-refr beeper-proc)
-  (define booper-refr (make-live-refr 'booper))
+  (define booper-refr (make-local-object-refr 'booper))
   (define (booper-proc . args)
     'boop)
   (whactormap-set! actormap-base booper-refr booper-proc)
-  (define blepper-refr (make-live-refr 'blepper))
+  (define blepper-refr (make-local-object-refr 'blepper))
   (define (blepper-proc . args)
     'blep)
   (whactormap-set! actormap-base blepper-refr blepper-proc)
 
   (define tam1
     (make-transactormap actormap-base))
-  (define bipper-refr (make-live-refr 'bipper))
+  (define bipper-refr (make-local-object-refr 'bipper))
   (define (bipper-proc . args)
     'bippity)
   (transactormap-set! tam1 bipper-refr bipper-proc)
@@ -391,7 +431,7 @@
   (define tam2
     (make-transactormap tam1))
 
-  (define boppiter-refr (make-live-refr 'boppiter))
+  (define boppiter-refr (make-local-object-refr 'boppiter))
   (define (boppiter-proc . args)
     'boppitty)
   (transactormap-set! tam2 boppiter-refr boppiter-proc)
@@ -512,7 +552,7 @@
 
   (define (near-refr? obj)
     (and (live-refr? obj)
-         (eq? (live-refr-vat-connector obj)
+         (eq? (local-refr-vat-connector obj)
               vat-connector)))
 
   (define (get-vat-connector)
@@ -573,7 +613,7 @@
          (error 'not-callable
                 "Not a live reference: ~a" to-refr))
 
-       (unless (eq? (live-refr-vat-connector to-refr)
+       (unless (eq? (local-refr-vat-connector to-refr)
                     vat-connector)
          (error 'not-callable
                 "Not in the same vat: ~a" to-refr))
@@ -736,7 +776,7 @@
     (match to-refr
       [(? live-refr?)
        (define in-same-vat?
-         (eq? (live-refr-vat-connector to-refr)
+         (eq? (local-refr-vat-connector to-refr)
               vat-connector))
        (if in-same-vat?
            (set! to-near (cons new-message to-near))
@@ -1024,7 +1064,7 @@
                (message resolve-me #f '() '() (list 'break err))]))
           ;; TODO: Handle promises that aren't live refrs
           (define resolve-me-in-same-vat?
-            (eq? (live-refr-vat-connector resolve-me)
+            (eq? (local-refr-vat-connector resolve-me)
                  (actormap-vat-connector actormap)))
           (if resolve-me-in-same-vat?
               (set! to-near (cons resolve-message to-near))
@@ -1136,7 +1176,7 @@
     ;; New procedure, so let's set it
     [(? procedure?)
      (define actor-refr
-       (make-live-refr debug-name vat-connector))
+       (make-local-object-refr debug-name vat-connector))
      (actormap-set! actormap actor-refr
                     (mactor:local-object actor-handler
                                          become-unseal become?))
@@ -1181,7 +1221,7 @@
   (define vat-connector
     (actormap-vat-connector actormap))
   (define actor-refr
-    (make-live-refr debug-name vat-connector))
+    (make-local-object-refr debug-name vat-connector))
   (actormap-set! actormap actor-refr mactor)
   actor-refr)
 

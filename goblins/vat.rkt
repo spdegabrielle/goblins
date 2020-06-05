@@ -127,7 +127,7 @@
                 (define to-actor
                   (message-to msg))
                 (define vat-connector
-                  (live-refr-vat-connector to-actor))
+                  (local-refr-vat-connector to-actor))
                 ;; forward to that vat connector!
                 (vat-connector 'handle-message msg)
                 (void)]))
