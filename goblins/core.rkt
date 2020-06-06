@@ -23,10 +23,8 @@
          (rename-out [remote-object-refr? remote-object?])
          (rename-out [remote-promise-refr? remote-promise?])
 
-         ;; TODO: define then export these
-         ;; near-refr?
-         ;; far-refr?
-         )
+         near-refr?
+         far-refr?)
 
 ;; The making-and-modifying actormap functions
 (provide make-whactormap
@@ -251,6 +249,8 @@
 
 (define (near-refr? refr)
   ((current-syscaller) 'near-refr? refr))
+(define (far-refr? refr)
+  (not (near-refr? refr)))
 
 
 ;;; "Become" special sealers
