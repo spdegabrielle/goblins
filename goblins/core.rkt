@@ -95,7 +95,8 @@
 
 ;; meh...
 (module+ for-vats
-  (provide local-refr-vat-connector))
+  (provide local-refr-vat-connector)
+  (provide remote-refr-captp-connector))
 
 ;;; Imports
 ;;; =======
