@@ -88,9 +88,9 @@
 
 ;; Something to answer that we haven't seen before.
 ;; As such, we need to set up both the promise import and this resolver/redirector
-(define-recordable-struct desc:answerable
+(define-recordable-struct desc:answer
   (answer-pos)
-  marshall::desc:answerable unmarshall::desc:answerable)
+  marshall::desc:answer unmarshall::desc:answer)
 
 ;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
 
@@ -113,7 +113,7 @@
         marshall::op:return-break
         ;; marshall::desc:new-import
         marshall::desc:import
-        marshall::desc:answerable))
+        marshall::desc:answer))
 
 (define unmarshallers
   (list unmarshall::op:bootstrap
@@ -124,7 +124,7 @@
         unmarshall::op:return-break
         ;; unmarshall::desc:new-import
         unmarshall::desc:import
-        unmarshall::desc:answerable))
+        unmarshall::desc:answer))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
@@ -258,7 +258,7 @@
                (match target-desc
                  [(desc:import import-pos)
                   (hash-ref exports-val2slot import-pos)]
-                 [(desc:answerable answer-pos)
+                 [(desc:answer answer-pos)
                   ;; TODO: Super, super wrong; this won't remain a direct value.
                   ;;    See op:bootstrap about what we need to change here...
                   (hash-ref answers answer-pos)]))
@@ -337,7 +337,7 @@
              'TODO]
             [(vector 'bootstrap-deliver-only method args kw-args)
              (pk 'repr-bootstrap-deliver-only)
-             (send-to-remote (op:deliver-only (desc:answerable bootstrap-question-id)
+             (send-to-remote (op:deliver-only (desc:answer bootstrap-question-id)
                                               method args kw-args))
              'TODO]))
 
@@ -525,7 +525,7 @@
                #:marshallers marshallers)
 
   ;; Now we should be able to submit a test message
-  (syrup-write (op:deliver-only (desc:answerable 0) #f '(respond-to REPL-friend) #hasheq())
+  (syrup-write (op:deliver-only (desc:answer 0) #f '(respond-to REPL-friend) #hasheq())
                repl->test1-op
                #:marshallers marshallers)
 
