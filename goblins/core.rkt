@@ -137,11 +137,11 @@
 (define (make-local-promise-refr [vat-connector #f])
   (_make-local-promise-refr vat-connector))
 
-;; Machine-connector should be a procedure which both sends a message
+;; Captp-connector should be a procedure which both sends a message
 ;; to the local machine representative actor, but also has something
 ;; serialized that knows which specific remote machine + session this
 ;; corresponds to (to look up the right captp session and forward)
-(struct remote-refr live-refr (machine-connector))
+(struct remote-refr live-refr (captp-connector))
 
 (struct remote-object-refr remote-refr ()
   #:constructor-name make-remote-object-refr
@@ -809,7 +809,12 @@
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
        (define-values (promise resolver)
-         (spawn-promise-values))
+         (match to-refr
+           [(? local-refr?)
+            (_spawn-promise-values)]
+           [(? remote-refr?)
+            (_spawn-promise-values #:question-captp-connector
+                                   (remote-refr-captp-connector to-refr))]))
        (_send-message kws kw-args to-refr resolver args)
        promise)))
 
@@ -1388,16 +1393,17 @@
 ;;; Promises
 ;;; ========
 
-;; TODO: Should this return multiple values to its continuation
-;;   or do so as a list?  We might be able to speed things up
-;;   by not doing the destructuring.
-(define (spawn-promise-values)
+(define (_spawn-promise-values #:question-captp-connector
+                               [question-captp-connector #f])
   (define-values (sealer unsealer tm?)
     (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (mactor:local-promise '() unsealer tm?)
+         (if question-captp-connector
+             (mactor:local-question '() unsealer tm?
+                                    question-captp-connector)
+             (mactor:local-promise '() unsealer tm?))
          #:promise? #t))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
@@ -1418,6 +1424,9 @@
   (define resolver
     (spawn ^resolver))
   (values promise resolver))
+
+(define (spawn-promise-values)
+  (_spawn-promise-values))
 
 (define (spawn-promise-cons)
   (call-with-values spawn-promise-values cons))
