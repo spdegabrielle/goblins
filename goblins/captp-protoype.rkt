@@ -57,7 +57,7 @@
    args
    kw-args
    answer-pos
-   #;redirector)  ; a resolver...?  I think we can avoid this
+   redirector)  ; a resolver, probably an import (though it could be a handoff)
   marshall::op:deliver unmarshall::op:deliver)
 
 (define-recordable-struct op:abort
