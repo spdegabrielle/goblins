@@ -52,12 +52,12 @@
 
 ;; Queue a delivery of verb(args..) to recip, binding answer/rdr to the outcome.
 (define-recordable-struct op:deliver
-  (target-desc
+  (to-desc
    method
    args
    kw-args
    answer-pos
-   redirector)  ; a resolver, probably an import (though it could be a handoff)
+   resolve-me)  ; a resolver, probably an import (though it could be a handoff)
   marshall::op:deliver unmarshall::op:deliver)
 
 (define-recordable-struct op:abort
