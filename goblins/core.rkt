@@ -139,6 +139,10 @@
 (define (make-local-promise-refr [vat-connector #f])
   (_make-local-promise-refr vat-connector))
 
+;; Machine-connector should be a procedure which both sends a message
+;; to the local machine representative actor, but also has something
+;; serialized that knows which specific remote machine + session this
+;; corresponds to (to look up the right captp session and forward)
 (struct remote-refr live-refr (machine-connector))
 
 (struct remote-object-refr remote-refr ()
