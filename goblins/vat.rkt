@@ -126,10 +126,14 @@
                 (schedule-remote-messages rest)
                 (define to-actor
                   (message-to msg))
-                (define vat-connector
-                  (local-refr-vat-connector to-actor))
-                ;; forward to that vat connector!
-                (vat-connector 'handle-message msg)
+                (define connector
+                  (match to-actor
+                    [(? local-refr?)
+                     (local-refr-vat-connector to-actor)]
+                    [(? remote-refr?)
+                     (remote-refr-captp-connector to-actor)]))
+                ;; forward to that vat/captp connector!
+                (connector 'handle-message msg)
                 (void)]))
 
            (let lp ()
