@@ -219,6 +219,12 @@
 (struct mactor:local-promise
   (listeners resolver-unsealer resolver-tm?))
 
+;; A special kind of local promise which also corresponds to being
+;; a question on the remote end.  Keeps track of the captp-connector
+;; relevant to this connection so it can send it messages.
+(struct mactor:local-question mactor:local-promise
+  (captp-connector))
+
 ;; The following three are things that a local-promise mactor might
 ;; turn into upon resolution.  Really, a promise can either:
 ;;
