@@ -1078,11 +1078,10 @@
         (when resolve-me
           (define resolve-message
             (match call-result
-              [(list 'success val)
+              [(vector 'success val)
                (message resolve-me #f '() '() (list 'fulfill val))]
-              [(list 'fail err)
+              [(vector 'fail err)
                (message resolve-me #f '() '() (list 'break err))]))
-          ;; TODO: Handle promises that aren't live refrs
           (define resolve-me-in-same-vat?
             (eq? (local-refr-vat-connector resolve-me)
                  (actormap-vat-connector actormap)))
