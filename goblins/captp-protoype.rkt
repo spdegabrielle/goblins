@@ -64,13 +64,13 @@
   (reason)
   marshall::op:abort unmarshall::op:abort)
 
-;; Effectively splitting "return" into two distinct operations
-(define-recordable-struct op:return-fulfill
-  (answer-id val)
-  marshall::op:return-fulfill unmarshall::op:return-fulfill)
-(define-recordable-struct op:return-break
-  (answer-id problem)
-  marshall::op:return-break unmarshall::op:return-break)
+;; ;; Effectively splitting "return" into two distinct operations
+;; (define-recordable-struct op:return-fulfill
+;;   (answer-id val)
+;;   marshall::op:return-fulfill unmarshall::op:return-fulfill)
+;; (define-recordable-struct op:return-break
+;;   (answer-id problem)
+;;   marshall::op:return-break unmarshall::op:return-break)
 
 ;;; Descriptions of references sent across the wire
 ;;; (from receiver's perspective)
