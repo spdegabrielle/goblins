@@ -194,7 +194,6 @@
 
 
 (struct mactor ())
-(struct mactor:remote mactor (vat-connid))
 
 ;;; Resolved things
 ;;; ---------------
