@@ -888,7 +888,7 @@
           (handle-broken (mactor:broken-problem mactor))]
          [(? mactor:encased? mactor)
           (handle-fulfilled (mactor:encased-val mactor))]
-         [(? (or/c mactor:remote? mactor:local-object?) mactor)
+         [(? mactor:local-object? mactor)
           (handle-fulfilled subscribe-refr)]
          ;; This involves invoking a vat-level method of the remote
          ;; machine, right?
@@ -1061,11 +1061,11 @@
                           ;; TODO: Display the message here
                           ((error-display-handler) (exn-message err) err))
                         (set! call-result
-                              `(fail ,err)))])
+                              `#(fail ,err)))])
        (set! result-val
              (sys 'handle-message msg))
        (set! call-result
-             `(success ,result-val)))
+             `#(success ,result-val)))
 
      (define resolve-me
        (message-resolve-me msg))
