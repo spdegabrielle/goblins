@@ -52,12 +52,12 @@
 
 ;; Queue a delivery of verb(args..) to recip, binding answer/rdr to the outcome.
 (define-recordable-struct op:deliver
-  (answer-pos
-   redirector  ; a resolver...?
-   target-desc
+  (target-desc
    method
    args
-   kw-args)
+   kw-args
+   answer-pos
+   #;redirector)  ; a resolver...?  I think we can avoid this
   marshall::op:deliver unmarshall::op:deliver)
 
 (define-recordable-struct op:abort
