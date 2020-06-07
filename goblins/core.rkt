@@ -142,7 +142,7 @@
 ;; to the local machine representative actor, but also has something
 ;; serialized that knows which specific remote machine + session this
 ;; corresponds to (to look up the right captp session and forward)
-(struct remote-refr live-refr (captp-connector))
+(struct remote-refr live-refr (captp-connector sealed-pos))
 
 (struct remote-object-refr remote-refr ()
   #:constructor-name make-remote-object-refr
@@ -1425,7 +1425,10 @@
   (values promise resolver))
 
 (module+ for-captp
-  (provide _spawn-promise-values))
+  (provide _spawn-promise-values
+           make-remote-object-refr
+           make-remote-promise-refr
+           remote-refr-sealed-pos))
 
 (define (spawn-promise-values)
   (_spawn-promise-values))
