@@ -265,7 +265,7 @@
           (define method
             (case this-method-name
               ['method-name method-handler] ...
-              [else (error 'vat-dispatcher-error
+              [else (error 'connector-dispatcher-error
                            "Unnown method: ~a" this-method-name)]))
           (keyword-apply method kws kw-args args)))
        'id)))
