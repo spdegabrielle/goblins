@@ -182,7 +182,10 @@
            mactor:local-promise mactor:local-promise?
            mactor:local-promise-listeners
            mactor:local-promise-resolver-unsealer
-           mactor:local-promise-resolver-tm?))
+           mactor:local-promise-resolver-tm?
+
+           mactor:local-question mactor:local-question?
+           mactor:local-question-captp-connector))
 
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda methods":
