@@ -1424,6 +1424,9 @@
     (spawn ^resolver))
   (values promise resolver))
 
+(module+ for-captp
+  (provide _spawn-promise-values))
+
 (define (spawn-promise-values)
   (_spawn-promise-values))
 
