@@ -149,7 +149,7 @@
         unmarshall::desc:answer))
 
 ;; Internal commands from the vat connector
-(struct cmd-deliver-message (msg question-promise))
+(struct cmd-deliver-message (msg))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
@@ -439,8 +439,7 @@
 
         (define (handle-internal cmd)
           (match cmd
-            [(cmd-deliver-message (message to resolve-me kws kw-vals args)
-                                  question-promise)
+            [(cmd-deliver-message (message to resolve-me kws kw-vals args))
              (define deliver-msg
                (op:deliver (resolve-delivery-to! to)
                            #;(desc:import (maybe-install-export! to))
@@ -448,13 +447,9 @@
                            ;; TODO: correctly marshall everything here
                            args
                            (kws-lists->kws-hasheq kws kw-vals)
-                           (maybe-install-question! resolve-me)))
+                           (maybe-install-export! resolve-me)))
              (send-to-remote (syrup-encode deliver-msg
-                                           #:marshallers marshallers))
-             
-             'TODO]
-            
-            ))
+                                           #:marshallers marshallers))]))
 
         (define (handle-from-machine-representative msg)
           #;(match msg
