@@ -97,20 +97,11 @@
     [(? desc:import-promise?)
      (desc:import-promise-pos import-desc)]))
 
-(define-recordable-struct desc:export-object
+;; Whether it's an import or export doesn't really matter as much to
+;; the entity exporting as it does to the entity importing
+(define-recordable-struct desc:export
   (pos)
-  marshall::desc:export-object unmarshall::desc:export-object)
-
-(define-recordable-struct desc:export-promise
-  (pos)
-  marshall::desc:export-promise unmarshall::desc:export-promise)
-
-(define (desc:export-pos export-desc)
-  (match export-desc
-    [(? desc:export-object?)
-     (desc:export-object-pos export-desc)]
-    [(? desc:export-promise?)
-     (desc:export-promise-pos export-desc)]))
+  marshall::desc:export unmarshall::desc:export)
 
 
 ;; Something to answer that we haven't seen before.
@@ -141,6 +132,7 @@
         ;; marshall::desc:new-import
         marshall::desc:import-object
         marshall::desc:import-promise
+        marshall::desc:export
         marshall::desc:answer))
 
 (define unmarshallers
@@ -153,6 +145,7 @@
         ;; unmarshall::desc:new-import
         unmarshall::desc:import-object
         unmarshall::desc:import-promise
+        unmarshall::desc:export
         unmarshall::desc:answer))
 
 ;; Internal commands from the vat connector
@@ -197,9 +190,14 @@
     (make-async-channel))
 
   ;; position sealers, so we know this really is from our imports/exports
+  ;; @@: Not great protection, subject to a reuse attack, but really
+  ;;   this is just an extra step... in general we shouldn't be exposing
+  ;;   the refr internals to most users
   (define-values (pos-seal pos-unseal pos-sealed?)
     (make-sealer-triplet))
 
+  ;; question finders relevant to this vat only
+  (struct question-finder ())
 
   ;; TODO: this is borrowed from vat.rkt, we should probably just make
   ;;   a generalized version of it.
@@ -306,9 +304,28 @@
 
        question-id)
 
-     ;; Needs to return a desc
+     (define (remote-refr->imported-pos to)
+       (pos-unseal (remote-refr-sealed-pos to)))
+
+     (define (question-finder->question-pos! to)
+       (if (hash-has-key? questions to)
+           ;; we already have a question relevant to this question id
+           (hash-ref questions to)
+           ;; new question id...
+           (let ([question-id next-question-id])
+             ;; install our question at this question id
+             (hash-set! questions question-id question-id)
+             ;; increment the next-question id
+             (set! next-question-id (add1 next-question-id))
+             ;; and return the question-id we set up
+             question-id)))
+
      (define (resolve-delivery-to! to)
-       'TODO)
+       (match to
+         [(? remote-refr?)
+          (remote-refr->imported-pos to)]
+         [(? question-finder?)
+          (question-finder->question-pos! to)]))
 
      ;; ;; Install bootstrap object
      ;; (when bootstrap-refr
