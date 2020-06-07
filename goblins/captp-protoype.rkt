@@ -350,7 +350,7 @@
                (match target-desc
                  [(or (desc:import-object import-pos)
                       (desc:import-promise import-pos))
-                  (hash-ref exports-val2pos import-pos)]
+                  (hash-ref exports-pos2val import-pos)]
                  [(desc:answer answer-pos)
                   ;; TODO: Super, super wrong; this won't remain a direct value.
                   ;;    See op:bootstrap about what we need to change here...
