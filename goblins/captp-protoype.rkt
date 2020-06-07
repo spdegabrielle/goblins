@@ -5,6 +5,8 @@
          racket/random
          racket/contract
          "core.rkt"
+         (submod "core.rkt" for-captp)
+         "message.rkt"
          "vat.rkt"
          "actor-lib/methods.rkt"
          "utils/simple-sealers.rkt"
@@ -34,7 +36,7 @@
 
 
 (define-recordable-struct op:bootstrap
-  (answer-id)
+  (answer-id resolve-me)
   marshall::op:bootstrap unmarshall::op:bootstrap)
 
 ;; Queue a delivery of verb(args..) to recip, discarding the outcome.
@@ -127,16 +129,24 @@
         unmarshall::desc:answer))
 
 ;; Internal commands from the vat connector
-(struct cmd-send-message (msg))
+(struct cmd-deliver-message (msg question-promise))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
-(define (split-kws-and-vals kw-args)
+(define (kws-hasheq->kws-lists kw-args)
   (for/fold ([kws '()]
              [kw-vals '()])
             ([(key val) kw-args])
     (values (cons key kws)
             (cons val kw-vals))))
+
+;; and the reverse
+(define (kws-lists->kws-hasheq kws kw-vals)
+  (for/fold ([ht #hasheq()])
+            ([kw kws]
+             [kw-val kw-vals])
+    (hash-set ht kw kw-val)))
+
 
 ;; TODO: use me when we add gc support!
 #;(struct export (refr count))
@@ -159,8 +169,8 @@
   (define internal-ch
     (make-async-channel))
 
-  ;; Internal-only calls
-  (define-values (internal-msg-seal internal-msg-unseal internal-msg?)
+  ;; slot sealers, so we know this really is from our imports/exports
+  (define-values (slot-seal slot-unseal slot-sealed?)
     (make-sealer-triplet))
 
   (syscaller-free-thread
@@ -196,6 +206,7 @@
           (hash-ref exports-val2slot refr)]
          ;; Nope, let's export this
          [else
+          ;; TODO: This doesn't do handoffs for remote refrs yet!!
           ;; get this export-id and increment next-export-id
           (define export-id
             next-export-id)
@@ -210,7 +221,7 @@
      ;; Questions are kind of weird because:
      ;;   a) they only happen via captp and
      ;;   b) they have both a question and resolver pair
-     (define (install-question! question-promise question-resolver)
+     (define (maybe-install-question! question-promise question-resolver)
        ;; get this question-id and increment next-question-id
        (define question-id
          next-question-id)
@@ -220,6 +231,10 @@
                   (cons question-promise question-resolver))
 
        question-id)
+
+     ;; Needs to return a desc
+     (define (resolve-delivery-to! to)
+       'TODO)
 
      ;; ;; Install bootstrap object
      ;; (when bootstrap-refr
@@ -247,7 +262,7 @@
 
         (define (handle-captp-incoming msg)
           (match msg
-            [(op:bootstrap answer-id)
+            [(op:bootstrap answer-id resolve-me)
              (pk 'bootstrapped)
              ;; TODO: Dramatically incorrect, but we'll fix in the next step.
              ;;   The values in the answers table shouldn't be just local references,
@@ -266,7 +281,7 @@
                   ;;    See op:bootstrap about what we need to change here...
                   (hash-ref answers answer-pos)]))
              (define-values (kws kw-vals)
-               (split-kws-and-vals kw-args))
+               (kws-hasheq->kws-lists kw-args))
              ;; TODO: support distinction between method sends and procedure sends
              (if method
                  (keyword-apply machine-vat-connector
@@ -284,7 +299,7 @@
              (define target
                (hash-ref exports-val2slot target-pos))
              (define-values (kws kw-vals)
-               (split-kws-and-vals kw-args))
+               (kws-hasheq->kws-lists kw-args))
              ;; @@: Is this what goes into the answers table...?
              ;;   It doesn't completely seem that way because when 
 
@@ -330,8 +345,24 @@
             [other-message
              (pk 'unknown-message-type other-message)]))
 
-        (define (handle-internal msg)
-          'TODO)
+        (define (handle-internal cmd)
+          (match cmd
+            [(cmd-deliver-message (message to resolve-me kws kw-vals args)
+                                  question-promise)
+             (define deliver-msg
+               (op:deliver (resolve-delivery-to! to)
+                           #;(desc:import (maybe-install-export! to))
+                           #f ;; TODO: support methods
+                           ;; TODO: correctly marshall everything here
+                           args
+                           (kws-lists->kws-hasheq kws kw-vals)
+                           (maybe-install-question! resolve-me)))
+             (send-to-remote (syrup-encode deliver-msg
+                                           #:marshallers marshallers))
+             
+             'TODO]
+            
+            ))
 
         (define (handle-from-machine-representative msg)
           (match msg
@@ -344,19 +375,48 @@
                                               method args kw-args))
              'TODO]))
 
+
+        ;; TODO: this is borrowed from vat.rkt, we should probably just make
+        ;;   a generalized version of it
+        (define-syntax-rule (define-captp-dispatcher id [method-name method-handler] ...)
+          (define id
+            (procedure-rename
+             (make-keyword-procedure
+              (λ (kws kw-args this-method-name . args)
+                (define method
+                  (case this-method-name
+                    ['method-name method-handler] ...
+                    [else (error 'connector-dispatcher-error
+                                 "Unnown method: ~a" this-method-name)]))
+                (keyword-apply method kws kw-args args)))
+             'id)))
+
+        (define (_deliver-message msg question-promise)
+          (async-channel-put internal-ch
+                             (cmd-deliver-message msg question-promise)))
+
+        (define-captp-dispatcher captp-connector
+          [deliver-message _deliver-message])
+
         ;;; BEGIN REMOTE BOOTSTRAP OPERATION
         ;;; ================================
         ;; First we need a promise/resolver pair for the bootstrap
         ;; object (wait... is this true for this one though?  Don't we
         ;; just need the id?)
-        #;(match-define (cons bootstrap-promise bootstrap-resolver)
-          (machine-vat-connector 'run spawn-promise-cons))
+        (match-define (cons bootstrap-promise bootstrap-resolver)
+          (machine-vat-connector
+           'run (lambda ()
+                  (define-values (promise resolver)
+                    (_spawn-promise-values
+                     #:question-captp-connector captp-connector))
+                  (cons promise resolver))))
         ;; Now install this question
         (define bootstrap-question-id
           #;(install-question! bootstrap-promise bootstrap-resolver)
-          (install-question! #f #f)) ; don't actually correspond to a real promise/resolver...?
+          ;; TODO: Install promise and resolver I guess?  Not sure
+          (maybe-install-question! #f #f))
         ;; Now send the bootstrap message to the other side
-        (send-to-remote (op:bootstrap bootstrap-question-id))
+        (send-to-remote (op:bootstrap bootstrap-question-id #f))
         ;;; END REMOTE BOOTSTRAP OPERATION
         ;;; ==============================
 
@@ -520,10 +580,10 @@
    "test machine should send a bootstrap message"
    (syrup-read test1->repl-ip
                #:unmarshallers unmarshallers)
-   (op:bootstrap 0))
+   (op:bootstrap 0 #f))
 
   ;; Now we should bootstrap it such that it allocates an answer for us
-  (syrup-write (op:bootstrap 0)
+  (syrup-write (op:bootstrap 0 #f)
                repl->test1-op
                #:marshallers marshallers)
 
