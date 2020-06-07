@@ -34,7 +34,6 @@
                    (eq? label (quote struct-id)))
                  struct-id))))
 
-
 (define-recordable-struct op:bootstrap
   (answer-id resolve-me)
   marshall::op:bootstrap unmarshall::op:bootstrap)
@@ -83,15 +82,41 @@
   (import-pos)
   marshall::desc:new-import unmarshall::desc:new-import)
 
-;; Import we've already seen (but we still need to increment the wire count)
-(define-recordable-struct desc:import
-  (import-pos)
-  marshall::desc:import unmarshall::desc:import)
+(define-recordable-struct desc:import-object
+  (pos)
+  marshall::desc:import-object unmarshall::desc:import-object)
+
+(define-recordable-struct desc:import-promise
+  (pos)
+  marshall::desc:import-promise unmarshall::desc:import-promise)
+
+(define (desc:import-pos import-desc)
+  (match import-desc
+    [(? desc:import-object?)
+     (desc:import-object-pos import-desc)]
+    [(? desc:import-promise?)
+     (desc:import-promise-pos import-desc)]))
+
+(define-recordable-struct desc:export-object
+  (pos)
+  marshall::desc:export-object unmarshall::desc:export-object)
+
+(define-recordable-struct desc:export-promise
+  (pos)
+  marshall::desc:export-promise unmarshall::desc:export-promise)
+
+(define (desc:export-pos export-desc)
+  (match export-desc
+    [(? desc:export-object?)
+     (desc:export-object-pos export-desc)]
+    [(? desc:export-promise?)
+     (desc:export-promise-pos export-desc)]))
+
 
 ;; Something to answer that we haven't seen before.
 ;; As such, we need to set up both the promise import and this resolver/redirector
 (define-recordable-struct desc:answer
-  (answer-pos)
+  (pos)
   marshall::desc:answer unmarshall::desc:answer)
 
 ;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
@@ -114,7 +139,8 @@
         ;; marshall::op:return-fulfill
         ;; marshall::op:return-break
         ;; marshall::desc:new-import
-        marshall::desc:import
+        marshall::desc:import-object
+        marshall::desc:import-promise
         marshall::desc:answer))
 
 (define unmarshallers
@@ -125,7 +151,8 @@
         ;; unmarshall::op:return-fulfill
         ;; unmarshall::op:return-break
         ;; unmarshall::desc:new-import
-        unmarshall::desc:import
+        unmarshall::desc:import-object
+        unmarshall::desc:import-promise
         unmarshall::desc:answer))
 
 ;; Internal commands from the vat connector
@@ -169,9 +196,33 @@
   (define internal-ch
     (make-async-channel))
 
-  ;; slot sealers, so we know this really is from our imports/exports
-  (define-values (slot-seal slot-unseal slot-sealed?)
+  ;; position sealers, so we know this really is from our imports/exports
+  (define-values (pos-seal pos-unseal pos-sealed?)
     (make-sealer-triplet))
+
+
+  ;; TODO: this is borrowed from vat.rkt, we should probably just make
+  ;;   a generalized version of it.
+  ;;   Definitely overkill for how used so far though...
+  (define-syntax-rule (define-captp-dispatcher id [method-name method-handler] ...)
+    (define id
+      (procedure-rename
+       (make-keyword-procedure
+        (λ (kws kw-args this-method-name . args)
+          (define method
+            (case this-method-name
+              ['method-name method-handler] ...
+              [else (error 'connector-dispatcher-error
+                           "Unnown method: ~a" this-method-name)]))
+          (keyword-apply method kws kw-args args)))
+       'id)))
+
+  (define (_deliver-message msg question-promise)
+    (async-channel-put internal-ch
+                       (cmd-deliver-message msg question-promise)))
+
+  (define-captp-dispatcher captp-connector
+    [deliver-message _deliver-message])
 
   (syscaller-free-thread
    (lambda ()
@@ -181,8 +232,8 @@
 
      ;; TODO: We need to wrap this in a structure that keeps track of when it
      ;;   can GC
-     (define exports-val2slot (make-weak-hasheq))  ; exports[val]:   chosen by us
-     (define exports-slot2val (make-hasheqv))      ; exports[slot]:  chosen by us
+     (define exports-val2pos (make-weak-hasheq))  ; exports[val]:   chosen by us
+     (define exports-pos2val (make-hasheqv))      ; exports[pos]:  chosen by us
      ;; TODO: This doesn't make sense if the value isn't wrapped in a weak
      ;;   reference... I think this also needs to go in both directions to work
      ;;   from a GC perspective
@@ -202,8 +253,8 @@
        (-> live-refr? any/c)  ; TODO: Maybe de-contract this and manually check for speed
        (cond
          ;; Already have it, no need to increment next-export-id
-         [(hash-has-key? exports-val2slot refr)
-          (hash-ref exports-val2slot refr)]
+         [(hash-has-key? exports-val2pos refr)
+          (hash-ref exports-val2pos refr)]
          ;; Nope, let's export this
          [else
           ;; TODO: This doesn't do handoffs for remote refrs yet!!
@@ -212,11 +263,34 @@
             next-export-id)
           (set! next-export-id (add1 export-id))
           ;; install in both export tables
-          (hash-set! exports-slot2val export-id
+          (hash-set! exports-pos2val export-id
                      refr)
-          (hash-set! exports-val2slot refr
+          (hash-set! exports-val2pos refr
                      export-id)
           export-id]))
+
+     (define (maybe-install-import! import-desc)
+       (define import-pos
+         (desc:import-pos import-desc))
+       (cond
+         [(hash-has-key? imports import-pos)
+          ;; Oh, we've already got that.  Reference and return it.
+          (hash-ref imports import-pos)]
+         [else
+          ;; construct the new reference...
+          (define new-refr
+            (match import-desc
+              [(? desc:import-object?)
+               (make-remote-object-refr captp-connector
+                                        (pos-seal import-pos))]
+              [(? desc:import-promise?)
+               (make-remote-promise-refr captp-connector
+                                         (pos-seal import-pos))]))
+          ;; TODO: weak boxing goes here
+          ;; install it...
+          (hash-set! imports import-pos new-refr)
+          ;; and return it.
+          new-refr]))
 
      ;; Questions are kind of weird because:
      ;;   a) they only happen via captp and
@@ -238,8 +312,8 @@
 
      ;; ;; Install bootstrap object
      ;; (when bootstrap-refr
-     ;;   (hash-set! exports-slot2val bootstrap-refr 0)
-     ;;   (hash-set! exports-val2slot 0 bootstrap-refr))
+     ;;   (hash-set! exports-pos2val bootstrap-refr 0)
+     ;;   (hash-set! exports-val2pos 0 bootstrap-refr))
 
      (define (send-to-remote msg)
        (async-channel-put captp-outgoing-ch msg))
@@ -248,8 +322,8 @@
       (lambda (escape-lp)
         ;; TODO: Also inform the parent machine that we are dead
         (define (tear-it-down)
-          (set! exports-val2slot #f)
-          (set! exports-slot2val #f)
+          (set! exports-val2pos #f)
+          (set! exports-pos2val #f)
           (set! imports #f)
           (set! questions #f)
           (set! answers #f)
@@ -274,8 +348,9 @@
              ;; TODO: Handle case where the target doesn't exist
              (define target
                (match target-desc
-                 [(desc:import import-pos)
-                  (hash-ref exports-val2slot import-pos)]
+                 [(or (desc:import-object import-pos)
+                      (desc:import-promise import-pos))
+                  (hash-ref exports-val2pos import-pos)]
                  [(desc:answer answer-pos)
                   ;; TODO: Super, super wrong; this won't remain a direct value.
                   ;;    See op:bootstrap about what we need to change here...
@@ -297,7 +372,7 @@
              (pk 'delivered)
              ;; TODO: Handle case where the target doesn't exist
              (define target
-               (hash-ref exports-val2slot target-pos))
+               (hash-ref exports-val2pos target-pos))
              (define-values (kws kw-vals)
                (kws-hasheq->kws-lists kw-args))
              ;; @@: Is this what goes into the answers table...?
@@ -365,7 +440,7 @@
             ))
 
         (define (handle-from-machine-representative msg)
-          (match msg
+          #;(match msg
             [(vector 'deliver-only remote-live-refr target-pos method args kw-args)
              (pk 'repr-deliver-only)
              'TODO]
@@ -373,30 +448,8 @@
              (pk 'repr-bootstrap-deliver-only)
              (send-to-remote (op:deliver-only (desc:answer bootstrap-question-id)
                                               method args kw-args))
-             'TODO]))
-
-
-        ;; TODO: this is borrowed from vat.rkt, we should probably just make
-        ;;   a generalized version of it
-        (define-syntax-rule (define-captp-dispatcher id [method-name method-handler] ...)
-          (define id
-            (procedure-rename
-             (make-keyword-procedure
-              (λ (kws kw-args this-method-name . args)
-                (define method
-                  (case this-method-name
-                    ['method-name method-handler] ...
-                    [else (error 'connector-dispatcher-error
-                                 "Unnown method: ~a" this-method-name)]))
-                (keyword-apply method kws kw-args args)))
-             'id)))
-
-        (define (_deliver-message msg question-promise)
-          (async-channel-put internal-ch
-                             (cmd-deliver-message msg question-promise)))
-
-        (define-captp-dispatcher captp-connector
-          [deliver-message _deliver-message])
+             'TODO])
+          'TODO)
 
         ;;; BEGIN REMOTE BOOTSTRAP OPERATION
         ;;; ================================
@@ -481,34 +534,6 @@
     (spawn ^machine-representative))
   machine-representative)
 
-
-#;(define (^craptp-conn _bcom in-port out-port
-                      
-                      self-send-np)
-  
-
-  ;; TODO: Two faces to this:
-  ;;  - a way for the thread to communicate with an actor
-  ;;  - a way for those 
-
-  (define (^for-comm-thread bcom)
-    (methods
-     [(something) 'TODO]))
-  (define (^for-machine bcom)
-    #;(methods
-     [])
-    ;; For now we'll just pass through to the thread.  This is reasonably unsafe
-    ;; but we're testing things out.
-
-    )
-
-  (define thread-communicator
-    (spawn ^for-comm-thread))
-
-  (define machine-communicator
-    (spawn ^for-machine))
-  machine-communicator)
-
 (define (make-swiss-num)
   (crypto-random-bytes 32))
 
@@ -575,7 +600,7 @@
                            test1-vat
                            test1-bootstrap-actor))
 
-  ;; It should send us (the REPL) a bootstrap message with answer slot 0
+  ;; It should send us (the REPL) a bootstrap message with answer pos 0
   (test-equal?
    "test machine should send a bootstrap message"
    (syrup-read test1->repl-ip
