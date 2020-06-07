@@ -185,7 +185,7 @@
            mactor:local-promise-resolver-tm?
 
            mactor:local-question mactor:local-question?
-           mactor:local-question-captp-connector))
+           mactor:local-question-question-deliverer))
 
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda methods":
@@ -226,7 +226,7 @@
 ;; a question on the remote end.  Keeps track of the captp-connector
 ;; relevant to this connection so it can send it messages.
 (struct mactor:local-question mactor:local-promise
-  (captp-connector))
+  (question-deliverer))
 
 ;; The following three are things that a local-promise mactor might
 ;; turn into upon resolution.  Really, a promise can either:
@@ -816,8 +816,12 @@
            [(? local-refr?)
             (_spawn-promise-values)]
            [(? remote-refr?)
-            (_spawn-promise-values #:question-captp-connector
-                                   (remote-refr-captp-connector to-refr))]))
+            (define captp-connector
+              (remote-refr-captp-connector to-refr))
+            (define question-deliverer
+              (captp-connector 'new-question-deliverer))
+            (_spawn-promise-values #:question-deliverer
+                                   question-deliverer)]))
        (_send-message kws kw-args to-refr resolver args)
        promise)))
 
@@ -1395,16 +1399,16 @@
 ;;; Promises
 ;;; ========
 
-(define (_spawn-promise-values #:question-captp-connector
-                               [question-captp-connector #f])
+(define (_spawn-promise-values #:question-deliverer
+                               [question-deliverer #f])
   (define-values (sealer unsealer tm?)
     (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (if question-captp-connector
+         (if question-deliverer
              (mactor:local-question '() unsealer tm?
-                                    question-captp-connector)
+                                    question-deliverer)
              (mactor:local-promise '() unsealer tm?))
          #:promise? #t))
   ;; I guess the alternatives to responding with false on

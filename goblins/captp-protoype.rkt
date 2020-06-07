@@ -149,7 +149,7 @@
         unmarshall::desc:answer))
 
 ;; Internal commands from the vat connector
-(struct cmd-deliver-message (msg))
+(struct cmd-send-message (msg))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
@@ -199,6 +199,14 @@
   ;; question finders relevant to this vat only
   (struct question-finder ())
 
+  (define (make-question-deliverer question-finder)
+    (lambda (resolve-me kws kw-vals args)
+      (define msg
+        (message question-finder
+                 resolve-me kws kw-vals args))
+      (async-channel-put internal-ch
+                         (cmd-send-message msg))))
+
   ;; TODO: this is borrowed from vat.rkt, we should probably just make
   ;;   a generalized version of it.
   ;;   Definitely overkill for how used so far though...
@@ -215,12 +223,18 @@
           (keyword-apply method kws kw-args args)))
        'id)))
 
-  (define (_deliver-message msg question-promise)
+  (define (_send-message msg)
     (async-channel-put internal-ch
-                       (cmd-deliver-message msg question-promise)))
+                       (cmd-send-message msg)))
+
+  (define (_new-question-deliverer)
+    (define this-question-finder
+      (question-finder))
+    (make-question-deliverer this-question-finder))
 
   (define-captp-dispatcher captp-connector
-    [deliver-message _deliver-message])
+    [send-message _send-message]
+    [new-question-deliverer _new-question-deliverer])
 
   (syscaller-free-thread
    (lambda ()
@@ -267,6 +281,17 @@
                      export-id)
           export-id]))
 
+     (define/contract (marshall-local-refr! local-refr)
+       (-> local-refr? (or/c desc:import-object
+                             desc:import-promise))
+       (define export-id
+         (maybe-install-export! local-refr))
+       (match local-refr
+         [(? local-object?)
+          (desc:import-object export-id)]
+         [(? local-promise?)
+          (desc:import-promise export-id)]))
+
      (define (maybe-install-import! import-desc)
        (define import-pos
          (desc:import-pos import-desc))
@@ -290,31 +315,17 @@
           ;; and return it.
           new-refr]))
 
-     ;; Questions are kind of weird because:
-     ;;   a) they only happen via captp and
-     ;;   b) they have both a question and resolver pair
-     (define (maybe-install-question! question-promise question-resolver)
-       ;; get this question-id and increment next-question-id
-       (define question-id
-         next-question-id)
-       (set! next-question-id (add1 next-question-id))
-
-       (hash-set! questions question-id
-                  (cons question-promise question-resolver))
-
-       question-id)
-
      (define (remote-refr->imported-pos to)
        (pos-unseal (remote-refr-sealed-pos to)))
 
-     (define (question-finder->question-pos! to)
-       (if (hash-has-key? questions to)
+     (define (question-finder->question-pos! question-finder)
+       (if (hash-has-key? questions question-finder)
            ;; we already have a question relevant to this question id
-           (hash-ref questions to)
+           (hash-ref questions question-finder)
            ;; new question id...
            (let ([question-id next-question-id])
              ;; install our question at this question id
-             (hash-set! questions question-id question-id)
+             (hash-set! questions question-finder question-id)
              ;; increment the next-question id
              (set! next-question-id (add1 next-question-id))
              ;; and return the question-id we set up
@@ -439,7 +450,7 @@
 
         (define (handle-internal cmd)
           (match cmd
-            [(cmd-deliver-message (message to resolve-me kws kw-vals args))
+            [(cmd-send-message (message to resolve-me kws kw-vals args))
              (define deliver-msg
                (op:deliver (resolve-delivery-to! to)
                            #;(desc:import (maybe-install-export! to))
@@ -447,7 +458,7 @@
                            ;; TODO: correctly marshall everything here
                            args
                            (kws-lists->kws-hasheq kws kw-vals)
-                           (maybe-install-export! resolve-me)))
+                           (marshall-local-refr! resolve-me)))
              (send-to-remote (syrup-encode deliver-msg
                                            #:marshallers marshallers))]))
 
@@ -465,23 +476,43 @@
 
         ;;; BEGIN REMOTE BOOTSTRAP OPERATION
         ;;; ================================
-        ;; First we need a promise/resolver pair for the bootstrap
-        ;; object (wait... is this true for this one though?  Don't we
-        ;; just need the id?)
-        (match-define (cons bootstrap-promise bootstrap-resolver)
+        ;; ;; First we need a promise/resolver pair for the bootstrap
+        ;; ;; object (wait... is this true for this one though?  Don't we
+        ;; ;; just need the id?)
+        ;; (match-define (cons bootstrap-promise bootstrap-resolver)
+        ;;   (machine-vat-connector
+        ;;    'run (lambda ()
+        ;;           (define-values (promise resolver)
+        ;;             (_spawn-promise-values
+        ;;              #:question-captp-connector captp-connector))
+        ;;           (cons promise resolver))))
+        ;; ;; Now install this question
+        ;; (define bootstrap-question-id
+        ;;   #;(install-question! bootstrap-promise bootstrap-resolver)
+        ;;   ;; TODO: Install promise and resolver I guess?  Not sure
+        ;;   (maybe-install-question! #f #f))
+        ;; ;; Now send the bootstrap message to the other side
+
+        (define (bootstrap-remote!)
           (machine-vat-connector
-           'run (lambda ()
-                  (define-values (promise resolver)
-                    (_spawn-promise-values
-                     #:question-captp-connector captp-connector))
-                  (cons promise resolver))))
-        ;; Now install this question
+           'run
+           (lambda ()
+             (define this-question-finder
+               (question-finder))
+             ;; called for its effect of installing the question
+             (question-finder->question-pos! this-question-finder)
+             (define question-deliverer
+               (make-question-deliverer this-question-finder))
+             (define-values (bootstrap-promise bootstrap-resolver)
+               (_spawn-promise-values #:question-deliverer
+                                      question-deliverer))
+             (define bootstrap-msg
+               (op:bootstrap (hash-ref questions this-question-finder)
+                             (maybe-install-export! bootstrap-resolver)))
+             (send-to-remote bootstrap-msg)
+             bootstrap-promise)))
         (define bootstrap-question-id
-          #;(install-question! bootstrap-promise bootstrap-resolver)
-          ;; TODO: Install promise and resolver I guess?  Not sure
-          (maybe-install-question! #f #f))
-        ;; Now send the bootstrap message to the other side
-        (send-to-remote (op:bootstrap bootstrap-question-id #f))
+          (bootstrap-remote!))
         ;;; END REMOTE BOOTSTRAP OPERATION
         ;;; ==============================
 
@@ -617,7 +648,7 @@
    "test machine should send a bootstrap message"
    (syrup-read test1->repl-ip
                #:unmarshallers unmarshallers)
-   (op:bootstrap 0 #f))
+   (op:bootstrap 0 0))
 
   ;; Now we should bootstrap it such that it allocates an answer for us
   (syrup-write (op:bootstrap 0 #f)
