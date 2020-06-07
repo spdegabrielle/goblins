@@ -109,8 +109,8 @@
         marshall::op:deliver-only
         marshall::op:deliver
         marshall::op:abort
-        marshall::op:return-fulfill
-        marshall::op:return-break
+        ;; marshall::op:return-fulfill
+        ;; marshall::op:return-break
         ;; marshall::desc:new-import
         marshall::desc:import
         marshall::desc:answer))
@@ -120,11 +120,14 @@
         unmarshall::op:deliver-only
         unmarshall::op:deliver
         unmarshall::op:abort
-        unmarshall::op:return-fulfill
-        unmarshall::op:return-break
+        ;; unmarshall::op:return-fulfill
+        ;; unmarshall::op:return-break
         ;; unmarshall::desc:new-import
         unmarshall::desc:import
         unmarshall::desc:answer))
+
+;; Internal commands from the vat connector
+(struct cmd-send-message (msg))
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
