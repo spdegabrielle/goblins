@@ -66,23 +66,6 @@
   (reason)
   marshall::op:abort unmarshall::op:abort)
 
-;; ;; Effectively splitting "return" into two distinct operations
-;; (define-recordable-struct op:return-fulfill
-;;   (answer-pos val)
-;;   marshall::op:return-fulfill unmarshall::op:return-fulfill)
-;; (define-recordable-struct op:return-break
-;;   (answer-pos problem)
-;;   marshall::op:return-break unmarshall::op:return-break)
-
-;;; Descriptions of references sent across the wire
-;;; (from receiver's perspective)
-
-;; New import which we shouldn't have seen yet (if we have, it's an error)
-;; TODO: I'm not sure if this actually is necessary or useful
-#;(define-recordable-struct desc:new-import
-  (import-pos)
-  marshall::desc:new-import unmarshall::desc:new-import)
-
 (define-recordable-struct desc:import-object
   (pos)
   marshall::desc:import-object unmarshall::desc:import-object)
@@ -104,7 +87,6 @@
   (pos)
   marshall::desc:export unmarshall::desc:export)
 
-
 ;; Something to answer that we haven't seen before.
 ;; As such, we need to set up both the promise import and this resolver/redirector
 (define-recordable-struct desc:answer
@@ -113,24 +95,11 @@
 
 ;; TODO: 3 vat/machine handoff versions (Promise3Desc, Far3Desc)
 
-
-;; (define op:bootstrap->record
-;;   (match-lambda
-;;     [(op:bootstrap question-id)
-;;      (record* 'op:bootstrap question-id)]))
-;; (define op:deliver-only->record
-;;   (match-lambda
-;;     [(op:deliver-only target-pos method args kw-args)
-;;      (record* 'op:deliver-only target-pos method args kw-args)]))
-
 (define marshallers
   (list marshall::op:bootstrap
         marshall::op:deliver-only
         marshall::op:deliver
         marshall::op:abort
-        ;; marshall::op:return-fulfill
-        ;; marshall::op:return-break
-        ;; marshall::desc:new-import
         marshall::desc:import-object
         marshall::desc:import-promise
         marshall::desc:export
@@ -141,9 +110,6 @@
         unmarshall::op:deliver-only
         unmarshall::op:deliver
         unmarshall::op:abort
-        ;; unmarshall::op:return-fulfill
-        ;; unmarshall::op:return-break
-        ;; unmarshall::desc:new-import
         unmarshall::desc:import-object
         unmarshall::desc:import-promise
         unmarshall::desc:export
@@ -418,11 +384,6 @@
                         'remote-promise-breakage-TODO))))))
        (values answer-promise answer-resolver))
 
-     ;; ;; Install bootstrap object
-     ;; (when bootstrap-refr
-     ;;   (hash-set! exports-pos2val bootstrap-refr 0)
-     ;;   (hash-set! exports-val2pos 0 bootstrap-refr))
-
      (define (send-to-remote msg)
        (async-channel-put captp-outgoing-ch msg))
 
@@ -517,36 +478,10 @@
                                            #:marshallers marshallers))]))
 
         (define (handle-from-machine-representative msg)
-          #;(match msg
-            [(vector 'deliver-only remote-live-refr target-pos method args kw-args)
-             (pk 'repr-deliver-only)
-             'TODO]
-            [(vector 'bootstrap-deliver-only method args kw-args)
-             (pk 'repr-bootstrap-deliver-only)
-             (send-to-remote (op:deliver-only (desc:answer bootstrap-question-pos)
-                                              method args kw-args))
-             'TODO])
           'TODO)
 
         ;;; BEGIN REMOTE BOOTSTRAP OPERATION
         ;;; ================================
-        ;; ;; First we need a promise/resolver pair for the bootstrap
-        ;; ;; object (wait... is this true for this one though?  Don't we
-        ;; ;; just need the id?)
-        ;; (match-define (cons bootstrap-promise bootstrap-resolver)
-        ;;   (machine-vat-connector
-        ;;    'run (lambda ()
-        ;;           (define-values (promise resolver)
-        ;;             (_spawn-promise-values
-        ;;              #:question-captp-connector captp-connector))
-        ;;           (cons promise resolver))))
-        ;; ;; Now install this question
-        ;; (define bootstrap-question-pos
-        ;;   #;(install-question! bootstrap-promise bootstrap-resolver)
-        ;;   ;; TODO: Install promise and resolver I guess?  Not sure
-        ;;   (maybe-install-question! #f #f))
-        ;; ;; Now send the bootstrap message to the other side
-
         (define (bootstrap-remote!)
           (machine-vat-connector
            'run
