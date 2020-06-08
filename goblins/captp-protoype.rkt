@@ -455,28 +455,27 @@
              (machine-vat-connector
               'call answer-resolver 'fulfill bootstrap-refr)
              (void)]
+            ;; TODO: Handle case where the target doesn't exist?
+            ;;   Or maybe just generally handle unmarshalling errors :P
             [(op:deliver-only to-desc method
-                              args-marshalled
+                              args-no-method-marshalled
                               kw-args-marshalled)
+             ;; TODO: support distinction between method sends and procedure sends
+             (define args-marshalled
+               (if method
+                   (cons method args-no-method-marshalled)
+                   args-no-method-marshalled))
              (define args
                (import-post-unmarshall! args-marshalled))
              (define kw-args
                (import-post-unmarshall! kw-args-marshalled))
-             (pk 'deliver-onlyed to-desc method args kw-args)
-             ;; TODO: Handle case where the target doesn't exist
              (define target (unmarshall-to-desc to-desc))
              (define-values (kws kw-vals)
                (kws-hasheq->kws-lists kw-args))
-             ;; TODO: support distinction between method sends and procedure sends
-             (if method
-                 (keyword-apply machine-vat-connector
-                                kws kw-vals
-                                '<-np target
-                                method args)
-                 (keyword-apply machine-vat-connector
-                                kws kw-vals
-                                '<-np target
-                                args))]
+             (keyword-apply machine-vat-connector
+                            kws kw-vals
+                            '<-np target
+                            args)]
             [(op:deliver to-desc method
                          args-marshalled
                          kw-args-marshalled
