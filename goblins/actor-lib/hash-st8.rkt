@@ -21,8 +21,8 @@
                       key args)])))
      (define initial-ht
        (for/fold ([ht ht-pre-kws])
-                 ([kw kws]
-                  [kw-arg kw-args])
+                 ([kw (in-list kws)]
+                  [kw-arg (in-list kw-args)])
          (hash-set ht (string->symbol (keyword->string kw)) kw-arg)))
      (define (next ht)
        (make-keyword-procedure

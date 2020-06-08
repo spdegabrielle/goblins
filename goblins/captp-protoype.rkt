@@ -130,8 +130,8 @@
 ;; and the reverse
 (define (kws-lists->kws-hasheq kws kw-vals)
   (for/fold ([ht #hasheq()])
-            ([kw kws]
-             [kw-val kw-vals])
+            ([kw (in-list kws)]
+             [kw-val (in-list kw-vals)])
     (hash-set ht kw kw-val)))
 
 
@@ -686,22 +686,18 @@
 
   ;; Now, let's just make sure this registry / thing works
 
-  
 
+  ;; Vat A -> Vat B tests
+  ;; (TODO: Replace this with machines in separate places)
+  (define a-vat
+    (make-vat))
+  (define b-vat
+    (make-vat))
 
-
-
-  ;; ;; Vat A -> Vat B tests
-  ;; ;; (TODO: Replace this with machines in separate places)
-  ;; (define a-vat
-  ;;   (make-vat))
-  ;; (define b-vat
-  ;;   (make-vat))
-
-  ;; (define-values (a->b-ip a->b-op)
-  ;;   (make-pipe))
-  ;; (define-values (b->a-ip b->a-op)
-  ;;   (make-pipe))
+  (define-values (a->b-ip a->b-op)
+    (make-pipe))
+  (define-values (b->a-ip b->a-op)
+    (make-pipe))
 
   ;; (match-define (cons a-nonce-loc a-nonce-reg)
   ;;   (a-vat 'run spawn-nonce-registry-locator-pair))

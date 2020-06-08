@@ -1190,7 +1190,7 @@
      (for/fold ([actormap actormap]
                 [to-near '()]
                 [to-far '()])
-               ([msg (reverse messages)])
+               ([msg (in-list (reverse messages))])
        (define-values (new-actormap new-to-near new-to-far)
          (actormap-churn actormap msg
                          #:display-errors? display-errors?))
