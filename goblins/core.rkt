@@ -185,7 +185,7 @@
            mactor:local-promise-resolver-tm?
 
            mactor:local-question mactor:local-question?
-           mactor:local-question-question-deliverer))
+           mactor:local-question-question-finder))
 
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda methods":
@@ -226,7 +226,7 @@
 ;; a question on the remote end.  Keeps track of the captp-connector
 ;; relevant to this connection so it can send it messages.
 (struct mactor:local-question mactor:local-promise
-  (question-deliverer))
+  (question-finder))
 
 ;; The following three are things that a local-promise mactor might
 ;; turn into upon resolution.  Really, a promise can either:
@@ -782,9 +782,13 @@
        (raise problem)]))
 
   ;; helper to the below two methods
-  (define (_send-message kws kw-args to-refr resolve-me args)
+  (define (_send-message kws kw-args to-refr resolve-me args
+                         #:answer-this-question [answer-this-question #f])
     (define new-message
-      (message to-refr resolve-me kws kw-args args))
+      (if answer-this-question
+          (question-message to-refr resolve-me kws kw-args args
+                            answer-this-question)
+          (message to-refr resolve-me kws kw-args args)))
 
     ;; TODO: This is really a matter of dispatching on mactors
     ;;   mostly now
@@ -811,19 +815,23 @@
   (define _<-
     (make-keyword-procedure
      (lambda (kws kw-args to-refr . args)
-       (define-values (promise resolver)
-         (match to-refr
-           [(? local-refr?)
-            (_spawn-promise-values)]
-           [(? remote-refr?)
-            (define captp-connector
-              (remote-refr-captp-connector to-refr))
-            (define question-deliverer
-              (captp-connector 'new-question-deliverer))
-            (_spawn-promise-values #:question-deliverer
-                                   question-deliverer)]))
-       (_send-message kws kw-args to-refr resolver args)
-       promise)))
+       (match to-refr
+         [(? local-refr?)
+          (define-values (promise resolver)
+            (_spawn-promise-values))
+          (_send-message kws kw-args to-refr resolver args)
+          promise]
+         [(? remote-refr?)
+          (define captp-connector
+            (remote-refr-captp-connector to-refr))
+          (define question-finder
+            (captp-connector 'new-question-finder))
+          (define-values (promise resolver)
+            (_spawn-promise-values #:question-finder
+                                   question-finder))
+          (_send-message kws kw-args to-refr resolver args
+                         #:answer-this-question question-finder)
+          promise]))))
 
   ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
@@ -1399,16 +1407,16 @@
 ;;; Promises
 ;;; ========
 
-(define (_spawn-promise-values #:question-deliverer
-                               [question-deliverer #f])
+(define (_spawn-promise-values #:question-finder
+                               [question-finder #f])
   (define-values (sealer unsealer tm?)
     (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
-         (if question-deliverer
+         (if question-finder
              (mactor:local-question '() unsealer tm?
-                                    question-deliverer)
+                                    question-finder)
              (mactor:local-promise '() unsealer tm?))
          #:promise? #t))
   ;; I guess the alternatives to responding with false on

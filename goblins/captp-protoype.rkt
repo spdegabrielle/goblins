@@ -229,14 +229,12 @@
                        (cmd-send-message msg))
     (void))
 
-  (define (_new-question-deliverer)
-    (define this-question-finder
-      (question-finder))
-    (make-question-deliverer this-question-finder))
+  (define (_new-question-finder)
+    (question-finder))
 
   (define-captp-dispatcher captp-connector
     [handle-message _handle-message]
-    [new-question-deliverer _new-question-deliverer])
+    [new-question-finder _new-question-finder])
 
   (syscaller-free-thread
    (lambda ()
@@ -472,11 +470,13 @@
                             kws kw-vals
                             '<-np target
                             args)]
-            [(op:deliver to-desc method
+            #;[(op:deliver to-desc method
                          args-marshalled
                          kw-args-marshalled
                          answer-pos
                          resolve-me-desc)
+             (define-values (answer-promise answer-resolver)
+               (install-answer! answer-pos resolve-me-desc))
              'TODO]
             [(op:abort reason)
              (pk 'aborted)
@@ -488,7 +488,15 @@
 
         (define (handle-internal cmd)
           (match cmd
-            [(cmd-send-message (message to resolve-me kws kw-vals args))
+            [(cmd-send-message msg)
+             (match-define (message to resolve-me kws kw-vals args)
+               msg)
+             (define to-answer
+               (if (question-message? msg)
+                   (desc:answer
+                    (question-finder->question-pos!
+                     (question-message-answer-this-question msg)))
+                   #f))
              (define deliver-msg
                (if resolve-me
                    (op:deliver (resolve-delivery-to! to)
@@ -498,6 +506,7 @@
                                (export-pre-marshall! args)
                                (export-pre-marshall!
                                 (kws-lists->kws-hasheq kws kw-vals))
+                               to-answer
                                (marshall-local-refr! resolve-me))
                    (op:deliver-only (resolve-delivery-to! to)
                                     #f ;; TODO: support methods
@@ -546,11 +555,9 @@
                (question-finder))
              ;; called for its effect of installing the question
              (question-finder->question-pos! this-question-finder)
-             (define question-deliverer
-               (make-question-deliverer this-question-finder))
              (define-values (bootstrap-promise bootstrap-resolver)
-               (_spawn-promise-values #:question-deliverer
-                                      question-deliverer))
+               (_spawn-promise-values #:question-finder
+                                      this-question-finder))
              (define bootstrap-msg
                (op:bootstrap (hash-ref questions this-question-finder)
                              (maybe-install-export! bootstrap-resolver)))
