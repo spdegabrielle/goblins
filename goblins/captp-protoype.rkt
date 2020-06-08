@@ -36,7 +36,7 @@
                  struct-id))))
 
 (define-recordable-struct op:bootstrap
-  (answer-id resolve-me)
+  (answer-pos resolve-me-desc)
   marshall::op:bootstrap unmarshall::op:bootstrap)
 
 ;; Queue a delivery of verb(args..) to recip, discarding the outcome.
@@ -59,7 +59,7 @@
    args
    kw-args
    answer-pos
-   resolve-me)  ; a resolver, probably an import (though it could be a handoff)
+   resolve-me-desc)  ; a resolver, probably an import (though it could be a handoff)
   marshall::op:deliver unmarshall::op:deliver)
 
 (define-recordable-struct op:abort
@@ -68,10 +68,10 @@
 
 ;; ;; Effectively splitting "return" into two distinct operations
 ;; (define-recordable-struct op:return-fulfill
-;;   (answer-id val)
+;;   (answer-pos val)
 ;;   marshall::op:return-fulfill unmarshall::op:return-fulfill)
 ;; (define-recordable-struct op:return-break
-;;   (answer-id problem)
+;;   (answer-pos problem)
 ;;   marshall::op:return-break unmarshall::op:return-break)
 
 ;;; Descriptions of references sent across the wire
@@ -240,9 +240,9 @@
 
   (syscaller-free-thread
    (lambda ()
-     (define next-export-id 0)
-     (define next-question-id 0)
-     ;; (define next-promise-id 0)
+     (define next-export-pos 0)
+     (define next-question-pos 0)
+     ;; (define next-promise-pos 0)
 
      ;; TODO: We need to wrap this in a structure that keeps track of when it
      ;;   can GC
@@ -266,33 +266,33 @@
      (define/contract (maybe-install-export! refr)
        (-> live-refr? any/c)  ; TODO: Maybe de-contract this and manually check for speed
        (cond
-         ;; Already have it, no need to increment next-export-id
+         ;; Already have it, no need to increment next-export-pos
          [(hash-has-key? exports-val2pos refr)
           (hash-ref exports-val2pos refr)]
          ;; Nope, let's export this
          [else
           ;; TODO: This doesn't do handoffs for remote refrs yet!!
-          ;; get this export-id and increment next-export-id
-          (define export-id
-            next-export-id)
-          (set! next-export-id (add1 export-id))
+          ;; get this export-pos and increment next-export-pos
+          (define export-pos
+            next-export-pos)
+          (set! next-export-pos (add1 export-pos))
           ;; install in both export tables
-          (hash-set! exports-pos2val export-id
+          (hash-set! exports-pos2val export-pos
                      refr)
           (hash-set! exports-val2pos refr
-                     export-id)
-          export-id]))
+                     export-pos)
+          export-pos]))
 
      (define/contract (marshall-local-refr! local-refr)
        (-> local-refr? (or/c desc:import-object
                              desc:import-promise))
-       (define export-id
+       (define export-pos
          (maybe-install-export! local-refr))
        (match local-refr
          [(? local-object?)
-          (desc:import-object export-id)]
+          (desc:import-object export-pos)]
          [(? local-promise?)
-          (desc:import-promise export-id)]))
+          (desc:import-promise export-pos)]))
 
      (define (maybe-install-import! import-desc)
        (define import-pos
@@ -325,13 +325,13 @@
            ;; we already have a question relevant to this question id
            (hash-ref questions question-finder)
            ;; new question id...
-           (let ([question-id next-question-id])
+           (let ([question-pos next-question-pos])
              ;; install our question at this question id
-             (hash-set! questions question-finder question-id)
+             (hash-set! questions question-finder question-pos)
              ;; increment the next-question id
-             (set! next-question-id (add1 next-question-id))
-             ;; and return the question-id we set up
-             question-id)))
+             (set! next-question-pos (add1 next-question-pos))
+             ;; and return the question-pos we set up
+             question-pos)))
 
      (define (resolve-delivery-to! to)
        (match to
@@ -421,15 +421,15 @@
 
         (define (handle-captp-incoming msg)
           (match msg
-            [(op:bootstrap answer-id resolve-me-pos)
-             (pk 'op:bootstrap answer-id resolve-me-pos)
+            [(op:bootstrap answer-pos resolve-me-desc)
+             (pk 'op:bootstrap answer-pos resolve-me-desc)
              (define resolve-me
-               (maybe-install-import! resolve-me-pos))
+               (maybe-install-import! resolve-me-desc))
 
              ;; TODO: Move and generalize this
              (match-define (cons answer-promise answer-resolver)
                (machine-vat-connector 'run spawn-promise-cons))
-             (hash-set! answers answer-id
+             (hash-set! answers answer-pos
                         answer-promise)
              (machine-vat-connector
               'run
@@ -551,7 +551,7 @@
              'TODO]
             [(vector 'bootstrap-deliver-only method args kw-args)
              (pk 'repr-bootstrap-deliver-only)
-             (send-to-remote (op:deliver-only (desc:answer bootstrap-question-id)
+             (send-to-remote (op:deliver-only (desc:answer bootstrap-question-pos)
                                               method args kw-args))
              'TODO])
           'TODO)
@@ -569,7 +569,7 @@
         ;;              #:question-captp-connector captp-connector))
         ;;           (cons promise resolver))))
         ;; ;; Now install this question
-        ;; (define bootstrap-question-id
+        ;; (define bootstrap-question-pos
         ;;   #;(install-question! bootstrap-promise bootstrap-resolver)
         ;;   ;; TODO: Install promise and resolver I guess?  Not sure
         ;;   (maybe-install-question! #f #f))
@@ -593,7 +593,7 @@
                              (maybe-install-export! bootstrap-resolver)))
              (send-to-remote bootstrap-msg)
              bootstrap-promise)))
-        (define bootstrap-question-id
+        (define bootstrap-question-pos
           (bootstrap-remote!))
         ;;; END REMOTE BOOTSTRAP OPERATION
         ;;; ==============================
