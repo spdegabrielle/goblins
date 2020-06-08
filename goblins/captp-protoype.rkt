@@ -223,9 +223,10 @@
           (keyword-apply method kws kw-args args)))
        'id)))
 
-  (define (_send-message msg)
+  (define (_handle-message msg)
     (async-channel-put internal-ch
-                       (cmd-send-message msg)))
+                       (cmd-send-message msg))
+    (void))
 
   (define (_new-question-deliverer)
     (define this-question-finder
@@ -233,7 +234,7 @@
     (make-question-deliverer this-question-finder))
 
   (define-captp-dispatcher captp-connector
-    [send-message _send-message]
+    [handle-message _handle-message]
     [new-question-deliverer _new-question-deliverer])
 
   (syscaller-free-thread
@@ -364,15 +365,35 @@
 
         (define (handle-captp-incoming msg)
           (match msg
-            [(op:bootstrap answer-id resolve-me)
-             (pk 'bootstrapped)
-             ;; TODO: Dramatically incorrect, but we'll fix in the next step.
-             ;;   The values in the answers table shouldn't be just local references,
-             ;;   because we usually won't know yet.  This is just an intermediately
-             ;;   incorrect stepping stone...
-             (hash-set! answers answer-id bootstrap-refr)]
+            [(op:bootstrap answer-id resolve-me-pos)
+             (pk 'op:bootstrap answer-id resolve-me-pos)
+             (define resolve-me
+               (maybe-install-import! resolve-me-pos))
+
+             ;; TODO: Move and generalize this
+             (match-define (cons answer-promise answer-resolver)
+               (machine-vat-connector 'run spawn-promise-cons))
+             (hash-set! answers answer-id
+                        answer-promise)
+             (machine-vat-connector
+              'run
+              (lambda ()
+                (on answer-promise
+                    (lambda (val)
+                      (<-np resolve-me 'fulfill val))
+                    #:catch
+                    (lambda (err)
+                      (match err
+                        (<-np resolve-me 'break
+                              ;; TODO: boy, we really need a way to translate
+                              ;;   exceptions across the vat boundary, huh?
+                              'remote-promise-breakage-TODO))))))
+             ;; And since we're bootstrapping, we resolve it immediately
+             (machine-vat-connector
+              'call answer-resolver 'fulfill bootstrap-refr)
+             (void)]
             [(op:deliver-only target-desc method args kw-args)
-             (pk 'deliver-onlyed)
+             (pk 'deliver-onlyed target-desc method args kw-args)
              ;; TODO: Handle case where the target doesn't exist
              (define target
                (match target-desc
@@ -380,8 +401,6 @@
                       (desc:import-promise import-pos))
                   (hash-ref exports-pos2val import-pos)]
                  [(desc:answer answer-pos)
-                  ;; TODO: Super, super wrong; this won't remain a direct value.
-                  ;;    See op:bootstrap about what we need to change here...
                   (hash-ref answers answer-pos)]))
              (define-values (kws kw-vals)
                (kws-hasheq->kws-lists kw-args))
@@ -452,14 +471,19 @@
           (match cmd
             [(cmd-send-message (message to resolve-me kws kw-vals args))
              (define deliver-msg
-               (op:deliver (resolve-delivery-to! to)
-                           #;(desc:import (maybe-install-export! to))
-                           #f ;; TODO: support methods
-                           ;; TODO: correctly marshall everything here
-                           args
-                           (kws-lists->kws-hasheq kws kw-vals)
-                           (marshall-local-refr! resolve-me)))
-             (send-to-remote (syrup-encode deliver-msg
+               (if resolve-me
+                   (op:deliver (resolve-delivery-to! to)
+                               #;(desc:import (maybe-install-export! to))
+                               #f ;; TODO: support methods
+                               ;; TODO: correctly marshall everything here
+                               args
+                               (kws-lists->kws-hasheq kws kw-vals)
+                               (marshall-local-refr! resolve-me))
+                   (op:deliver-only (resolve-delivery-to! to)
+                                    #f ;; TODO: support methods
+                                    args
+                                    (kws-lists->kws-hasheq kws kw-vals))))
+             (send-to-remote (syrup-encode (pk 'deliver-msg deliver-msg)
                                            #:marshallers marshallers))]))
 
         (define (handle-from-machine-representative msg)
@@ -651,7 +675,7 @@
    (op:bootstrap 0 0))
 
   ;; Now we should bootstrap it such that it allocates an answer for us
-  (syrup-write (op:bootstrap 0 #f)
+  (syrup-write (op:bootstrap 0 (desc:import-object 0))
                repl->test1-op
                #:marshallers marshallers)
 
