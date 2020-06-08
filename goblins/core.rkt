@@ -672,11 +672,13 @@
           ;; for efficiency, let's make it as direct of a symlink
           ;; as possible
           (define-values (link-to-refr link-to-mactor)
+            ;; TODO: This doesn't do full shortening... the right thing
+            ;;   here would be that if we end on a promise that we
+            ;;   subscribe for "future shortening"
             (let lp ([refr-id val]
                      [seen (seteq)])
               (when (set-member? seen refr-id)
                 (error "Cycle in mactor symlinks"))
-              ;; TODO: deal with far refrs
               (if (near-refr? refr-id)
                   (match (actormap-ref actormap refr-id)
                     [(? mactor:symlink? mactor)
