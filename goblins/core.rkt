@@ -663,7 +663,7 @@
        ;; We'll do this unless we're symlinking to another promise,
        ;; in which case we just "pass on" the listeners.
        (define (inform-listeners)
-         (for ([listener (mactor:local-promise-listeners promise-mactor)])
+         (for ([listener (in-list (mactor:local-promise-listeners promise-mactor))])
            (<-np listener 'fulfill val)))
 
        ;; Now we "become" that value!
@@ -740,7 +740,7 @@
        (actormap-set! actormap promise-id
                            (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (mactor:local-promise-listeners promise-mactor)])
+       (for ([listener (in-list (mactor:local-promise-listeners promise-mactor))])
          (<-np listener 'break problem))]
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
