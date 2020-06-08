@@ -431,14 +431,29 @@
                             kws kw-vals
                             '<-np target
                             args)]
-            #;[(op:deliver to-desc method
+            [(op:deliver to-desc method
                          args-marshalled
                          kw-args-marshalled
                          answer-pos
                          resolve-me-desc)
              (define-values (answer-promise answer-resolver)
                (install-answer! answer-pos resolve-me-desc))
-             'TODO]
+
+             ;; TODO: support distinction between method sends and procedure sends
+             (define args
+               (import-post-unmarshall! args-marshalled))
+             (define kw-args
+               (import-post-unmarshall! kw-args-marshalled))
+             (define target (unmarshall-to-desc to-desc))
+             (define-values (kws kw-vals)
+               (kws-hasheq->kws-lists kw-args))
+             (define sent-promise
+               (machine-vat-connector
+                'run
+                (lambda ()
+                  (keyword-apply <- kws kw-vals target args))))
+             (machine-vat-connector
+              'call answer-resolver 'fulfill sent-promise)]
             [(op:abort reason)
              (pk 'aborted)
              'TODO]
@@ -452,11 +467,10 @@
             [(cmd-send-message msg)
              (match-define (message to resolve-me kws kw-vals args)
                msg)
-             (define to-answer
+             (define to-answer-pos
                (if (question-message? msg)
-                   (desc:answer
-                    (question-finder->question-pos!
-                     (question-message-answer-this-question msg)))
+                   (question-finder->question-pos!
+                    (question-message-answer-this-question msg))
                    #f))
              (define deliver-msg
                (if resolve-me
@@ -467,7 +481,7 @@
                                (export-pre-marshall! args)
                                (export-pre-marshall!
                                 (kws-lists->kws-hasheq kws kw-vals))
-                               to-answer
+                               to-answer-pos
                                (marshall-local-refr! resolve-me))
                    (op:deliver-only (resolve-delivery-to! to)
                                     #f ;; TODO: support methods
