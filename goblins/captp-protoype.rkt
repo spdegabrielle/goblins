@@ -458,13 +458,9 @@
             ;; TODO: Handle case where the target doesn't exist?
             ;;   Or maybe just generally handle unmarshalling errors :P
             [(op:deliver-only to-desc method
-                              args-no-method-marshalled
+                              args-marshalled
                               kw-args-marshalled)
              ;; TODO: support distinction between method sends and procedure sends
-             (define args-marshalled
-               (if method
-                   (cons method args-no-method-marshalled)
-                   args-no-method-marshalled))
              (define args
                (import-post-unmarshall! args-marshalled))
              (define kw-args
