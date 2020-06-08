@@ -395,6 +395,31 @@
          [(desc:answer answer-pos)
           (hash-ref answers answer-pos)]))
 
+     (define (install-answer! answer-pos resolve-me-desc)
+       (define resolve-me
+         (maybe-install-import! resolve-me-desc))
+       (when (hash-has-key? answers answer-pos)
+         (error 'already-have-answer
+                "~a" answer-pos))
+       (match-define (cons answer-promise answer-resolver)
+         (machine-vat-connector 'run spawn-promise-cons))
+       (hash-set! answers answer-pos
+                  answer-promise)
+       (machine-vat-connector
+        'run
+        (lambda ()
+          (on answer-promise
+              (lambda (val)
+                (<-np resolve-me 'fulfill val))
+              #:catch
+              (lambda (err)
+                (match err
+                  (<-np resolve-me 'break
+                        ;; TODO: boy, we really need a way to translate
+                        ;;   exceptions across the vat boundary, huh?
+                        'remote-promise-breakage-TODO))))))
+       (values answer-promise answer-resolver))
+
      ;; ;; Install bootstrap object
      ;; (when bootstrap-refr
      ;;   (hash-set! exports-pos2val bootstrap-refr 0)
@@ -423,27 +448,9 @@
           (match msg
             [(op:bootstrap answer-pos resolve-me-desc)
              (pk 'op:bootstrap answer-pos resolve-me-desc)
-             (define resolve-me
-               (maybe-install-import! resolve-me-desc))
+             (define-values (answer-promise answer-resolver)
+               (install-answer! answer-pos resolve-me-desc))
 
-             ;; TODO: Move and generalize this
-             (match-define (cons answer-promise answer-resolver)
-               (machine-vat-connector 'run spawn-promise-cons))
-             (hash-set! answers answer-pos
-                        answer-promise)
-             (machine-vat-connector
-              'run
-              (lambda ()
-                (on answer-promise
-                    (lambda (val)
-                      (<-np resolve-me 'fulfill val))
-                    #:catch
-                    (lambda (err)
-                      (match err
-                        (<-np resolve-me 'break
-                              ;; TODO: boy, we really need a way to translate
-                              ;;   exceptions across the vat boundary, huh?
-                              'remote-promise-breakage-TODO))))))
              ;; And since we're bootstrapping, we resolve it immediately
              (machine-vat-connector
               'call answer-resolver 'fulfill bootstrap-refr)
@@ -470,55 +477,16 @@
                                 kws kw-vals
                                 '<-np target
                                 args))]
-            #;[(op:deliver answer-pos redirector target-pos method args kw-args)
-             (pk 'delivered)
-             ;; TODO: Handle case where the target doesn't exist
-             (define target
-               (hash-ref exports-val2pos target-pos))
-             (define-values (kws kw-vals)
-               (kws-hasheq->kws-lists kw-args))
-             ;; @@: Is this what goes into the answers table...?
-             ;;   It doesn't completely seem that way because when 
-
-             ;; TODO: support distinction between method sends and procedure sends
-             (define local-promise
-               (if method
-                   (keyword-apply machine-vat-connector
-                                  kws kw-vals
-                                  '<- target
-                                  method args)
-                   (keyword-apply machine-vat-connector
-                                  kws kw-vals
-                                  '<- target
-                                  args)))
-             (machine-vat-connector
-              'run
-              (lambda ()
-                (on local-promise
-                    (lambda (val)
-                      (async-channel-put captp-incoming-ch
-                                         (internal-msg-seal
-                                          `#(resolved-val ,answer-pos ,val))))
-                    #:catch
-                    (lambda (err)
-                      (async-channel-put captp-incoming-ch
-                                         (internal-msg-seal
-                                          `#(resolved-err ,answer-pos ,err)))))))]
+            [(op:deliver to-desc method
+                         args-marshalled
+                         kw-args-marshalled
+                         answer-pos
+                         resolve-me-desc)
+             'TODO]
             [(op:abort reason)
              (pk 'aborted)
              'TODO]
-            #;[(? internal-msg? internal-msg)
-             (match internal-msg
-               [(vector 'resolved-val answer-pos val)
-                ;; ok what needs to happen here?
-                ;;  - we need to resolve
-
-
-                ]
-               [(vector 'resolved-err answer-pos err)
-                ]
-               )
-             'TODO]
+            
             [other-message
              (error 'unknown-message-type
                     "~a" other-message)]))
