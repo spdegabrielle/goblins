@@ -43,7 +43,7 @@
 (define-recordable-struct op:deliver-only
   (;; Position in the table for the target
    ;; (sender's imports, reciever's exports)
-   target-desc
+   to-desc
    ;; Either the method name, or #f if this is a procedure call
    method
    ;; Either arguments to the method or to the procedure, depending
@@ -388,6 +388,13 @@
           (hash-ref exports-pos2val pos)]
          [_ obj]))
 
+     (define (unmarshall-to-desc to-desc)
+       (match to-desc
+         [(desc:export export-pos)
+          (hash-ref exports-pos2val export-pos)]
+         [(desc:answer answer-pos)
+          (hash-ref answers answer-pos)]))
+
      ;; ;; Install bootstrap object
      ;; (when bootstrap-refr
      ;;   (hash-set! exports-pos2val bootstrap-refr 0)
@@ -441,21 +448,16 @@
              (machine-vat-connector
               'call answer-resolver 'fulfill bootstrap-refr)
              (void)]
-            [(op:deliver-only target-desc method
+            [(op:deliver-only to-desc method
                               args-marshalled
                               kw-args-marshalled)
              (define args
                (import-post-unmarshall! args-marshalled))
              (define kw-args
                (import-post-unmarshall! kw-args-marshalled))
-             (pk 'deliver-onlyed target-desc method args kw-args)
+             (pk 'deliver-onlyed to-desc method args kw-args)
              ;; TODO: Handle case where the target doesn't exist
-             (define target
-               (match target-desc
-                 [(desc:export export-pos)
-                  (hash-ref exports-pos2val export-pos)]
-                 [(desc:answer answer-pos)
-                  (hash-ref answers answer-pos)]))
+             (define target (unmarshall-to-desc to-desc))
              (define-values (kws kw-vals)
                (kws-hasheq->kws-lists kw-args))
              ;; TODO: support distinction between method sends and procedure sends
@@ -468,7 +470,6 @@
                                 kws kw-vals
                                 '<-np target
                                 args))]
-            ;;  Let's finish on this one once we get bootstrapping working
             #;[(op:deliver answer-pos redirector target-pos method args kw-args)
              (pk 'delivered)
              ;; TODO: Handle case where the target doesn't exist
