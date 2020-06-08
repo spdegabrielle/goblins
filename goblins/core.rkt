@@ -1435,6 +1435,7 @@
   (provide _spawn-promise-values
            make-remote-object-refr
            make-remote-promise-refr
+           remote-refr-captp-connector
            remote-refr-sealed-pos))
 
 (define (spawn-promise-values)

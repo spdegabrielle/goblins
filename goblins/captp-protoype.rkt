@@ -4,6 +4,7 @@
          racket/match
          racket/random
          racket/contract
+         racket/set
          "core.rkt"
          (submod "core.rkt" for-captp)
          "message.rkt"
@@ -339,6 +340,54 @@
          [(? question-finder?)
           (question-finder->question-pos! to)]))
 
+     ;; general argument marshall/unmarshall for import/export
+
+     ;; TODO: need to handle lists/dotted-lists/vectors
+     (define (export-pre-marshall! obj)
+       (match obj
+         [(? list?)
+          (map export-pre-marshall! obj)]
+         [(? hash?)
+          (for/fold ([ht #hash()])
+                    ([(key val) obj])
+            (hash-set ht (export-pre-marshall! key)
+                      (export-pre-marshall! val)))]
+         [(? set?)
+          (for/set ([x obj])
+            (export-pre-marshall! x))]
+         [(? local-promise?)
+          (desc:import-promise (maybe-install-export! obj))]
+         [(? local-object?)
+          (desc:import-object (maybe-install-export! obj))]
+         [(? remote-refr?)
+          (define refr-captp-connector
+            (remote-refr-captp-connector obj))
+          (cond
+            ;; from this captp
+            [(eq? refr-captp-connector captp-connector)
+             (desc:export (pos-unseal (remote-refr-sealed-pos obj)))]
+            [else
+             (error 'handoffs-not-supported-yet)])]
+         [_ obj]))
+
+     (define (import-post-unmarshall! obj)
+       (match obj
+         [(? list?)
+          (map import-post-unmarshall! obj)]
+         [(? hash?)
+          (for/fold ([ht #hash()])
+                    ([(key val) obj])
+            (hash-set ht (import-post-unmarshall! key)
+                      (import-post-unmarshall! val)))]
+         [(? set?)
+          (for/set ([x obj])
+            (import-post-unmarshall! x))]
+         [(or (? desc:import-promise?) (? desc:import-object?))
+          (maybe-install-import! obj)]
+         [(desc:export pos)
+          (hash-ref exports-pos2val pos)]
+         [_ obj]))
+
      ;; ;; Install bootstrap object
      ;; (when bootstrap-refr
      ;;   (hash-set! exports-pos2val bootstrap-refr 0)
@@ -392,7 +441,13 @@
              (machine-vat-connector
               'call answer-resolver 'fulfill bootstrap-refr)
              (void)]
-            [(op:deliver-only target-desc method args kw-args)
+            [(op:deliver-only target-desc method
+                              args-marshalled
+                              kw-args-marshalled)
+             (define args
+               (import-post-unmarshall! args-marshalled))
+             (define kw-args
+               (import-post-unmarshall! kw-args-marshalled))
              (pk 'deliver-onlyed target-desc method args kw-args)
              ;; TODO: Handle case where the target doesn't exist
              (define target
@@ -465,7 +520,8 @@
                )
              'TODO]
             [other-message
-             (pk 'unknown-message-type other-message)]))
+             (error 'unknown-message-type
+                    "~a" other-message)]))
 
         (define (handle-internal cmd)
           (match cmd
@@ -476,14 +532,16 @@
                                #;(desc:import (maybe-install-export! to))
                                #f ;; TODO: support methods
                                ;; TODO: correctly marshall everything here
-                               args
-                               (kws-lists->kws-hasheq kws kw-vals)
+                               (export-pre-marshall! args)
+                               (export-pre-marshall!
+                                (kws-lists->kws-hasheq kws kw-vals))
                                (marshall-local-refr! resolve-me))
                    (op:deliver-only (resolve-delivery-to! to)
                                     #f ;; TODO: support methods
-                                    args
-                                    (kws-lists->kws-hasheq kws kw-vals))))
-             (send-to-remote (syrup-encode (pk 'deliver-msg deliver-msg)
+                                    (export-pre-marshall! args)
+                                    (export-pre-marshall!
+                                     (kws-lists->kws-hasheq kws kw-vals)))))
+             (send-to-remote (syrup-encode deliver-msg
                                            #:marshallers marshallers))]))
 
         (define (handle-from-machine-representative msg)
