@@ -185,6 +185,7 @@
            mactor:local-promise-resolver-tm?
 
            mactor:local-question mactor:local-question?
+           mactor:local-question-captp-connector
            mactor:local-question-question-finder))
 
 ;; We need these to have different behavior, equivalent to E's
@@ -226,7 +227,7 @@
 ;; a question on the remote end.  Keeps track of the captp-connector
 ;; relevant to this connection so it can send it messages.
 (struct mactor:local-question mactor:local-promise
-  (question-finder))
+  (captp-connector question-finder))
 
 ;; The following three are things that a local-promise mactor might
 ;; turn into upon resolution.  Really, a promise can either:
@@ -758,6 +759,31 @@
       ;; that's effectively the same code we'd be running anyway.
       [(? callable-mactor?)
        (keyword-apply _call kws kw-vals to-refr args)]
+
+      ;; A question is a special kind of promise, so we match for it
+      ;; before the more general promise type below.  Since we want
+      ;; promise pipelining to work correctly we send things here.
+      ;; In a sense, this is a followup question to an existing
+      ;; question.
+      [(? mactor:local-question?)
+       (define to-question-finder
+         (mactor:local-question-question-finder mactor))
+       (define captp-connector
+         (mactor:local-question-captp-connector mactor))
+       (define followup-question-finder
+         (captp-connector 'new-question-finder))
+       (define-values (followup-question-promise followup-question-resolver)
+         (_spawn-promise-values #:question-finder
+                                followup-question-finder
+                                #:captp-connector
+                                captp-connector))
+       (captp-connector
+        'handle-message
+        (question-message to-question-finder followup-question-resolver
+                          kws kw-vals args
+                          followup-question-finder))
+       followup-question-promise]
+
       ;; If it's a promise, that means we're queuing up something to
       ;; run *once this promise is resolved*.
       [(? mactor:local-promise?)
@@ -830,7 +856,9 @@
             (captp-connector 'new-question-finder))
           (define-values (promise resolver)
             (_spawn-promise-values #:question-finder
-                                   question-finder))
+                                   question-finder
+                                   #:captp-connector
+                                   captp-connector))
           (_send-message kws kw-args to-refr resolver args
                          #:answer-this-question question-finder)
           promise]))))
@@ -1410,15 +1438,21 @@
 ;;; ========
 
 (define (_spawn-promise-values #:question-finder
-                               [question-finder #f])
+                               [question-finder #f]
+                               #:captp-connector
+                               [captp-connector #f])
   (define-values (sealer unsealer tm?)
     (make-sealer-triplet 'fulfill-promise))
   (define sys (get-syscaller-or-die))
   (define promise
     (sys 'spawn-mactor
          (if question-finder
-             (mactor:local-question '() unsealer tm?
-                                    question-finder)
+             (begin
+               (unless captp-connector
+                 (error 'question-finder-without-captp-connector))
+               (mactor:local-question '() unsealer tm?
+                                      captp-connector
+                                      question-finder))
              (mactor:local-promise '() unsealer tm?))
          #:promise? #t))
   ;; I guess the alternatives to responding with false on

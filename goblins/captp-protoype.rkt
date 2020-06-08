@@ -506,7 +506,9 @@
              (question-finder->question-pos! this-question-finder)
              (define-values (bootstrap-promise bootstrap-resolver)
                (_spawn-promise-values #:question-finder
-                                      this-question-finder))
+                                      this-question-finder
+                                      #:captp-connector
+                                      captp-connector))
              (define bootstrap-msg
                (op:bootstrap (hash-ref questions this-question-finder)
                              (maybe-install-export! bootstrap-resolver)))
