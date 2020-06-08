@@ -452,8 +452,8 @@
              ;; TODO: Handle case where the target doesn't exist
              (define target
                (match target-desc
-                 [(desc:export import-pos)
-                  (hash-ref exports-pos2val import-pos)]
+                 [(desc:export export-pos)
+                  (hash-ref exports-pos2val export-pos)]
                  [(desc:answer answer-pos)
                   (hash-ref answers answer-pos)]))
              (define-values (kws kw-vals)
