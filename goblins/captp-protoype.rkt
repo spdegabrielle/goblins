@@ -643,7 +643,7 @@
    "test machine should send a bootstrap message"
    (syrup-read test1->repl-ip
                #:unmarshallers unmarshallers)
-   (op:bootstrap 0 0))
+   (op:bootstrap 0 (desc:import-object 0)))
 
   ;; Now we should bootstrap it such that it allocates an answer for us
   (syrup-write (op:bootstrap 0 (desc:import-object 0))
