@@ -663,7 +663,7 @@
   ;; Now we want to experiment with using the bootstrap actor like it was a
   ;; normal bootstrap actor... ie, for (proto-)sturdyref lookup across the wire.
   (define ((^greeter bcom my-name) your-name)
-    (displayln (format "<~a> Hello ~a!" my-name your-name)))
+    (pk 'greeter-sez (format "<~a> Hello ~a!" my-name your-name)))
   (define terrance
     (test1-vat 'spawn ^greeter "Terrance"))
   (define trisha
@@ -689,15 +689,23 @@
   (define-values (b->a-ip b->a-op)
     (make-pipe))
 
-  ;; (match-define (cons a-nonce-loc a-nonce-reg)
-  ;;   (a-vat 'run spawn-nonce-registry-locator-pair))
-  ;; (match-define (cons b-nonce-loc b-nonce-reg)
-  ;;   (a-vat 'run spawn-nonce-registry-locator-pair))
+  (match-define (cons a-nonce-loc a-nonce-reg)
+    (a-vat 'run spawn-nonce-registry-locator-pair))
+  (match-define (cons b-nonce-loc b-nonce-reg)
+    (b-vat 'run spawn-nonce-registry-locator-pair))
 
-  ;; (define ((^greeter bcom my-name) your-name)
-  ;;   (displayln (format "<~a> Hello ~a!" my-name your-name)))
-  ;; (define alice
-  ;;   (a-vat 'spawn ^greeter "Alice"))
+  (define alice
+    (a-vat 'spawn ^greeter "Alice"))
+
+  (define a-machinetp-ch
+    (make-machinetp-thread b->a-ip a->b-op
+                           a-vat
+                           a-nonce-loc))
+
+  (define b-machinetp-ch
+    (make-machinetp-thread a->b-ip b->a-op
+                           b-vat
+                           b-nonce-loc))
 
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
