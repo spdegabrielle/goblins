@@ -481,7 +481,9 @@
              (send-to-remote deliver-msg)]))
 
         (define (handle-from-machine-representative msg)
-          'TODO)
+          (match msg
+            [(vector 'get-bootstrap-promise return-ch)
+             (channel-put return-ch bootstrap-promise)]))
 
         ;;; BEGIN REMOTE BOOTSTRAP OPERATION
         ;;; ================================
@@ -503,7 +505,7 @@
                              (export-pre-marshall! bootstrap-resolver)))
              (send-to-remote bootstrap-msg)
              bootstrap-promise)))
-        (define bootstrap-question-pos
+        (define bootstrap-promise
           (bootstrap-remote!))
         ;;; END REMOTE BOOTSTRAP OPERATION
         ;;; ==============================
