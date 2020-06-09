@@ -351,6 +351,20 @@
          [(desc:answer answer-pos)
           (hash-ref answers answer-pos)]))
 
+     (define (marshall-to obj)
+       (match obj
+         [(? question-finder?)
+          (desc:answer (hash-ref questions obj))]
+         [(? remote-refr?)
+          (define refr-captp-connector
+            (remote-refr-captp-connector obj))
+          (cond
+            ;; from this captp
+            [(eq? refr-captp-connector captp-connector)
+             (desc:export (pos-unseal (remote-refr-sealed-pos obj)))]
+            [else
+             (error 'captp-to-wrong-machine)])]))
+
      (define (install-answer! answer-pos resolve-me-desc)
        (define resolve-me
          (maybe-install-import! resolve-me-desc))
@@ -464,7 +478,7 @@
                    #f))
              (define deliver-msg
                (if resolve-me
-                   (op:deliver (export-pre-marshall! to)
+                   (op:deliver (marshall-to to)
                                #;(desc:import (maybe-install-export! to))
                                #f ;; TODO: support methods
                                ;; TODO: correctly marshall everything here
@@ -473,7 +487,7 @@
                                 (kws-lists->kws-hasheq kws kw-vals))
                                to-answer-pos
                                (marshall-local-refr! resolve-me))
-                   (op:deliver-only (export-pre-marshall! to)
+                   (op:deliver-only (marshall-to to)
                                     #f ;; TODO: support methods
                                     (export-pre-marshall! args)
                                     (export-pre-marshall!
@@ -690,13 +704,10 @@
   (define-values (b->a-ip b->a-op)
     (make-pipe))
 
-  (match-define (cons a-nonce-loc a-nonce-reg)
+  (match-define (cons a-nonce-reg a-nonce-loc)
     (a-vat 'run spawn-nonce-registry-locator-pair))
-  (match-define (cons b-nonce-loc b-nonce-reg)
+  (match-define (cons b-nonce-reg b-nonce-loc)
     (b-vat 'run spawn-nonce-registry-locator-pair))
-
-  (define alice
-    (a-vat 'spawn ^greeter "Alice"))
 
   (define a-machinetp-ch
     (make-machinetp-thread b->a-ip a->b-op
@@ -707,6 +718,42 @@
     (make-machinetp-thread a->b-ip b->a-op
                            b-vat
                            b-nonce-loc))
+
+  (define a->b-bootstrap-vow
+    (let ([return-ch (make-channel)])
+      (async-channel-put a-machinetp-ch
+                         (vector 'get-bootstrap-promise return-ch))
+      (channel-get return-ch)))
+
+  (define b->a-bootstrap-vow
+    (let ([return-ch (make-channel)])
+      (async-channel-put b-machinetp-ch
+                         (vector 'get-bootstrap-promise return-ch))
+      (channel-get return-ch)))
+
+  ;; Now let's spawn alice in vat A
+  (define alice
+    (a-vat 'spawn ^greeter "Alice"))
+  ;; And get a nonce from A's registry
+  (define alice-nonce
+    (a-vat 'call a-nonce-reg 'register alice))
+
+
+  (b-vat 'run
+         (lambda ()
+           (on (<- b->a-bootstrap-vow 'fetch alice-nonce)
+               (lambda (alice)
+                 (pk 'got-alice alice)
+                 (on (<- alice "Bobarillo")
+                     (lambda (alice-sez)
+                       (pk 'alice-sez alice-sez)))))))
+
+  (b-vat 'run
+         (lambda ()
+           (on (<- (<- b->a-bootstrap-vow 'fetch alice-nonce)
+                   "Bobarillo")
+               (lambda (alice-sez)
+                 (pk 'alice-sez alice-sez)))))
 
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
