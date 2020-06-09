@@ -17,6 +17,9 @@
 
 ;;; Messages
 
+;; A helper... we're going to have a bunch of structs that have a way
+;; of being marshalled to and from records.  This helps reduce the
+;; overhead of defining those.
 (define-syntax-rule (define-recordable-struct struct-id
                       (args ...)
                       struct-marshall-id struct-unmarshall-id)
