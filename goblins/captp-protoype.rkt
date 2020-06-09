@@ -163,16 +163,12 @@
   (define-values (pos-seal pos-unseal pos-sealed?)
     (make-sealer-triplet))
 
-  ;; question finders relevant to this vat only
+  ;; Question finders are a weird thing... we need some way to be able to
+  ;; look up what question corresponds to an entry in the table.
+  ;; Used by mactor:local-question (a special kind of promise),
+  ;; since messages sent to a question are pipelined through the answer
+  ;; side of some "remote" machine.
   (struct question-finder ())
-
-  (define (make-question-deliverer question-finder)
-    (lambda (resolve-me kws kw-vals args)
-      (define msg
-        (message question-finder
-                 resolve-me kws kw-vals args))
-      (async-channel-put internal-ch
-                         (cmd-send-message msg))))
 
   ;; TODO: this is borrowed from vat.rkt, we should probably just make
   ;;   a generalized version of it.
