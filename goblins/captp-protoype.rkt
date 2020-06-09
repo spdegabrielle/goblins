@@ -471,7 +471,7 @@
             [(cmd-send-message msg)
              (match-define (message to resolve-me kws kw-vals args)
                msg)
-             (define to-answer-pos
+             (define answer-pos
                (if (question-message? msg)
                    (question-finder->question-pos!
                     (question-message-answer-this-question msg))
@@ -485,7 +485,7 @@
                                (export-pre-marshall! args)
                                (export-pre-marshall!
                                 (kws-lists->kws-hasheq kws kw-vals))
-                               to-answer-pos
+                               answer-pos
                                (marshall-local-refr! resolve-me))
                    (op:deliver-only (marshall-to to)
                                     #f ;; TODO: support methods
