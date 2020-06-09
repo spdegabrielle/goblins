@@ -297,13 +297,6 @@
              ;; and return the question-pos we set up
              question-pos)))
 
-     (define (resolve-delivery-to! to)
-       (match to
-         [(? remote-refr?)
-          (remote-refr->imported-pos to)]
-         [(? question-finder?)
-          (question-finder->question-pos! to)]))
-
      ;; general argument marshall/unmarshall for import/export
 
      ;; TODO: need to handle lists/dotted-lists/vectors
@@ -474,7 +467,7 @@
                    #f))
              (define deliver-msg
                (if resolve-me
-                   (op:deliver (resolve-delivery-to! to)
+                   (op:deliver (export-pre-marshall! to)
                                #;(desc:import (maybe-install-export! to))
                                #f ;; TODO: support methods
                                ;; TODO: correctly marshall everything here
@@ -483,13 +476,12 @@
                                 (kws-lists->kws-hasheq kws kw-vals))
                                to-answer-pos
                                (marshall-local-refr! resolve-me))
-                   (op:deliver-only (resolve-delivery-to! to)
+                   (op:deliver-only (export-pre-marshall! to)
                                     #f ;; TODO: support methods
                                     (export-pre-marshall! args)
                                     (export-pre-marshall!
                                      (kws-lists->kws-hasheq kws kw-vals)))))
-             (send-to-remote (syrup-encode deliver-msg
-                                           #:marshallers marshallers))]))
+             (send-to-remote deliver-msg)]))
 
         (define (handle-from-machine-representative msg)
           'TODO)
@@ -511,7 +503,7 @@
                                       captp-connector))
              (define bootstrap-msg
                (op:bootstrap (hash-ref questions this-question-finder)
-                             (maybe-install-export! bootstrap-resolver)))
+                             (export-pre-marshall! bootstrap-resolver)))
              (send-to-remote bootstrap-msg)
              bootstrap-promise)))
         (define bootstrap-question-pos
