@@ -525,12 +525,16 @@
            [seen (seteq)])
     (when (set-member? seen refr-id)
       (error "Cycle in mactor symlinks"))
-    (match (actormap-ref actormap refr-id #f)
-      [(? mactor:symlink? mactor)
-       (lp (mactor:symlink-link-to-refr mactor)
-           (set-add seen refr-id))]
-      [#f (error "no actor with this id" refr-id)]
-      [mactor (values refr-id mactor)])))
+    (match refr-id
+      [(? local-refr?)
+       (match (actormap-ref actormap refr-id #f)
+         [(? mactor:symlink? mactor)
+          (lp (mactor:symlink-link-to-refr mactor)
+              (set-add seen refr-id))]
+         [#f (error "symlink ref: no actor with this id" refr-id)]
+         [mactor (values refr-id mactor)])]
+      [(? remote-refr?)
+       (values refr-id #f)])))
 
 (define (fresh-syscaller actormap)
   (define vat-connector
@@ -754,60 +758,66 @@
     (define-values (update-refr mactor)
       (actormap-symlink-ref actormap to-refr))
 
-    (match mactor
-      ;; If it's callable, we just use the call handler, because
-      ;; that's effectively the same code we'd be running anyway.
-      [(? callable-mactor?)
-       (keyword-apply _call kws kw-vals to-refr args)]
+    (match update-refr
+      [(? local-refr?)
+       (match mactor
+         ;; If it's callable, we just use the call handler, because
+         ;; that's effectively the same code we'd be running anyway.
+         [(? callable-mactor?)
+          (keyword-apply _call kws kw-vals to-refr args)]
 
-      ;; A question is a special kind of promise, so we match for it
-      ;; before the more general promise type below.  Since we want
-      ;; promise pipelining to work correctly we send things here.
-      ;; In a sense, this is a followup question to an existing
-      ;; question.
-      [(? mactor:local-question?)
-       (define to-question-finder
-         (mactor:local-question-question-finder mactor))
-       (define captp-connector
-         (mactor:local-question-captp-connector mactor))
-       (define followup-question-finder
-         (captp-connector 'new-question-finder))
-       (define-values (followup-question-promise followup-question-resolver)
-         (_spawn-promise-values #:question-finder
-                                followup-question-finder
-                                #:captp-connector
-                                captp-connector))
-       (captp-connector
-        'handle-message
-        (question-message to-question-finder followup-question-resolver
-                          kws kw-vals args
-                          followup-question-finder))
-       followup-question-promise]
+         ;; A question is a special kind of promise, so we match for it
+         ;; before the more general promise type below.  Since we want
+         ;; promise pipelining to work correctly we send things here.
+         ;; In a sense, this is a followup question to an existing
+         ;; question.
+         [(? mactor:local-question?)
+          (define to-question-finder
+            (mactor:local-question-question-finder mactor))
+          (define captp-connector
+            (mactor:local-question-captp-connector mactor))
+          (define followup-question-finder
+            (captp-connector 'new-question-finder))
+          (define-values (followup-question-promise followup-question-resolver)
+            (_spawn-promise-values #:question-finder
+                                   followup-question-finder
+                                   #:captp-connector
+                                   captp-connector))
+          (captp-connector
+           'handle-message
+           (question-message to-question-finder followup-question-resolver
+                             kws kw-vals args
+                             followup-question-finder))
+          followup-question-promise]
 
-      ;; If it's a promise, that means we're queuing up something to
-      ;; run *once this promise is resolved*.
-      [(? mactor:local-promise?)
-       ;; Create new actor that is subscribed to this
-       ;; TODO: Really important!  We need to detect a cycle to prevent
-       ;;   going in loops on accident.
-       ;;   I'm not actually sure how to do that yet...
-       ;; TODO: We've got an unncecessary promise-to-a-promise
-       ;;   indirection via this method, which we could cut out
-       ;;   the middleman of I think?
-       (_on update-refr
-            (let ([promise-pipeline-helper
-                   (lambda (bcom)
-                     (lambda (send-to)
-                       (keyword-apply <- kws kw-vals send-to args)))])
-              (_spawn promise-pipeline-helper '() '() '()))
-            ;; Wait, what will this do for us?  Wouldn't it
-            ;; just return another void?
-            #:promise? #t)]
-      ;; If it's broken, re-raise the problem.
-      ;; TODO: maybe re-raising isn't the right route?  Though I think
-      ;; it does work technically.  It's the easiest solution...
-      [(mactor:broken problem)
-       (raise problem)]))
+         ;; If it's a promise, that means we're queuing up something to
+         ;; run *once this promise is resolved*.
+         [(? mactor:local-promise?)
+          ;; Create new actor that is subscribed to this
+          ;; TODO: Really important!  We need to detect a cycle to prevent
+          ;;   going in loops on accident.
+          ;;   I'm not actually sure how to do that yet...
+          ;; TODO: We've got an unncecessary promise-to-a-promise
+          ;;   indirection via this method, which we could cut out
+          ;;   the middleman of I think?
+          (_on update-refr
+               (let ([promise-pipeline-helper
+                      (lambda (bcom)
+                        (lambda (send-to)
+                          (keyword-apply <- kws kw-vals send-to args)))])
+                 (_spawn promise-pipeline-helper '() '() '()))
+               ;; Wait, what will this do for us?  Wouldn't it
+               ;; just return another void?
+               #:promise? #t)]
+         ;; If it's broken, re-raise the problem.
+         ;; TODO: maybe re-raising isn't the right route?  Though I think
+         ;; it does work technically.  It's the easiest solution...
+         [(mactor:broken problem)
+          (raise problem)])]
+      [(? remote-refr?)
+       (when (eq? to-refr update-refr)
+         (error "Hit a cycle... we're in trouble"))
+       (keyword-apply _<- kws kw-vals update-refr args)]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args
