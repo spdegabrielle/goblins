@@ -397,9 +397,8 @@
           (tear-it-down))
 
         (define (handle-captp-incoming msg)
-          (match msg
+          (match (pk 'captp-incoming-msg msg)
             [(op:bootstrap answer-pos resolve-me-desc)
-             (pk 'op:bootstrap answer-pos resolve-me-desc)
              (define-values (answer-promise answer-resolver)
                (install-answer! answer-pos resolve-me-desc))
 
@@ -448,7 +447,6 @@
              (machine-vat-connector
               'call answer-resolver 'fulfill sent-promise)]
             [(op:abort reason)
-             (pk 'aborted)
              'TODO]
             
             [other-message
