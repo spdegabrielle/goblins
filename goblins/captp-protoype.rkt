@@ -168,7 +168,7 @@
 
   ;; Question finders are a weird thing... we need some way to be able to
   ;; look up what question corresponds to an entry in the table.
-  ;; Used by mactor:local-question (a special kind of promise),
+  ;; Used by mactor:question (a special kind of promise),
   ;; since messages sent to a question are pipelined through the answer
   ;; side of some "remote" machine.
   (struct question-finder ())

@@ -165,10 +165,10 @@
 (module+ mactor-extra
   (provide mactor mactor?
 
-           mactor:local-object mactor:local-object?
-           mactor:local-object-handler
-           mactor:local-object-become-unsealer
-           mactor:local-object-become?
+           mactor:object mactor:object?
+           mactor:object-handler
+           mactor:object-become-unsealer
+           mactor:object-become?
 
            mactor:encased mactor:encased?
            mactor:encased-val
@@ -179,14 +179,14 @@
            mactor:broken mactor:broken?
            mactor:broken-problem
 
-           mactor:local-promise mactor:local-promise?
-           mactor:local-promise-listeners
-           mactor:local-promise-resolver-unsealer
-           mactor:local-promise-resolver-tm?
+           mactor:promise mactor:promise?
+           mactor:promise-listeners
+           mactor:promise-resolver-unsealer
+           mactor:promise-resolver-tm?
 
-           mactor:local-question mactor:local-question?
-           mactor:local-question-captp-connector
-           mactor:local-question-question-finder))
+           mactor:question mactor:question?
+           mactor:question-captp-connector
+           mactor:question-question-finder))
 
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda methods":
@@ -208,7 +208,7 @@
 ;; a predicate and unsealer to identify and unpack when a message
 ;; handler specifies that this actor would like to "become" a new
 ;; version of itself (get a new handler)
-(struct mactor:local-object
+(struct mactor:object
   (handler become-unsealer become?))
 
 ;; promises are the other most common type, though a local-promise
@@ -220,13 +220,13 @@
 ;; resolvers are just actors, but within their scope they have
 ;; access to a sealer which gives them the authority to seal a
 ;; resolution (either fulfillment or breakage).
-(struct mactor:local-promise
+(struct mactor:promise
   (listeners resolver-unsealer resolver-tm?))
 
 ;; A special kind of local promise which also corresponds to being
 ;; a question on the remote end.  Keeps track of the captp-connector
 ;; relevant to this connection so it can send it messages.
-(struct mactor:local-question mactor:local-promise
+(struct mactor:question mactor:promise
   (captp-connector question-finder))
 
 ;; The following three are things that a local-promise mactor might
@@ -254,7 +254,7 @@
 
 ;; Presumes this is a mactor already
 (define (callable-mactor? mactor)
-  (or (mactor:local-object? mactor)
+  (or (mactor:object? mactor)
       (mactor:encased? mactor)))
 
 (define (near-refr? refr)
@@ -583,13 +583,13 @@
     (call-with-continuation-barrier
      (λ ()
        (match mactor
-         [(? mactor:local-object?)
+         [(? mactor:object?)
           (define actor-handler
-            (mactor:local-object-handler mactor))
+            (mactor:object-handler mactor))
           (define become?
-            (mactor:local-object-become? mactor))
+            (mactor:object-become? mactor))
           (define become-unsealer
-            (mactor:local-object-become-unsealer mactor))
+            (mactor:object-become-unsealer mactor))
 
           ;; I guess watching for this guarantees that an immediate call
           ;; against a local actor will not be tail recursive.
@@ -608,10 +608,10 @@
           ;; let's replace it
           (when new-handler
             (actormap-set! actormap update-refr
-                           (mactor:local-object
+                           (mactor:object
                             new-handler
-                            (mactor:local-object-become-unsealer mactor)
-                            (mactor:local-object-become? mactor))))
+                            (mactor:object-become-unsealer mactor)
+                            (mactor:object-become? mactor))))
 
           return-val]
          ;; If it's an encased value, "calling" it just returns the
@@ -652,11 +652,11 @@
 
   (define (fulfill-promise promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
-      [(? mactor:local-promise? promise-mactor)
+      [(? mactor:promise? promise-mactor)
        (define resolver-tm?
-         (mactor:local-promise-resolver-tm? promise-mactor))
+         (mactor:promise-resolver-tm? promise-mactor))
        (define resolver-unsealer
-         (mactor:local-promise-resolver-unsealer promise-mactor))
+         (mactor:promise-resolver-unsealer promise-mactor))
        ;; Is this a valid resolution?
        (unless (resolver-tm? sealed-val)
          (error "Resolution sealed with wrong trademark!"))
@@ -667,7 +667,7 @@
        ;; We'll do this unless we're symlinking to another promise,
        ;; in which case we just "pass on" the listeners.
        (define (inform-listeners)
-         (for ([listener (in-list (mactor:local-promise-listeners promise-mactor))])
+         (for ([listener (in-list (mactor:promise-listeners promise-mactor))])
            (<-np listener 'fulfill val)))
 
        ;; Now we "become" that value!
@@ -704,13 +704,13 @@
             ;; For this we still need to set the symlink, but
             ;; we should defer our sending of messages until the
             ;; other promise resolves.
-            [(mactor:local-promise linked-listeners linked-r-unsealer linked-r-tm?)
+            [(mactor:promise linked-listeners linked-r-unsealer linked-r-tm?)
              ;; Update the symlinked-to-promise to have all of our listeners
              (define new-linked-listeners
-               (append (mactor:local-promise-listeners promise-mactor)
+               (append (mactor:promise-listeners promise-mactor)
                        linked-listeners))
              (define new-linked-mactor
-               (mactor:local-promise new-linked-listeners
+               (mactor:promise new-linked-listeners
                                      linked-r-unsealer
                                      linked-r-tm?))
              (actormap-set! actormap link-to-refr
@@ -730,11 +730,11 @@
     (match (actormap-ref actormap promise-id #f)
       ;; TODO: Not just local-promise, anything that can
       ;;   break
-      [(? mactor:local-promise? promise-mactor)
+      [(? mactor:promise? promise-mactor)
        (define resolver-tm?
-         (mactor:local-promise-resolver-tm? promise-mactor))
+         (mactor:promise-resolver-tm? promise-mactor))
        (define resolver-unsealer
-         (mactor:local-promise-resolver-unsealer promise-mactor))
+         (mactor:promise-resolver-unsealer promise-mactor))
        ;; Is this a valid resolution?
        (unless (resolver-tm? sealed-problem)
          (error "Resolution sealed with wrong trademark!"))
@@ -744,7 +744,7 @@
        (actormap-set! actormap promise-id
                            (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (in-list (mactor:local-promise-listeners promise-mactor))])
+       (for ([listener (in-list (mactor:promise-listeners promise-mactor))])
          (<-np listener 'break problem))]
       [#f (error "no actor with this id")]
       [_ (error "can only resolve a local-promise")]))
@@ -771,11 +771,11 @@
          ;; promise pipelining to work correctly we send things here.
          ;; In a sense, this is a followup question to an existing
          ;; question.
-         [(? mactor:local-question?)
+         [(? mactor:question?)
           (define to-question-finder
-            (mactor:local-question-question-finder mactor))
+            (mactor:question-question-finder mactor))
           (define captp-connector
-            (mactor:local-question-captp-connector mactor))
+            (mactor:question-captp-connector mactor))
           (define followup-question-finder
             (captp-connector 'new-question-finder))
           (define-values (followup-question-promise followup-question-resolver)
@@ -792,7 +792,7 @@
 
          ;; If it's a promise, that means we're queuing up something to
          ;; run *once this promise is resolved*.
-         [(? mactor:local-promise?)
+         [(? mactor:promise?)
           ;; Create new actor that is subscribed to this
           ;; TODO: Really important!  We need to detect a cycle to prevent
           ;;   going in loops on accident.
@@ -919,7 +919,7 @@
 
        (match mactor
          ;; This object is a local promise, so we should handle it.
-         [(mactor:local-promise listeners r-unsealer r-tm?)
+         [(mactor:promise listeners r-unsealer r-tm?)
           ;; The purpose of this listener is that the promise
           ;; *hasn't resolved yet*.  Because of that we need to
           ;; queue something to happen *once* it resolves.
@@ -941,13 +941,13 @@
           (define new-listeners
             (cons on-listener listeners))
           (actormap-set! actormap id-refr
-                         (mactor:local-promise new-listeners
+                         (mactor:promise new-listeners
                                                r-unsealer r-tm?))]
          [(? mactor:broken? mactor)
           (handle-broken (mactor:broken-problem mactor))]
          [(? mactor:encased? mactor)
           (handle-fulfilled (mactor:encased-val mactor))]
-         [(? mactor:local-object? mactor)
+         [(? mactor:object? mactor)
           (handle-fulfilled subscribe-refr)]
          ;; This involves invoking a vat-level method of the remote
          ;; machine, right?
@@ -1252,7 +1252,7 @@
      (define actor-refr
        (make-local-object-refr debug-name vat-connector))
      (actormap-set! actormap actor-refr
-                    (mactor:local-object actor-handler
+                    (mactor:object actor-handler
                                          become-unseal become?))
      actor-refr]
     [(? live-refr? pre-existing-refr)
@@ -1460,10 +1460,10 @@
              (begin
                (unless captp-connector
                  (error 'question-finder-without-captp-connector))
-               (mactor:local-question '() unsealer tm?
+               (mactor:question '() unsealer tm?
                                       captp-connector
                                       question-finder))
-             (mactor:local-promise '() unsealer tm?))
+             (mactor:promise '() unsealer tm?))
          #:promise? #t))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
