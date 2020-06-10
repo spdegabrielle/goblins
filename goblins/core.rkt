@@ -463,7 +463,7 @@
 ;;;                                  resolved
 ;;; 
 ;;;  * "mactor:closer" points at other references and thus fills
-;;     in the parts of this diagram which may appear to be missing
+;;;    in the parts of this diagram which may appear to be missing
 ;;;
 ;;; See also:
 ;;;  - The comments above each of these below
