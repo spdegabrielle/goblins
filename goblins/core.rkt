@@ -506,54 +506,63 @@
 ;; a predicate and unsealer to identify and unpack when a message
 ;; handler specifies that this actor would like to "become" a new
 ;; version of itself (get a new handler)
-(struct mactor:object
+(struct mactor:object mactor
   (handler become-unsealer become?))
 
-;; Promises are the other most common type, though technically
-;; they are a supertype.
-;;
-;; What all promises have in common is that they are an intermediate
-;; state (even mactor:closer)
+;; The other kinds of mactors correspond to promises and their resolutions.
 
-;; is really just an intermediate state; a local-promise really is
-;; (and maybe should be renamed to) an unfulfilled local promise.
-;; Since this isn't fulfilled yet, we need to track pending
-;; listeners for when some form of resolution is available.
-;; The counter-part to an unfulfilled promise is its resolver;
-;; resolvers are just actors, but within their scope they have
-;; access to a sealer which gives them the authority to seal a
-;; resolution (either fulfillment or breakage).
-(struct mactor:promise
-  (listeners resolver-unsealer resolver-tm?))
+;; There are two supertypes here which are not used directly:
+;; mactor:unresolved and mactor:eventual.  See above for an explaination
+;; of what these mean.
+(struct mactor:eventual mactor
+  ;; We can still be resolved, so identify who is allowed to do that
+  (resolver-unsealer resolver-tm?))
+(struct mactor:unresolved mactor:eventual
+  ;; Who's listening for a resolution?
+  (listeners))
 
-;; A special kind of local promise which also corresponds to being
+;; The most common kind of freshly made promise is a naive one.
+;; It knows no interesting information about how what it will eventually
+;; become.
+;; Since it knows of no closer information it keeps a queue of waiting
+;; messages which will eventually be transmitted.
+(struct mactor:naive mactor:unresolved
+  (;; All of these get "rewritten" as this promise is either resolved
+   ;; or moved closer to resolution.
+   waiting-messages))
+
+;; A special kind of "freshly made" promise which also corresponds to being
 ;; a question on the remote end.  Keeps track of the captp-connector
-;; relevant to this connection so it can send it messages.
-(struct mactor:question-promise mactor:promise
+;; relevant to this connection so it can send it messages and the
+;; question-finder that it corresponds to (used for passing along messages).
+(struct mactor:question mactor:unresolved
   (captp-connector question-finder))
 
-;; The following three are things that a local-promise mactor might
-;; turn into upon resolution.  Really, a promise can either:
-;;
-;;  - be fulfilled:
-;;    - to point at another live actor (which could be another promise!)
-;;    - to settle at some sort of non-actor-reference "data"...
-;;      list, string, number, blah blah...
-;;  - be broken
-;;
-;; The following three mactor types handle these cases:
+;; "You make me closer to God" -- Nine Inch Nails
+;; Well, in this case we're actually just "closer to resolution"...
+;; pointing at some other promise that isn't us.
+(struct mactor:closer mactor:unresolved
+  (;; Who do we currently point to?
+   point-to
+   ;; A set of promises we used to point to before they themselves
+   ;; resolved... used to detect cycles
+   history))
 
-;; Fulfillment by pointing at another referenced live actor
-;; reference (which could be a promise).  A chain of symlinks is
-;; shortened where possible.
-(struct mactor:symlink
-  (link-to-refr))
-;; Fulfillment by settling on some kind of data.
-(struct mactor:encased
+;; Point at a remote object.
+;; It's eventual because, well, it could still break on network partition.
+(struct mactor:remote-link mactor:eventual
+  (point-to))
+
+;; Link to an object on the same machine.
+(struct mactor:local-link mactor
+  (point-to))
+
+(struct mactor:encased mactor
   (val))
 ;; Breakage (and remember why!)
-(struct mactor:broken
+(struct mactor:broken mactor
   (problem))
+
 
 ;; Presumes this is a mactor already
 (define (callable-mactor? mactor)
