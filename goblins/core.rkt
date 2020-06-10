@@ -184,9 +184,9 @@
            mactor:promise-resolver-unsealer
            mactor:promise-resolver-tm?
 
-           mactor:question mactor:question?
-           mactor:question-captp-connector
-           mactor:question-question-finder))
+           mactor:question-promise mactor:question-promise?
+           mactor:question-promise-captp-connector
+           mactor:question-promise-question-finder))
 
 ;; We need these to have different behavior, equivalent to E's
 ;; "miranda methods":
@@ -226,7 +226,7 @@
 ;; A special kind of local promise which also corresponds to being
 ;; a question on the remote end.  Keeps track of the captp-connector
 ;; relevant to this connection so it can send it messages.
-(struct mactor:question mactor:promise
+(struct mactor:question-promise mactor:promise
   (captp-connector question-finder))
 
 ;; The following three are things that a local-promise mactor might
@@ -771,11 +771,11 @@
          ;; promise pipelining to work correctly we send things here.
          ;; In a sense, this is a followup question to an existing
          ;; question.
-         [(? mactor:question?)
+         [(? mactor:question-promise?)
           (define to-question-finder
-            (mactor:question-question-finder mactor))
+            (mactor:question-promise-question-finder mactor))
           (define captp-connector
-            (mactor:question-captp-connector mactor))
+            (mactor:question-promise-captp-connector mactor))
           (define followup-question-finder
             (captp-connector 'new-question-finder))
           (define-values (followup-question-promise followup-question-resolver)
@@ -1460,9 +1460,9 @@
              (begin
                (unless captp-connector
                  (error 'question-finder-without-captp-connector))
-               (mactor:question '() unsealer tm?
-                                      captp-connector
-                                      question-finder))
+               (mactor:question-promise '() unsealer tm?
+                                        captp-connector
+                                        question-finder))
              (mactor:promise '() unsealer tm?))
          #:promise? #t))
   ;; I guess the alternatives to responding with false on
