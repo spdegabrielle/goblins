@@ -451,28 +451,46 @@
 ;;;
 ;;; Here are the categories and transition states:
 ;;;
-;;;               eventual                     settled
-;;;  _________________________________     _______________
-;;; |                                 |   |               |
+;;;        Unresolved                     Resolved
+;;;  __________________________  ___________________________
+;;; |                          ||                           |
 ;;;
-;;;                   .----------->-----.                
-;;;                   |      .--.       |   .-> [object] 
-;;;      [naive] ->-. |      v  |       |   |            
-;;;                 +-+--->[closer*]->--+->-+-> [encased]
-;;;   [question] ->-' |                     |            
-;;;                   |                     '-> [broken] 
-;;;                   |                           ^      
-;;;                   '--->-------->--------------'      
+;;;                 .----------------->.    .-->[object]
+;;;                 |                  |    |
+;;;                 |    .--.          |    +-->[local-link]
+;;;     [naive]-->. |    v  |          |    |            
+;;;               +>+->[closer]------->'--->+-->[encased]
+;;;  [question]-->' |       |               |            
+;;;                 |       |               '-->[broken]
+;;;                 '------>'--->[remote-link]    ^
+;;;                                  |            |
+;;;                                  '----------->'
 ;;;
-;;;                     |_________________________________|
-;;;                                  resolved
+;;; |________________________________________||_____________|
+;;;                  Eventual                     Settled
+;;;
+;;; The four major categories of mactors:
+;;;
+;;;  - Unresolved: A promise that has never been fulfilled or broken.
+;;;  - Resolved: Either an object with its own handler or a promise which
+;;;    has been fulfilled to some value/object reference or which has broken.
 ;;; 
-;;;  * "mactor:closer" points at other references and thus fills
-;;;    in the parts of this diagram which may appear to be missing.
-;;;    If the promise it currently resolves to resolves to yet
-;;;    another promise, it will optimistically update to point at
-;;;    that new promise.  History is kept to observe and break upon
-;;;    any observation of a cycle.
+;;; and:
+;;;
+;;;  - Eventual: Something which *might* eventually transition its state.
+;;;  - Settled: Something which will never transition its state again.
+;;;
+;;; The surprising thing here is that there is any distinction between
+;;; unresolved/resolved and eventual/settled at all.  The key to
+;;; understanding the difference is observing that a mactor:remote-link
+;;; might become broken upon network disconnect from that object.
+;;;
+;;; One intersting observation is that if you have a local-object-refr that
+;;; it is sure to correspond to a mactor:object.  A local-promise-refr can
+;;; correspond to any object state *except* for mactor:object (if a promise
+;;; resolves to a local object, it must point to it via mactor:local-link.)
+;;; (remote-refrs of course never correspond to a mactor on this machine;
+;;; those are managed by captp.)
 ;;;
 ;;; See also:
 ;;;  - The comments above each of these below
@@ -491,7 +509,12 @@
 (struct mactor:object
   (handler become-unsealer become?))
 
-;; promises are the other most common type, though a local-promise
+;; Promises are the other most common type, though technically
+;; they are a supertype.
+;;
+;; What all promises have in common is that they are an intermediate
+;; state (even mactor:closer)
+
 ;; is really just an intermediate state; a local-promise really is
 ;; (and maybe should be renamed to) an unfulfilled local promise.
 ;; Since this isn't fulfilled yet, we need to track pending
