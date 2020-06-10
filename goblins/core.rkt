@@ -483,9 +483,6 @@
 
 (struct mactor ())
 
-;;; Resolved things
-;;; ---------------
-
 ;; local-objects are the most common type, have a message handler
 ;; which specifies how to respond to the next message, as well as
 ;; a predicate and unsealer to identify and unpack when a message
