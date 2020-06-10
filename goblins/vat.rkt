@@ -14,6 +14,62 @@
          crypto
          crypto/private/common/base256)
 
+;;;                .=======================.
+;;;                |Internal Vat Schematics|
+;;;                '======================='
+;;;  
+;;;             stack           heap
+;;;              ($)         (actormap)
+;;;           .-------.----------------------. -.
+;;;           |       |                      |  |
+;;;           |       |   .-.                |  |
+;;;           |       |  (obj)         .-.   |  |
+;;;           |       |   '-'         (obj)  |  |
+;;;           |  __   |                '-'   |  |
+;;;           | |__>* |          .-.         |  |- actormap
+;;;           |  __   |         (obj)        |  |  territory
+;;;           | |__>* |          '-'         |  |
+;;;           |  __   |                      |  |
+;;;           | |__>* |                      |  |
+;;;           :-------'----------------------: -'
+;;;     queue |  __    __    __              | -.
+;;;      (<-) | |__>* |__>* |__>*            |  |- event loop
+;;;           '------------------------------' -'  territory
+;;;
+;;;
+;;; Finished reading core.rkt and thought "gosh what I want more out of
+;;; life is more ascii art diagrams"?  Well this one is pretty much figure
+;;; 14.2 from Mark S. Miller's dissertation (with some Goblins specific
+;;; modifications):
+;;;   http://www.erights.org/talks/thesis/
+;;;
+;;; If we just look at the top of the diagram, we can look at the world as
+;;; it exists purely in terms of actormaps.  The right side is the actormap
+;;; itself, effectively as a "heap" of object references mapped to object
+;;; behavior (not unlike how in memory-unsafe languages pointers map into
+;;; areas of memory).  The left-hand side is the execution of a
+;;; turn-in-progress... the bottom stubby arrow corresponds to the initial
+;;; invocation against some actor in the actormap, and stacked on top are
+;;; calls to other actors via immediate call-return behavior using $.
+;;;
+;;; Vats come in when we add the bottom half of the diagram: the event
+;;; loop!  An event loop manages a queue of messages that are to be handled
+;;; asynchronously... one after another after another.  Each message which
+;;; is handled gets pushed onto the upper-left hand stack, executes, and
+;;; bottoms out in some result (which the vat then uses to resolve any
+;;; promise that is waiting on this message).  During its execution, this
+;;; might result in building up more messages which, if they are in the
+;;; same vat, will be put on the queue (FIFO order), but if they are in
+;;; another vat will be sent there using the reference's vat or machine
+;;; connector (depending on if local/remote).
+;;;
+;;; Anyway, you could implement a vat-like event loop yourself, but this
+;;; module implements the general behavior.  The most important thing if
+;;; you do so is to resolve promises based on turn result and also
+;;; implement the vat-connnector behavior (currently the handle-message
+;;; and vat-id methods, though it's not unlikely this module will get
+;;; out of date... oops)
+
 (struct cmd-external-spawn (kws kw-args constructor args return-ch))
 (struct cmd-send-message (msg))
 (struct cmd-call (to-refr kws kw-args args return-ch))
