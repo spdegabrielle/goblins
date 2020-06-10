@@ -107,6 +107,257 @@
          racket/generic)
 
 
+
+;;;                  .============================.
+;;;                  | High level view of Goblins |
+;;;                  '============================'
+;;;
+;;; There's a lot of architecture here.  core.rkt is most of the heart
+;;; of the system (though vat.rkt and captp.rkt fill in the rest.)
+;;; It's a lot to take in, so let's start out with a "high level view".
+;;; Here's an image to get started:
+;;;
+;;;   .----------------------------------.         .-------------------.
+;;;   |            Machine 1             |         |     Machine 2     |
+;;;   |            =========             |         |     =========     |
+;;;   |                                  |         |                   |
+;;;   | .--------------.  .---------.   .-.       .-.                  |
+;;;   | |    Vat A     |  |  Vat B  |   |  \______|  \_   .----------. |
+;;;   | |  .---.       |  |   .-.   | .-|  /      |  / |  |   Vat C  | |
+;;;   | | (Alice)----------->(Bob)----' '-'       '-'  |  |  .---.   | |
+;;;   | |  '---'       |  |   '-'   |    |         |   '--->(Carol)  | |
+;;;   | |      \       |  '----^----'    |         |      |  '---'   | |
+;;;   | |       V      |       |         |         |      |          | |
+;;;   | |      .----.  |       |        .-.       .-.     |  .----.  | |
+;;;   | |     (Alfred) |       '-------/  |______/  |____---(Carlos) | |
+;;;   | |      '----'  |               \  |      \  |     |  '----'  | |
+;;;   | |              |                '-'       '-'     '----------' |
+;;;   | '--------------'                 |         |                   |
+;;;   |                                  |         |                   |
+;;;   '----------------------------------'         '-------------------'
+;;;
+;;; Here we see the following:
+;;;
+;;;  - Zooming in the farthest, we are looking at the "object layer"...
+;;;    Alice has a reference to Alfred and Bob, Bob has a reference to Carol,
+;;;    Carlos has a reference to Bob.  Reference possession is directional;
+;;;    even though Alice has a reference to Bob, Bob does not have a
+;;;    reference to Alice.
+;;;
+;;;  - One layer up is the "vat layer"... here we can see that Alice and
+;;;    Alfred are both objects in Vat A, Bob is an object in Vat B, and
+;;;    Carol and Carlos are objects in Vat C.
+;;;
+;;;  - Zooming out the farthest is the "machine/network level".
+;;;    There are two machines (Machine 1 and Machine 2) connected over a
+;;;    Goblins CapTP network.  The stubby shapes on the borders between the
+;;;    machines represent the directions of references Machine 1 has to
+;;;    objects in Machine 2 (at the top) and references Machine 2 has to
+;;;    Machine 1.  Both machines in this diagram are cooperating to preserve
+;;;    that Bob has access to Carol but that Carol does not have access to
+;;;    Bob, and that Carlos has access to Bob but Bob does not have access
+;;;    to Carlos.  (However there is no strict guarantee from either
+;;;    machine's perspective that this is the case... generally it's in
+;;;    everyone's best interests to take a "principle of least authority"
+;;;    approach though so usually it is.)
+;;;
+;;; This illustration is what's sometimes called a "grannovetter diagram"
+;;; in the ocap community, inspired by the kinds of diagrams in Mark
+;;; S. Grannovetter's "The Strength of Weak Ties" paper.  The connection is
+;;; that while the "Weak Ties" paper was describing the kinds of social
+;;; connections between people (Alice knows Bob, Bob knows Carol), similar
+;;; patterns arise in ocap systems (the object Alice has a refernce to Bob,
+;;; and Bob has a reference to Carol).
+;;;
+;;; With that in mind, we're now ready to look at things more structurally.
+;;;
+;;;
+;;;                  .============================.
+;;;                  | Goblins abstraction layers |
+;;;                  '============================'
+;;;
+;;; Generally, things look like so:
+;;;
+;;;   (machine (vat (actormap {refr: (mactor object-handler)})))
+;;;
+;;; However, we could really benefit from looking at those in more detail,
+;;; so from the outermost layer in...
+;;;
+;;;    .--- A machine in Goblins is basically an OS process.
+;;;    |    However, the broader Goblins CapTP/MachineTP network is
+;;;    |    made up of many machines.  A connection to another machine
+;;;    |    is the closest amount of "assurance" a Goblins machine has
+;;;    |    that it is delivering to a specific destination.
+;;;    |    Nonetheless, Goblins users generally operate at the object
+;;;    |    reference level of abstraction, even across machines.
+;;;    |
+;;;    |    An object reference on the same machine is considered
+;;;    |    "local" and an object reference on another machine is
+;;;    |    considered "remote".
+;;;    |
+;;;    |      .--- Chris: "How about I call this 'hive'?"
+;;;    |      |    Ocap community: "We hate that, use 'vat'"
+;;;    |      |    Everyone else: "What's a 'vat' what a weird name"
+;;;    |      |
+;;;    |      |    A vat is a traditional ocap term, both a container for
+;;;    |      |    objects but most importantly an event loop that
+;;;    |      |    communicates with other event loops.  Vats operate
+;;;    |      |    "one turn at a time"... a toplevel message is handled
+;;;    |      |    for some object which is transactional; either it happens
+;;;    |      |    or, if something bad happens in-between, no effects occur
+;;;    |      |    at all (except that a promise waiting for the result of
+;;;    |      |    this turn is broken).
+;;;    |      |
+;;;    |      |    Objects in the same vat are "near", whereas objects in
+;;;    |      |    remote vats are "far".  (As you may notice, "near" objects
+;;;    |      |    can be "near" or "far", but "remote" objects are always
+;;;    |      |    "far".)
+;;;    |      |
+;;;    |      |    This distinction is important, because Goblins supports
+;;;    |      |    both asynchronous messages + promises via `<-` and
+;;;    |      |    classic synchronous call-and-return invocations via `$`.
+;;;    |      |    However, while any actor can call any other actor via
+;;;    |      |    <-, only near actors may use $ for synchronous call-retun
+;;;    |      |    invocations.  In the general case, a turn starts by
+;;;    |      |    delivering to an actor in some vat a message passed with <-,
+;;;    |      |    but during that turn many other near actors may be called
+;;;    |      |    with $.  For example, this allows for implementing transactional
+;;;    |      |    actions as transferring money from one account/purse to another
+;;;    |      |    with $ in the same vat very easily, while knowing that if
+;;;    |      |    something bad happens in this transaction, no actor state
+;;;    |      |    changes will be committed (though listeners waiting for
+;;;    |      |    the result of its transaction will be informed of its failure);
+;;;    |      |    ie, the financial system will not end up in a corrupt state.
+;;;    |      |    In this example, it is possible for users all over the network
+;;;    |      |    to hold and use purses in this vat, even though this vat is
+;;;    |      |    responsible for money transfer between those purses.
+;;;    |      |    For an example of such a financial system in E, see
+;;;    |      |    "An Ode to the Grannovetter Diagram":
+;;;    |      |      http://erights.org/elib/capability/ode/index.html
+;;;    |      |
+;;;    |      |    .--- Earlier we said that vats are both an event loop and
+;;;    |      |    |    a container for storing actor state.  Surprise!  The
+;;;    |      |    |    vat is actually wrapping the container, which is called
+;;;    |      |    |    an "actormap".  While vats do not expose their actormaps,
+;;;    |      |    |    Goblins has made a novel change by allowing actormaps to
+;;;    |      |    |    be used as independent first-class objects.  Most users
+;;;    |      |    |    will rarely do this, but first-class usage of actormaps
+;;;    |      |    |    is still useful if integrating Goblins with an existing
+;;;    |      |    |    event loop (such as one for a video game or a GUI) or for
+;;;    |      |    |    writing unit tests.
+;;;    |      |    |
+;;;    |      |    |    The keys to actormaps are references (called "refrs")
+;;;    |      |    |    and the values are current behavior.  This is described
+;;;    |      |    |    below.
+;;;    |      |    |
+;;;    |      |    |    Actormaps also technically operate on "turns", which are
+;;;    |      |    |    a transactional operation.  Once a turn begins, a dynamic
+;;;    |      |    |    "syscaller" (or "actor context") is initialized so that
+;;;    |      |    |    actors can make changes within this transaction.  At the
+;;;    |      |    |    end of the turn, the user of actormap-turn is presented
+;;;    |      |    |    with the transactional actormap (called "transactormap")
+;;;    |      |    |    which can either be committed or not to the current mutable
+;;;    |      |    |    actormap state ("whactormap", which stands for
+;;;    |      |    |    "weak hash actormap"), alongside a queue of messages that
+;;;    |      |    |    were scheduled to be run from actors in this turn using <-,
+;;;    |      |    |    and the result of the computation run.
+;;;    |      |    |
+;;;    |      |    |    However, few users will operate using actormap-turn directly,
+;;;    |      |    |    and will instead either use actormap-poke! (which automatically
+;;;    |      |    |    commits the transaction if it succeeds or propagates the error)
+;;;    |      |    |    or actormap-peek (which returns the result but throws away the
+;;;    |      |    |    transaction; useful for getting a sense of what's going on
+;;;    |      |    |    without committing any changes to actor state).
+;;;    |      |    |    Or, even more commonly, they'll just use a vat and never think
+;;;    |      |    |    about actormaps at all.
+;;;    |      |    |
+;;;    |      |    |         .--- A reference to an object or actor.
+;;;    |      |    |         |    Traditionally called a "ref" by the ocap community, but
+;;;    |      |    |         |    scheme already uses "-ref" everywhere so we call it
+;;;    |      |    |         |    "refr" instead.  Whatever.
+;;;    |      |    |         |
+;;;    |      |    |         |    Anyway, these are the real "capabilities" of Goblins'
+;;;    |      |    |         |    "object capability system".  Holding onto one gives you
+;;;    |      |    |         |    authority to make invocations with <- or $, and can be
+;;;    |      |    |         |    passed around to procedure or actor invocations.
+;;;    |      |    |         |    Effectively the "moral equivalent" of a procedure
+;;;    |      |    |         |    reference.  If you have it, you can use (and share) it;
+;;;    |      |    |         |    if not, you can't.
+;;;    |      |    |         |
+;;;    |      |    |         |    Actually, technically these are local-live-refrs...
+;;;    |      |    |         |    see "The World of Refrs" below for the rest of them.
+;;;    |      |    |         |
+;;;    |      |    |         |      .--- We're now at the "object behavior" side of
+;;;    |      |    |         |      |    things.  I wish I could avoid talking about
+;;;    |      |    |         |      |    "mactors" but we're talking about the actual
+;;;    |      |    |         |      |    implementation here so... "mactor" stands for
+;;;    |      |    |         |      |    "meta-actor", and really there are a few
+;;;    |      |    |         |      |    "core kinds of behavior" (mainly for promises
+;;;    |      |    |         |      |    vs object behavior).  But in the general case,
+;;;    |      |    |         |      |    most objects from a user's perspective are the
+;;;    |      |    |         |      |    mactor:object kind, which is just a wrapper
+;;;    |      |    |         |      |    around the current object handler (as well as
+;;;    |      |    |         |      |    some information to track when this object is
+;;;    |      |    |         |      |    "becoming" another kind of object.
+;;;    |      |    |         |      |
+;;;    |      |    |         |      |      .--- Finally, "object"... a term that is
+;;;    |      |    |         |      |      |    unambiguous and well-understood!  Well,
+;;;    |      |    |         |      |      |    "object" in our system means "references
+;;;    |      |    |         |      |      |    mapping to an encapsulation of state".
+;;;    |      |    |         |      |      |    Refrs are the reference part, so
+;;;    |      |    |         |      |      |    object-handlers are the "current state"
+;;;    |      |    |         |      |      |    part.  The time when an object transitions
+;;;    |      |    |         |      |      |    from "one" behavior to another is when it
+;;;    |      |    |         |      |      |    returns a new handler wrapped in a "become"
+;;;    |      |    |         |      |      |    wrapper specific to this object (and
+;;;    |      |    |         |      |      |    provided to the object at construction
+;;;    |      |    |         |      |      |    time)
+;;;    |      |    |         |      |      |
+;;;    V      V    V         V      V      V
+;;; (machine (vat (actormap {refr: (mactor object-handler)})))
+;;;
+;;;
+;;; Whew!  That's a lot of info, so go take a break and then we'll go onto
+;;; the next section.
+;;;
+;;;
+;;;                     .====================.
+;;;                     | The World of Refrs |
+;;;                     '===================='
+;;;
+;;; There are a few kinds of references, explained below:
+;;;
+;;;                                     live refrs :
+;;;                     (runtime or captp session) : offline-storeable
+;;;                     ========================== : =================
+;;;                                                :
+;;;                local?           remote?        :
+;;;           .----------------.----------------.  :
+;;;   object? | local-object   | remote-object  |  :    [sturdy refrs]
+;;;           |----------------+----------------|  :
+;;;  promise? | local-promise  | remote-promise |  :     [cert chains]
+;;;           '----------------'----------------'  :
+;;;
+;;; On the left hand side we see live references (only valid within this
+;;; process runtime or between machines across captp sessions) and
+;;; offline-storeable references (sturdy refrs, a kind of bearer URI,
+;;; and certificate chains, which are like "deeds" indicating that the
+;;; possessor of some cryptographic material is permitted access).
+;;;
+;;; All offline-storeable references must first be converted to live
+;;; references before they can be used (authority to do this itself a
+;;; capability, as well as authority to produce these offline-storeable
+;;; objects).
+;;;
+;;; Live references subdivide into local (on the same machine) and
+;;; remote (on a foreign machine).  These are typed as either
+;;; representing an object or a promise.
+;;;
+;;; (Local references also further subdivide into "near" and "far",
+;;; but rather than being encoded in the reference type this is
+;;; determined relative to another local-refr or the current actor
+;;; context.)
+
 ;;; Refrs
 ;;; =====
 
@@ -188,15 +439,35 @@
            mactor:question-promise-captp-connector
            mactor:question-promise-question-finder))
 
-;; We need these to have different behavior, equivalent to E's
-;; "miranda methods":
-;; http://www.erights.org/elang/blocks/miranda.html
-;;
-;; However we haven't implemented all that functionality *quite* yet.
-
-;; A lot of these correspond to the categories in:
-;;   http://erights.org/elib/concurrency/refmech.html
-
+;;;                    .======================.
+;;;                    | The World of Mactors |
+;;;                    '======================'
+;;;
+;;; This is getting really deep into the weeds and is really only
+;;; relevant to anyone hacking on this module.
+;;;
+;;;               eventual                     settled
+;;;  _________________________________     _______________
+;;; [                                 ]   [               ]
+;;;
+;;;                   .----------->-----. :              
+;;;                   |      .--.     : | : .-> [object] 
+;;;      [naive] ->-. |      v  |       | : |            
+;;;                 +-+--->[closer*]->--+->-+-> [encased]
+;;;   [question] ->-' '                     |            
+;;;                   |                     '-> [broken] 
+;;;                   |                           ^      
+;;;                   '--->-------->--------------'      
+;;;
+;;;                     [_________________________________]
+;;;                                  resolved
+;;;
+;;; See also:
+;;;  - The comments above each of these below
+;;;  - "Miranda methods":
+;;;      http://www.erights.org/elang/blocks/miranda.html
+;;;  - "Reference mechanics":
+;;;      http://erights.org/elib/concurrency/refmech.html
 
 (struct mactor ())
 
