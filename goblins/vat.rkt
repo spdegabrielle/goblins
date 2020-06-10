@@ -58,10 +58,10 @@
 ;;; is handled gets pushed onto the upper-left hand stack, executes, and
 ;;; bottoms out in some result (which the vat then uses to resolve any
 ;;; promise that is waiting on this message).  During its execution, this
-;;; might result in building up more messages which, if they are in the
-;;; same vat, will be put on the queue (FIFO order), but if they are in
-;;; another vat will be sent there using the reference's vat or machine
-;;; connector (depending on if local/remote).
+;;; might result in building up more messages by calls sent to <-, which,
+;;; if to refrs in the same vat, will be put on the queue (FIFO order), but
+;;; if they are in another vat will be sent there using the reference's vat
+;;; or machine connector (depending on if local/remote).
 ;;;
 ;;; Anyway, you could implement a vat-like event loop yourself, but this
 ;;; module implements the general behavior.  The most important thing if
