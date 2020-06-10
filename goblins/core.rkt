@@ -446,6 +446,11 @@
 ;;; This is getting really deep into the weeds and is really only
 ;;; relevant to anyone hacking on this module.
 ;;;
+;;; Mactors are only ever relevant to the internals of a vat, but they
+;;; do define some common behaviors.
+;;;
+;;; Here are the categories and transition states:
+;;;
 ;;;               eventual                     settled
 ;;;  _________________________________     _______________
 ;;; |                                 |   |               |
@@ -463,7 +468,11 @@
 ;;;                                  resolved
 ;;; 
 ;;;  * "mactor:closer" points at other references and thus fills
-;;;    in the parts of this diagram which may appear to be missing
+;;;    in the parts of this diagram which may appear to be missing.
+;;;    If the promise it currently resolves to resolves to yet
+;;;    another promise, it will optimistically update to point at
+;;;    that new promise.  History is kept to observe and break upon
+;;;    any observation of a cycle.
 ;;;
 ;;; See also:
 ;;;  - The comments above each of these below
