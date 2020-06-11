@@ -421,23 +421,35 @@
            mactor:object-become-unsealer
            mactor:object-become?
 
+           mactor:eventual?
+           mactor:eventual-resolver-unsealer
+           mactor:eventual-resolver-tm?
+
+           mactor:unresolved?
+           mactor:unresolved-listeners
+
+           mactor:naive mactor:naive?
+           mactor:naive-waiting-messages
+
+           mactor:question mactor:question?
+           mactor:question-captp-connector
+           mactor:question-question-finder
+
+           mactor:closer mactor:closer?
+           mactor:closer-point-to
+           mactor:closer-history
+
+           mactor:remote-link?
+           mactor:remote-link-point-to
+
+           mactor:local-link
+           mactor:local-link-point-to
+
            mactor:encased mactor:encased?
            mactor:encased-val
 
-           mactor:symlink mactor:symlink?
-           mactor:symlink-link-to-refr
-
            mactor:broken mactor:broken?
-           mactor:broken-problem
-
-           mactor:promise mactor:promise?
-           mactor:promise-listeners
-           mactor:promise-resolver-unsealer
-           mactor:promise-resolver-tm?
-
-           mactor:question-promise mactor:question-promise?
-           mactor:question-promise-captp-connector
-           mactor:question-promise-question-finder))
+           mactor:broken-problem))
 
 ;;;                    .======================.
 ;;;                    | The World of Mactors |
@@ -557,8 +569,10 @@
 (struct mactor:local-link mactor
   (point-to))
 
+;; A promise that has resolved to some value
 (struct mactor:encased mactor
   (val))
+
 ;; Breakage (and remember why!)
 (struct mactor:broken mactor
   (problem))
