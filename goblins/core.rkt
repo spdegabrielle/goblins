@@ -846,21 +846,6 @@
   (parameterize ([current-syscaller #f])
     (thread proc)))
 
-(define (actormap-symlink-ref actormap refr-id)
-  (let lp ([refr-id refr-id]
-           [seen (seteq)])
-    (when (set-member? seen refr-id)
-      (error "Cycle in mactor symlinks"))
-    (match refr-id
-      [(? local-refr?)
-       (match (actormap-ref actormap refr-id #f)
-         [(? mactor:symlink? mactor)
-          (lp (mactor:symlink-link-to-refr mactor)
-              (set-add seen refr-id))]
-         [#f (error "symlink ref: no actor with this id" refr-id)]
-         [mactor (values refr-id mactor)])]
-      [(? remote-refr?)
-       (values refr-id #f)])))
 
 (define (fresh-syscaller actormap)
   (define vat-connector
@@ -902,51 +887,6 @@
   (define (get-vat-connector)
     vat-connector)
 
-  ;; helper procedure, used by a couple of things
-  ;; By this point, update-refr should be de-symlink'ed
-  (define (__really-do-call update-refr mactor
-                            kws kw-args args)
-    (call-with-continuation-barrier
-     (λ ()
-       (match mactor
-         [(? mactor:object?)
-          (define actor-handler
-            (mactor:object-handler mactor))
-          (define become?
-            (mactor:object-become? mactor))
-          (define become-unsealer
-            (mactor:object-become-unsealer mactor))
-
-          ;; I guess watching for this guarantees that an immediate call
-          ;; against a local actor will not be tail recursive.
-          ;; TODO: We need to document that.
-          (define-values (new-handler return-val)
-            (let ([returned (keyword-apply actor-handler kws kw-args
-                                           args)])
-              (if (become? returned)
-                  ;; The unsealer unseals both the handler and return-value anyway
-                  (become-unsealer returned)
-                  ;; In this case, we're not becoming anything, so just give us
-                  ;; the return-val
-                  (values #f returned))))
-
-          ;; if a new handler for this actor was specified,
-          ;; let's replace it
-          (when new-handler
-            (actormap-set! actormap update-refr
-                           (mactor:object
-                            new-handler
-                            (mactor:object-become-unsealer mactor)
-                            (mactor:object-become? mactor))))
-
-          return-val]
-         ;; If it's an encased value, "calling" it just returns the
-         ;; internal value.
-         [(? mactor:encased?)
-          (mactor:encased-val mactor)]
-         [_ (error 'not-callable
-                   "Not an encased or live-actor mactor: ~a" mactor)]))))
-
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
@@ -962,19 +902,64 @@
          (error 'not-callable
                 "Not in the same vat: ~a" to-refr))
 
-       (define-values (update-refr mactor)
-         (actormap-symlink-ref actormap to-refr))
+       (define mactor
+         (actormap-ref actormap refr-id))
 
-       (__really-do-call update-refr mactor kws kw-args args))))
+       (match mactor
+         [(? mactor:object?)
+          (define actor-handler
+            (mactor:object-handler mactor))
+          (define become?
+            (mactor:object-become? mactor))
+          (define become-unsealer
+            (mactor:object-become-unsealer mactor))
+
+          ;; I guess watching for this guarantees that an immediate call
+          ;; against a local actor will not be tail recursive.
+          ;; TODO: We need to document that.
+          (define-values (new-handler return-val)
+            (let ([returned
+                   (call-with-continuation-barrier
+                    (λ ()
+                      (keyword-apply actor-handler kws kw-args
+                                     args)))])
+              (if (become? returned)
+                  ;; The unsealer unseals both the handler and return-value anyway
+                  (become-unsealer returned)
+                  ;; In this case, we're not becoming anything, so just give us
+                  ;; the return-val
+                  (values #f returned))))
+
+          ;; if a new handler for this actor was specified,
+          ;; let's replace it
+          (when new-handler
+            (actormap-set! actormap to-refr
+                           (mactor:object
+                            new-handler
+                            (mactor:object-become-unsealer mactor)
+                            (mactor:object-become? mactor))))
+
+          return-val]
+         ;; If it's an encased value, "calling" it just returns the
+         ;; internal value.
+         [(? mactor:encased?)
+          (mactor:encased-val mactor)]
+         ;; Ah... we're linking to another actor locally, so let's
+         ;; just de-symlink and call that instead.
+         [(? mactor:local-link?)
+          (keyword-apply _call kws kw-args
+                         (mactor:local-link-point-to mactor)
+                         args)]
+         ;; Not a callable mactor!
+         [_ (error 'not-callable
+                   "Not an encased or object mactor: ~a" mactor)]))))
 
   ;; spawn a new actor
   (define (_spawn constructor kws kw-args args)
     (actormap-spawn!* actormap constructor kws kw-args args))
 
-  (define (spawn-mactor mactor [debug-name #f]
-                        #:promise? [promise? #f])
-    (actormap-spawn-mactor! actormap mactor debug-name
-                            #:promise? promise?))
+  (define (spawn-mactor mactor [debug-name #f])
+    (actormap-spawn-mactor! actormap mactor debug-name))
 
   (define (fulfill-promise promise-id sealed-val)
     (match (actormap-ref actormap promise-id #f)
@@ -1618,14 +1603,12 @@
      actor-refr)))
 
 (define (actormap-spawn-mactor! actormap mactor
-                                [debug-name #f]
-                                #:promise? [promise? #f])
+                                [debug-name #f])
   (define vat-connector
     (actormap-vat-connector actormap))
-  (define actor-refr
-    (if promise?
-        (make-local-promise-refr vat-connector)
-        (make-local-object-refr debug-name vat-connector)))
+  (if (mactor:object? mactor)
+      (make-local-object-refr debug-name vat-connector)
+      (make-local-promise-refr vat-connector))
   (actormap-set! actormap actor-refr mactor)
   actor-refr)
 
@@ -1789,8 +1772,7 @@
                (mactor:question-promise '() unsealer tm?
                                         captp-connector
                                         question-finder))
-             (mactor:promise '() unsealer tm?))
-         #:promise? #t))
+             (mactor:promise '() unsealer tm?))))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
   ;;  - throw an error
