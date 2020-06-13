@@ -1086,7 +1086,7 @@
                       next-mactor-state)
 
        ;; Resolve listeners, if appropriate
-       (unless (mactor:closer? next-mactor-state)
+       (unless (mactor:unresolved? next-mactor-state)
          (for ([listener listeners])
            (<-np listener 'fulfill val))))))
 
