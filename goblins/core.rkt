@@ -924,7 +924,7 @@
       (actormap-ref actormap to-refr #f))
     (unless mactor
       (error 'no-such-actor "no actor with this id in this vat: ~a" to-refr))
-    to-refr)
+    mactor)
 
   ;; call actor's handler
   (define _call
@@ -1349,6 +1349,12 @@
          (actormap-ref-or-die on-refr))
 
        (match mactor
+         [(? mactor:local-link?)
+          (_on (mactor:local-link-point-to mactor)
+               on-fulfilled
+               #:catch on-broken
+               #:regardless on-regardless
+               #:promise? promise?)]
          ;; This object is a local promise, so we should handle it.
          [(? mactor:eventual?)
           ;; The purpose of this listener is that the promise
@@ -1529,13 +1535,18 @@
                        to-refr kws kw-vals args))
      returned-val)))
 
-(define (simple-display-error err #:pre-delivery? pre-delivery?)
+(define (simple-display-error err
+                              #:pre-delivery?
+                              [pre-delivery? #f])
   (displayln (if pre-delivery?
                  ";; === Before even being able to handle message: ==="
                  ";; === While attempting to handle message: ===")
              (current-error-port))
   ((error-display-handler) (exn-message err) err))
 
+(define no-op
+  (make-keyword-procedure
+   (lambda _ (void))))
 
 ;; TODO: We might want to return one of the following:
 ;;   (values ('call-success val) ('resolve-success val)
@@ -1563,7 +1574,7 @@
                           (when display-or-log-error
                             (display-or-log-error err #:pre-delivery? #t))
                           `#(fail ,err))])
-         (sys 'handle-message display-or-log-error)))
+         (sys 'handle-message msg display-or-log-error)))
 
      (match (get-sys-internals)
        [(list new-actormap to-near to-far)
@@ -1605,7 +1616,13 @@
 ;; (-> actormap? (treeof message?)
 ;;     (values actormap (treeof message?) (treeof message?)))
 (define (actormap-churn actormap messages
-                        #:display-errors? [display-errors? #t])
+                        #:display-errors?
+                        [display-errors? #t]
+                        #:display-or-log-error
+                        [display-or-log-error
+                         (if display-errors?
+                             simple-display-error
+                             no-op)])
   (define (cons-if-non-empty a d)
     (cond
       [(null? a) d]
@@ -1615,7 +1632,7 @@
     [(? message? message)
      (define-values (call-result new-am to-near to-far)
        (actormap-turn-message actormap messages
-                              #:display-errors? display-errors?))
+                              #:display-or-log-error display-or-log-error))
      (values new-am to-near to-far)]
     ['()
      (values actormap '() '())]
@@ -1626,7 +1643,7 @@
                ([msg (in-list (reverse messages))])
        (define-values (new-actormap new-to-near new-to-far)
          (actormap-churn actormap msg
-                         #:display-errors? display-errors?))
+                         #:display-or-log-error display-or-log-error))
        (values new-actormap
                (cons-if-non-empty new-to-near to-near)
                (cons-if-non-empty new-to-far to-far)))]))
@@ -1637,14 +1654,20 @@
 ;; TODO: Can we generalize/parameterize this in such a way that
 ;; vats and other designs can be built on top of it?
 (define (actormap-full-run! actormap thunk
-                            #:display-errors? [display-errors? #t])
+                            #:display-errors?
+                            [display-errors? #t]
+                            #:display-or-log-error
+                            [display-or-log-error
+                             (if display-errors?
+                                 simple-display-error
+                                 no-op)])
   (define-values (_val new-am to-near to-far)
     (actormap-run* actormap thunk))
   (transactormap-merge! new-am)
   (let lp ([messages to-near])
     (define-values (new-am to-near to-far)
       (actormap-churn actormap messages
-                      #:display-errors? display-errors?))
+                      #:display-or-log-error display-or-log-error))
     (when (transactormap? new-am)
       (transactormap-merge! new-am))
     (if (null? to-near)
