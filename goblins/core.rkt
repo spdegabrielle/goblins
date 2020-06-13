@@ -906,6 +906,7 @@
            ['send-message _send-message]
            ['handle-message _handle-message]
            ['on _on]
+           ['listen _listen]
            ['vat-connector get-vat-connector]
            ['near-refr? near-refr?]
            [else (error "invalid syscaller method")]))
@@ -1304,6 +1305,17 @@
                          #:answer-this-question question-finder)
           promise]))))
 
+  ;; internal-only... skip a step
+  (define (_listen-mactor on-refr mactor listener)
+    ;; Set a new version of the local-promise with this
+    ;; object as a listener
+    (actormap-set! actormap on-refr
+                   (mactor:unresolved-add-listener mactor
+                                                   listener)))
+
+  (define (_listen on-refr listener)
+    (_listen-mactor on-refr (actormap-ref-or-die on-refr) listener))
+
   ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
   ;; `on' procedure.
@@ -1343,6 +1355,23 @@
     (define handle-broken
       (handle-resolution on-broken 'break))
 
+    ;; The purpose of this listener is that the promise
+    ;; *hasn't resolved yet*.  Because of that we need to
+    ;; queue something to happen *once* it resolves.
+    (define (^on-listener bcom)
+      (match-lambda*
+        [(list 'fulfill val)
+         (handle-fulfilled val)
+         (void)]
+        [(list 'break problem)
+         (handle-broken problem)
+         (void)]))
+    (define (spawn-listener)
+      ;; using _spawn here saves a very minor round
+      ;; trip which we can't do in the on-fulfilled
+      ;; ones because they'll be in a new syscaller
+      (_spawn ^on-listener '() '() '()))
+
     (match on-refr
       [(? near-refr?)
        (define mactor
@@ -1357,27 +1386,7 @@
                #:promise? promise?)]
          ;; This object is a local promise, so we should handle it.
          [(? mactor:eventual?)
-          ;; The purpose of this listener is that the promise
-          ;; *hasn't resolved yet*.  Because of that we need to
-          ;; queue something to happen *once* it resolves.
-          (define (^on-listener bcom)
-            (match-lambda*
-              [(list 'fulfill val)
-               (handle-fulfilled val)
-               (void)]
-              [(list 'break problem)
-               (handle-broken problem)
-               (void)]))
-          (define on-listener
-            ;; using _spawn here saves a very minor round
-            ;; trip which we can't do in the on-fulfilled
-            ;; ones because they'll be in a new syscaller
-            (_spawn ^on-listener '() '() '()))
-          ;; Set a new version of the local-promise with this
-          ;; object as
-          (actormap-set! actormap on-refr
-                         (mactor:unresolved-add-listener mactor
-                                                         on-listener))]
+          (_listen-mactor on-refr mactor (spawn-listener))]
          [(? mactor:broken? mactor)
           (handle-broken (mactor:broken-problem mactor))]
          [(? mactor:encased? mactor)
@@ -1389,15 +1398,19 @@
 
       ;; At this point it would be a far refr
       [(? local-refr? far-refr)
-       (error 'gotta-implement-far-refrs-seriously)]
+       (define vat-connector
+         (local-refr-vat-connector far-refr))
+       (vat-connector 'listen far-refr (spawn-listener))]
 
-      [(? remote-refr?)
-       (error 'gotta-implement-remote-refrs-seriously)]
+      [(? remote-refr? remote-refr)
+       (define captp-connector
+         (remote-refr-captp-connector remote-refr))
+       (captp-connector 'listen remote-refr (spawn-listener))]
 
       ;; TODO: sturdy refr support goes here!
       ;; TODO: Or maybe actually not because we might "require enlivening"
       ;;   of sturdyrefs?
-      [(? sturdy-refr?)
+      #;[(? sturdy-refr?)
        (error "Sturdy refrs not supported yet :(")]
 
       ;; Anything else?  Well, it's just some value then, we can
