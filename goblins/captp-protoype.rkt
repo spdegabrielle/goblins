@@ -165,6 +165,8 @@
   ;;   the refr internals to most users
   (define-values (pos-seal pos-unseal pos-sealed?)
     (make-sealer-triplet))
+  (define-values (partition-seal partition-unseal partition-sealed?)
+    (make-sealer-triplet))
 
   ;; Question finders are a weird thing... we need some way to be able to
   ;; look up what question corresponds to an entry in the table.
@@ -197,9 +199,13 @@
   (define (_new-question-finder)
     (question-finder))
 
+  (define (_partition-unsealer-tm-cons)
+    (cons partition-unseal partition-tm?))
+
   (define-captp-dispatcher captp-connector
     [handle-message _handle-message]
-    [new-question-finder _new-question-finder])
+    [new-question-finder _new-question-finder]
+    [partition-unsealer-tm-cons _partition-unsealer-tm-cons])
 
   (syscaller-free-thread
    (lambda ()
