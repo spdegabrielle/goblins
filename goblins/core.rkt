@@ -558,7 +558,11 @@
    point-to
    ;; A set of promises we used to point to before they themselves
    ;; resolved... used to detect cycles
-   history))
+   history
+   ;; Any messages that are waiting to be passed along...
+   ;; Currently only if we're pointing to a remote-promise, otherwise
+   ;; this will be an empty list.
+   waiting-messages))
 
 ;; Point at a remote object.
 ;; It's eventual because, well, it could still break on network partition.
@@ -577,6 +581,16 @@
 (struct mactor:broken mactor
   (problem))
 
+;; Helper for syscaller's fulfill-promise and break-promise methods
+(define (unseal-mactor-resolution mactor sealed-resolution)
+  (define resolver-tm?
+    (mactor:eventual-resolver-tm? mactor))
+  (define resolver-unsealer
+    (mactor:eventual-resolver-unsealer mactor))
+  ;; Is this a valid resolution?
+  (unless (resolver-tm? sealed-resolution)
+    (error "Resolution sealed with wrong trademark!"))
+  (resolver-unsealer sealed-resolution))
 
 ;; Presumes this is a mactor already
 (define (callable-mactor? mactor)
@@ -591,6 +605,11 @@
 
 ;;; "Become" special sealers
 ;;; ========================
+
+;; Note that this isn't really perfect; if someone has intercepted an
+;; old become-value, they can still make us become that again... but
+;; that's a fairly rare risk probably (I can't think of any likely
+;; scenarios currently)
 
 (define (make-become-sealer-triplet)
   (define-values (struct:seal make-seal sealed? seal-ref seal-set!)
@@ -962,103 +981,132 @@
     (actormap-spawn-mactor! actormap mactor debug-name))
 
   (define (fulfill-promise promise-id sealed-val)
-    (match (actormap-ref actormap promise-id #f)
-      [(? mactor:promise? promise-mactor)
-       (define resolver-tm?
-         (mactor:promise-resolver-tm? promise-mactor))
-       (define resolver-unsealer
-         (mactor:promise-resolver-unsealer promise-mactor))
-       ;; Is this a valid resolution?
-       (unless (resolver-tm? sealed-val)
-         (error "Resolution sealed with wrong trademark!"))
-       (define val
-         (resolver-unsealer sealed-val))
+    (call/ec
+     (lambda (return-early)
+       (define orig-mactor
+         (actormap-ref actormap promise-id #f))
+       (unless orig-mactor
+         (error 'no-such-actor "no actor with this id in this vat: ~a" promise-id))
+       (unless (mactor:unresolved? orig-mactor)
+         (error 'resolving-resolved
+                "Attempt to resolve resolved actor: ~a" promise-id))
+       (define resolve-to-val
+         (unseal-mactor-resolution orig-mactor sealed-val))
 
-       ;; Inform all listeners of the resolution
-       ;; We'll do this unless we're symlinking to another promise,
-       ;; in which case we just "pass on" the listeners.
-       (define (inform-listeners)
-         (for ([listener (in-list (mactor:promise-listeners promise-mactor))])
-           (<-np listener 'fulfill val)))
+       (define listeners
+         (mactor:unresolved-listeners orig-mactor))
 
-       ;; Now we "become" that value!
-       (match val
-         ;; It's a reference now, so let's set up a symlink
-         [(? live-refr?)
-          ;; for efficiency, let's make it as direct of a symlink
-          ;; as possible
-          (define-values (link-to-refr link-to-mactor)
-            ;; TODO: This doesn't do full shortening... the right thing
-            ;;   here would be that if we end on a promise that we
-            ;;   subscribe for "future shortening"
-            (let lp ([refr-id val]
-                     [seen (seteq)])
-              (when (set-member? seen refr-id)
-                (error "Cycle in mactor symlinks"))
-              (if (near-refr? refr-id)
-                  (match (actormap-ref actormap refr-id)
-                    [(? mactor:symlink? mactor)
-                     (lp (mactor:symlink-link-to-refr mactor)
-                         (set-add seen refr-id))]
-                    [#f (error "no actor with this id")]
-                    ;; ok we found a non-symlink refr
-                    [mactor (values refr-id mactor)])
-                  ;; otherwise it's a far-refr, we can't really
-                  ;; de-symlink anymore.
-                  (values refr-id #f))))
-          ;; Set up the symlink
-          (actormap-set! actormap promise-id
-                         (mactor:symlink link-to-refr))
-          ;; Now we either inform listeners or forward them to the promise
-          (match link-to-mactor
-            ;; Ok, it's a local promise...
-            ;; For this we still need to set the symlink, but
-            ;; we should defer our sending of messages until the
-            ;; other promise resolves.
-            [(mactor:promise linked-listeners linked-r-unsealer linked-r-tm?)
-             ;; Update the symlinked-to-promise to have all of our listeners
-             (define new-linked-listeners
-               (append (mactor:promise-listeners promise-mactor)
-                       linked-listeners))
-             (define new-linked-mactor
-               (mactor:promise new-linked-listeners
-                                     linked-r-unsealer
-                                     linked-r-tm?))
-             (actormap-set! actormap link-to-refr
-                            new-linked-mactor)]
+       (define orig-waiting-messages
+         (match orig-mactor
+           [(? mactor:naive?)
+            (mactor:naive-waiting-messages orig-mactor)]
+           [(? mactor:closer?)
+            (mactor:closer-waiting-messages orig-mactor)]
+           [_ '()]))
 
-            ;; Nope it's not a promise, so inform listeners now
-            [_ (inform-listeners)])]
-         ;; Must be something else then.  Guess we'd better
-         ;; encase it.
-         [_ (actormap-set! actormap promise-id
-                           (mactor:encased val))
-            (inform-listeners)])]
-      [#f (error "no actor with this id")]
-      [_ (error "can only resolve a local-promise")]))
+       (define (forward-messages [waiting-messages waiting-messages])
+         (match waiting-messages
+           ['() (void)]
+           [(list (message _old-to resolve-me kws kw-vals args)
+                  rest-waiting ...)
+            ;; preserve FIFO by recursing first
+            (forward-messages rest-waiting)
+            ;; shouldn't be a question message so we don't need to
+            ;; #:answer-this-question, I think?
+            (_send-message kws kw-args resolve-to-val resolve-me args)]))
 
+       (define new-waiting-messages
+         (if (remote-promise-refr? resolve-to-val)
+             ;; don't forward waiting messages to remote promises
+             orig-waiting-messages
+             ;; but do forward to literally anything else... empty
+             ;; the queue!
+             (begin (forward-messages)
+                    '())))
+
+       (define next-mactor-state
+         (match resolve-to-val
+           [(? local-object-refr?)
+            (mactor:local-link resolve-to-val)]
+           [(? remote-object-refr?)
+            ;; Since the captp connection is the one that might break this,
+            ;; we need to ask it what it uses as its resolver unsealer/tm
+            ;; @@: ... This doesn't seem like a good solution.
+            ;;   Whatever, we need to add when-broken or something.
+            (match-define (cons new-resolver-unsealer new-resolver-tm?)
+              (let ([connector (remote-refr-captp-connector resolve-to-val)])
+                ;; TODO: Do we need to notify it that we want to know about
+                ;;   breakage?  Presumably... so do it here instead...?
+                (connector 'partition-unsealer-tm-cons)))
+
+            (mactor:remote-link resolve-to-val
+                                new-resolver-unsealer new-resolver-tm?)]
+           [(or (? local-promise-refr?)
+                (? remote-promise-refr?))
+            (define new-history
+              (if (mactor:closer? orig-mactor)
+                  (set-add (mactor:closer-history orig-mactor)
+                           (mactor:closer-point-to orig-mactor))
+                  (seteq promise-id)))
+            ;; Detect cycles!
+            (when (set-member? new-history resolve-to-val)
+              ;; not sure we actually need to return anything, but I guess
+              ;; this is mildly future-proof.
+              (return-early
+               ;; We want to break this because it should be explicitly clear
+               ;; to everyone that the promise was broken.
+               (break-promise promise-id
+                              ;; TODO: we need some sort of error type we do
+                              ;;   allow to explicitly be shared, this one is a
+                              ;;   reasonable candidate
+                              'cycle-in-promise-resolution)))
+
+            ;; Make a new set of resolver sealers for this.
+            ;; However, we don't use the general ^resolver because we're
+            ;; explicitly using the on-fulfilled/on-broken things
+            (define-values (new-resolver-sealer new-resolver-unsealer new-resolver-tm?)
+              (make-sealer-triplet 'fulfill-promise))
+            ;; Now subscribe to the promise...
+            (_on resolve-to-val
+                 (lambda (val)
+                   (sys 'fulfill-promise promise-id (new-resolver-sealer val)))
+                 #:catch
+                 (lambda (err)
+                   (sys 'break-promise promise-id (new-resolver-sealer err))))
+            ;; Now we become "closer" to this promise
+            (mactor:closer new-resolver-unsealer new-resolver-tm?
+                           listeners
+                           resolve-to-val new-history
+                           new-waiting-messages)]
+           ;; anything else is an encased value
+           [_ (mactor:encased resolve-to-val)]))
+
+       ;;  - Now actually switch to the new mactor state
+       (actormap-set! actormap promise-id
+                      next-mactor-state)
+
+       ;; Resolve listeners, if appropriate
+       (unless (mactor:closer? next-mactor-state)
+         (for ([listener listeners])
+           (<-np listener 'fulfill val))))))
+
+  ;; TODO: Add support for broken-because-of-network-partition support
+  ;;   even for mactor:remote-link
   (define (break-promise promise-id sealed-problem)
     (match (actormap-ref actormap promise-id #f)
       ;; TODO: Not just local-promise, anything that can
       ;;   break
-      [(? mactor:promise? promise-mactor)
-       (define resolver-tm?
-         (mactor:promise-resolver-tm? promise-mactor))
-       (define resolver-unsealer
-         (mactor:promise-resolver-unsealer promise-mactor))
-       ;; Is this a valid resolution?
-       (unless (resolver-tm? sealed-problem)
-         (error "Resolution sealed with wrong trademark!"))
+      [(? mactor:eventual? eventual-mactor)
        (define problem
-         (resolver-unsealer sealed-problem))
+         (unseal-mactor-resolution eventual-mactor sealed-problem))
        ;; Now we "become" broken with that problem
        (actormap-set! actormap promise-id
-                           (mactor:broken problem))
+                      (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (in-list (mactor:promise-listeners promise-mactor))])
+       (for ([listener (in-list (mactor:eventual-listeners eventual-mactor))])
          (<-np listener 'break problem))]
       [#f (error "no actor with this id")]
-      [_ (error "can only resolve a local-promise")]))
+      [_ (error "can only resolve eventual references")]))
 
   (define (_handle-message msg)
     (match-define (message to-refr resolve-me kws kw-vals args)
