@@ -889,7 +889,7 @@
 
   (define this-syscaller
     (make-keyword-procedure
-     (lambda (kws kw-args method-id . args)
+     (lambda (kws kw-vals method-id . args)
        (when closed?
          (error "Sorry, this syscaller is closed for business!"))
        (define method
@@ -909,7 +909,7 @@
            ['vat-connector get-vat-connector]
            ['near-refr? near-refr?]
            [else (error "invalid syscaller method")]))
-       (keyword-apply method kws kw-args args))))
+       (keyword-apply method kws kw-vals args))))
 
   (define (near-refr? obj)
     (and (local-refr? obj)
@@ -929,7 +929,7 @@
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
-     (lambda (kws kw-args to-refr . args)
+     (lambda (kws kw-vals to-refr . args)
        ;; Restrict to live-refrs which appear to have the same
        ;; vat-connector as us
        (unless (local-refr? to-refr)
@@ -942,7 +942,7 @@
                 "Not in the same vat: ~a" to-refr))
 
        (define mactor
-         (actormap-ref actormap refr-id))
+         (actormap-ref actormap to-refr))
 
        (match mactor
          [(? mactor:object?)
@@ -960,7 +960,7 @@
             (let ([returned
                    (call-with-continuation-barrier
                     (λ ()
-                      (keyword-apply actor-handler kws kw-args
+                      (keyword-apply actor-handler kws kw-vals
                                      args)))])
               (if (become? returned)
                   ;; The unsealer unseals both the handler and return-value anyway
@@ -986,7 +986,7 @@
          ;; Ah... we're linking to another actor locally, so let's
          ;; just de-symlink and call that instead.
          [(? mactor:local-link?)
-          (keyword-apply _call kws kw-args
+          (keyword-apply _call kws kw-vals
                          (mactor:local-link-point-to mactor)
                          args)]
          ;; Not a callable mactor!
@@ -994,8 +994,8 @@
                    "Not an encased or object mactor: ~a" mactor)]))))
 
   ;; spawn a new actor
-  (define (_spawn constructor kws kw-args args)
-    (actormap-spawn!* actormap constructor kws kw-args args))
+  (define (_spawn constructor kws kw-vals args)
+    (actormap-spawn!* actormap constructor kws kw-vals args))
 
   (define (spawn-mactor mactor [debug-name #f])
     (actormap-spawn-mactor! actormap mactor debug-name))
@@ -1004,7 +1004,7 @@
     (call/ec
      (lambda (return-early)
        (define orig-mactor
-         (actormap-ref-or-die to-refr))
+         (actormap-ref-or-die promise-id))
        (unless (mactor:unresolved? orig-mactor)
          (error 'resolving-resolved
                 "Attempt to resolve resolved actor: ~a" promise-id))
@@ -1022,7 +1022,7 @@
             (mactor:closer-waiting-messages orig-mactor)]
            [_ '()]))
 
-       (define (forward-messages [waiting-messages waiting-messages])
+       (define (forward-messages [waiting-messages orig-waiting-messages])
          (match waiting-messages
            ['() (void)]
            [(list (message _old-to resolve-me kws kw-vals args)
@@ -1031,7 +1031,7 @@
             (forward-messages rest-waiting)
             ;; shouldn't be a question message so we don't need to
             ;; #:answer-this-question, I think?
-            (_send-message kws kw-args resolve-to-val resolve-me args)]))
+            (_send-message kws kw-vals resolve-to-val resolve-me args)]))
 
        (define new-waiting-messages
          (if (remote-promise-refr? resolve-to-val)
@@ -1087,9 +1087,11 @@
             ;; Now subscribe to the promise...
             (_on resolve-to-val
                  (lambda (val)
+                   (define sys (get-syscaller-or-die))
                    (sys 'fulfill-promise promise-id (new-resolver-sealer val)))
                  #:catch
                  (lambda (err)
+                   (define sys (get-syscaller-or-die))
                    (sys 'break-promise promise-id (new-resolver-sealer err))))
             ;; Now we become "closer" to this promise
             (mactor:closer new-resolver-unsealer new-resolver-tm?
@@ -1106,7 +1108,7 @@
        ;; Resolve listeners, if appropriate
        (unless (mactor:unresolved? next-mactor-state)
          (for ([listener listeners])
-           (<-np listener 'fulfill val))))))
+           (<-np listener 'fulfill resolve-to-val))))))
 
   ;; TODO: Add support for broken-because-of-network-partition support
   ;;   even for mactor:remote-link
@@ -1114,15 +1116,17 @@
     (match (actormap-ref actormap promise-id #f)
       ;; TODO: Not just local-promise, anything that can
       ;;   break
-      [(? mactor:eventual? eventual-mactor)
+      [(? mactor:unresolved? unresolved-mactor)
        (define problem
-         (unseal-mactor-resolution eventual-mactor sealed-problem))
+         (unseal-mactor-resolution unresolved-mactor sealed-problem))
        ;; Now we "become" broken with that problem
        (actormap-set! actormap promise-id
                       (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (in-list (mactor:eventual-listeners eventual-mactor))])
+       (for ([listener (in-list (mactor:unresolved-listeners unresolved-mactor))])
          (<-np listener 'break problem))]
+      [(? mactor:remote-link?)
+       (error "TODO: Implement breaking on captp disconnect!")]
       [#f (error "no actor with this id")]
       [_ (error "can only resolve eventual references")]))
 
@@ -1172,7 +1176,8 @@
       [(mactor:broken problem)
        (_<-np resolve-me 'break problem)
        `#(fail ,problem)]
-      [(mactor:remote-link point-to)
+      [(? mactor:remote-link?)
+       (define point-to (mactor:remote-link-point-to orig-mactor))
        (call-with-resolution
         (λ ()
           ;; Pass along the message
@@ -1180,13 +1185,12 @@
           (keyword-apply (if resolve-me
                              _<-
                              _<-np)
-                         kws kw-args point-to args)))]
+                         kws kw-vals point-to args)))]
       ;; Messages sent to a promise that is "closer" are a kind of
       ;; intermediate state; we build a queue.
       [(mactor:closer resolver-unsealer resolver-tm?
                       listeners
-                      captp-connector question-finder
-                      point-to
+                      point-to history
                       waiting-messages)
        (match point-to
          ;; If we're pointing at another near promise then we recurse
@@ -1207,8 +1211,7 @@
           (actormap-set! actormap to-refr
                          (mactor:closer resolver-unsealer resolver-tm?
                                         listeners
-                                        captp-connector question-finder
-                                        point-to
+                                        point-to history
                                         (cons msg waiting-messages)))
           ;; But we should return that this was deferred
           '#(deferred #f)])]
@@ -1226,13 +1229,13 @@
       ;; to deal with using the relevant question-finder.
       ;; In a sense, this is a followup question to an existing
       ;; question.
-      [(? mactor:question-promise?)
+      [(? mactor:question?)
        (call-with-resolution
         (λ ()
           (define to-question-finder
-            (mactor:question-promise-question-finder mactor))
+            (mactor:question-question-finder mactor))
           (define captp-connector
-            (mactor:question-promise-captp-connector mactor))
+            (mactor:question-captp-connector mactor))
           (define followup-question-finder
             (captp-connector 'new-question-finder))
           (define-values (followup-question-promise followup-question-resolver)
@@ -1248,13 +1251,13 @@
           followup-question-promise))]))
 
   ;; helper to the below two methods
-  (define (_send-message kws kw-args to-refr resolve-me args
+  (define (_send-message kws kw-vals to-refr resolve-me args
                          #:answer-this-question [answer-this-question #f])
     (define new-message
       (if answer-this-question
-          (question-message to-refr resolve-me kws kw-args args
+          (question-message to-refr resolve-me kws kw-vals args
                             answer-this-question)
-          (message to-refr resolve-me kws kw-args args)))
+          (message to-refr resolve-me kws kw-vals args)))
 
     ;; TODO: This is really a matter of dispatching on mactors
     ;;   mostly now
@@ -1274,18 +1277,18 @@
 
   (define _<-np
     (make-keyword-procedure
-     (lambda (kws kw-args to-refr . args)
-       (_send-message kws kw-args to-refr #f args)
+     (lambda (kws kw-vals to-refr . args)
+       (_send-message kws kw-vals to-refr #f args)
        (void))))
 
   (define _<-
     (make-keyword-procedure
-     (lambda (kws kw-args to-refr . args)
+     (lambda (kws kw-vals to-refr . args)
        (match to-refr
          [(? local-refr?)
           (define-values (promise resolver)
             (_spawn-promise-values))
-          (_send-message kws kw-args to-refr resolver args)
+          (_send-message kws kw-vals to-refr resolver args)
           promise]
          [(? remote-refr?)
           (define captp-connector
@@ -1297,14 +1300,14 @@
                                    question-finder
                                    #:captp-connector
                                    captp-connector))
-          (_send-message kws kw-args to-refr resolver args
+          (_send-message kws kw-vals to-refr resolver args
                          #:answer-this-question question-finder)
           promise]))))
 
   ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
   ;; `on' procedure.
-  (define (_on id-refr [on-fulfilled #f]
+  (define (_on on-refr [on-fulfilled #f]
                #:catch [on-broken #f]
                #:regardless [on-regardless #f]
                #:promise? [promise? #f])
@@ -1314,7 +1317,7 @@
           (values #f #f)))
 
     ;; These two procedures are called once the fulfillment
-    ;; or break of the id-refr has actually occurred.
+    ;; or break of the on-refr has actually occurred.
     (define ((handle-resolution on-resolution
                                 resolve-fulfill-command) val)
       (cond [on-resolution
@@ -1340,10 +1343,10 @@
     (define handle-broken
       (handle-resolution on-broken 'break))
 
-    (match id-refr
+    (match on-refr
       [(? near-refr?)
        (define mactor
-         (actormap-ref-or-die to-refr))
+         (actormap-ref-or-die on-refr))
 
        (match mactor
          ;; This object is a local promise, so we should handle it.
@@ -1366,7 +1369,7 @@
             (_spawn ^on-listener '() '() '()))
           ;; Set a new version of the local-promise with this
           ;; object as
-          (actormap-set! actormap id-refr
+          (actormap-set! actormap on-refr
                          (mactor:unresolved-add-listener mactor
                                                          on-listener))]
          [(? mactor:broken? mactor)
@@ -1374,7 +1377,7 @@
          [(? mactor:encased? mactor)
           (handle-fulfilled (mactor:encased-val mactor))]
          [(? mactor:object? mactor)
-          (handle-fulfilled subscribe-refr)])]
+          (handle-fulfilled on-refr)])]
 
       ;; TODO: TODO: TODO: seriously implmeent the following two!!
 
@@ -1415,29 +1418,29 @@
 
 (define <-np
   (make-keyword-procedure
-   (lambda (kws kw-args to-refr . args)
+   (lambda (kws kw-vals to-refr . args)
      (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args '<-np to-refr args))))
+     (keyword-apply sys kws kw-vals '<-np to-refr args))))
 
 (define <-
   (make-keyword-procedure
-   (lambda (kws kw-args to-refr . args)
+   (lambda (kws kw-vals to-refr . args)
      (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args '<- to-refr args))))
+     (keyword-apply sys kws kw-vals '<- to-refr args))))
 
 (define call
   (make-keyword-procedure
-   (lambda (kws kw-args to-refr . args)
+   (lambda (kws kw-vals to-refr . args)
      (define sys (get-syscaller-or-die))
-     (keyword-apply sys kws kw-args 'call to-refr args))))
+     (keyword-apply sys kws kw-vals 'call to-refr args))))
 ;; an alias
 (define $ call)
 
 (define spawn
   (make-keyword-procedure
-   (lambda (kws kw-args constructor . args)
+   (lambda (kws kw-vals constructor . args)
      (define sys (get-syscaller-or-die))
-     (sys 'spawn constructor kws kw-args args))))
+     (sys 'spawn constructor kws kw-vals args))))
 
 (define-syntax (define-spawned stx)
   (syntax-parse stx
@@ -1481,38 +1484,38 @@
 ;;; actormap turning and utils
 ;;; ==========================
 
-(define (actormap-turn* actormap to-refr kws kw-args args
+(define (actormap-turn* actormap to-refr kws kw-vals args
                         #:reckless? [reckless? #f])
   (call-with-fresh-syscaller
    actormap
    (lambda (sys get-sys-internals)
      (define result-val
-       (keyword-apply sys kws kw-args 'call to-refr args))
+       (keyword-apply sys kws kw-vals 'call to-refr args))
      (apply values result-val
             (get-sys-internals)))))  ; actormap to-near to-far
 
 (define actormap-turn
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-refr . args)
+   (lambda (kws kw-vals actormap to-refr . args)
      (define new-actormap
        (make-transactormap actormap))
-     (actormap-turn* new-actormap to-refr kws kw-args args))))
+     (actormap-turn* new-actormap to-refr kws kw-vals args))))
 
 ;; Note that this does nothing with the messages.
 (define actormap-poke!
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-refr . args)
+   (lambda (kws kw-vals actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
        (actormap-turn* (make-transactormap actormap)
-                       to-refr kws kw-args args))
+                       to-refr kws kw-vals args))
      (transactormap-merge! transactormap)
      returned-val)))
 
 (define actormap-reckless-poke!
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-refr . args)
+   (lambda (kws kw-vals actormap to-refr . args)
      (define-values (returned-val transactormap _tl _tr)
-       (actormap-turn* actormap to-refr kws kw-args args))
+       (actormap-turn* actormap to-refr kws kw-vals args))
      returned-val)))
 
 ;; run a turn but only for getting the result.
@@ -1520,10 +1523,10 @@
 ;; so we discard everything but the result.
 (define actormap-peek
   (make-keyword-procedure
-   (lambda (kws kw-args actormap to-refr . args)
+   (lambda (kws kw-vals actormap to-refr . args)
      (define-values (returned-val _am _tl _tr)
        (actormap-turn* (make-transactormap actormap)
-                       to-refr kws kw-args args))
+                       to-refr kws kw-vals args))
      returned-val)))
 
 (define (simple-display-error err #:pre-delivery? pre-delivery?)
@@ -1657,7 +1660,7 @@
 ;; also used by the syscaller.  It doesn't set up a syscaller
 ;; if there isn't currently one.
 (define (actormap-spawn!* actormap actor-constructor
-                          kws kw-args args)
+                          kws kw-vals args)
   (define debug-name
     (object-name actor-constructor))
   (define vat-connector
@@ -1665,7 +1668,7 @@
   (define-values (become become-unseal become?)
     (make-become-sealer-triplet))
   (define actor-handler
-    (keyword-apply actor-constructor kws kw-args become args))
+    (keyword-apply actor-constructor kws kw-vals become args))
   (match actor-handler
     ;; New procedure, so let's set it
     [(? procedure?)
@@ -1686,7 +1689,7 @@
 ;; non-committal version of actormap-spawn
 (define actormap-spawn
   (make-keyword-procedure
-   (lambda (kws kw-args actormap actor-constructor . args)
+   (lambda (kws kw-vals actormap actor-constructor . args)
      (define new-actormap
        (make-transactormap actormap))
      (call-with-fresh-syscaller
@@ -1694,12 +1697,12 @@
       (lambda (sys get-sys-internals)
         (define actor-refr
           (actormap-spawn!* new-actormap actor-constructor
-                            kws kw-args args))
+                            kws kw-vals args))
         (values actor-refr new-actormap))))))
 
 (define actormap-spawn!
   (make-keyword-procedure
-   (lambda (kws kw-args actormap actor-constructor . args)
+   (lambda (kws kw-vals actormap actor-constructor . args)
      (define new-actormap
        (make-transactormap actormap))
      (define actor-refr
@@ -1707,7 +1710,7 @@
         new-actormap
         (lambda (sys get-sys-internals)
           (actormap-spawn!* new-actormap actor-constructor
-                            kws kw-args args))))
+                            kws kw-vals args))))
      (transactormap-merge! new-actormap)
      actor-refr)))
 
@@ -1715,9 +1718,10 @@
                                 [debug-name #f])
   (define vat-connector
     (actormap-vat-connector actormap))
-  (if (mactor:object? mactor)
-      (make-local-object-refr debug-name vat-connector)
-      (make-local-promise-refr vat-connector))
+  (define actor-refr
+    (if (mactor:object? mactor)
+        (make-local-object-refr debug-name vat-connector)
+        (make-local-promise-refr vat-connector)))
   (actormap-set! actormap actor-refr mactor)
   actor-refr)
 
@@ -1878,10 +1882,10 @@
              (begin
                (unless captp-connector
                  (error 'question-finder-without-captp-connector))
-               (mactor:question-promise '() unsealer tm?
-                                        captp-connector
-                                        question-finder))
-             (mactor:promise '() unsealer tm?))))
+               (mactor:question unsealer tm? '()
+                                captp-connector
+                                question-finder))
+             (mactor:naive unsealer tm? '() '()))))
   ;; I guess the alternatives to responding with false on
   ;; attempting to re-resolve are:
   ;;  - throw an error
@@ -1923,17 +1927,17 @@
    (lambda ()
      (actormap-poke! am bob-resolver 'fulfill bob)))
   (test-true
-   "Promise resolves to symlink"
-   (mactor:symlink? (whactormap-ref am bob-vow)))
+   "Promise resolves to local-link"
+   (mactor:local-link? (whactormap-ref am bob-vow)))
   (test-equal?
-   "Resolved symlink acts as what it resolves to"
+   "Resolved local-link acts as what it resolves to"
    (actormap-peek am bob-vow)
    "Hi, I'm bob!")
   (check-not-exn
    (lambda ()
      (actormap-poke! am bob-vow "Hi, I'm bobby!")))
   (test-equal?
-   "Resolved symlink can change original"
+   "Resolved local-link can change original"
    (actormap-peek am bob)
    "Hi, I'm bobby!")
 
