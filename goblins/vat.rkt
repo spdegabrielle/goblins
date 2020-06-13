@@ -70,9 +70,9 @@
 ;;; and vat-id methods, though it's not unlikely this module will get
 ;;; out of date... oops)
 
-(struct cmd-external-spawn (kws kw-args constructor args return-ch))
+(struct cmd-external-spawn (kws kw-vals constructor args return-ch))
 (struct cmd-send-message (msg))
-(struct cmd-call (to-refr kws kw-args args return-ch))
+(struct cmd-call (to-refr kws kw-vals args return-ch))
 (struct cmd-handle-message (msg))
 (struct cmd-halt ())
 
@@ -209,27 +209,27 @@
                 (schedule-local-messages to-near)
                 (schedule-remote-messages to-far)
                 (lp)]
-               [(cmd-external-spawn kws kw-args constructor args return-ch)
+               [(cmd-external-spawn kws kw-vals constructor args return-ch)
                 (with-handlers ([any/c
                                  (lambda (err)
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define refr
-                    (keyword-apply actormap-spawn! kws kw-args actormap constructor args))
+                    (keyword-apply actormap-spawn! kws kw-vals actormap constructor args))
                   (channel-put return-ch (vector 'success refr)))
                 (lp)]
                [(cmd-send-message msg)
                 (async-channel-put vat-channel
                                    (cmd-handle-message msg))
                 (lp)]
-               [(cmd-call to-refr kws kw-args args return-ch)
+               [(cmd-call to-refr kws kw-vals args return-ch)
                 (with-handlers ([any/c
                                  (lambda (err)
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
                   (define-values (returned-val transactormap to-near to-far)
                     (parameterize ([being-called-by-vat-actor #t])
-                      (keyword-apply actormap-turn kws kw-args
+                      (keyword-apply actormap-turn kws kw-vals
                                      actormap to-refr args)))
                   (transactormap-merge! transactormap)
                   (schedule-local-messages to-near)
@@ -264,12 +264,12 @@
 
   (define _spawn
     (make-keyword-procedure
-     (λ (kws kw-args constructor . args)
+     (λ (kws kw-vals constructor . args)
        (forbid-internal-actor-call)
        (define return-ch
          (make-channel))
        (async-channel-put vat-channel
-                          (cmd-external-spawn kws kw-args constructor
+                          (cmd-external-spawn kws kw-vals constructor
                                               args return-ch))
        (sync-return-ch return-ch))))
 
@@ -278,19 +278,19 @@
   ;;   promise, so anyway we need a way to slot in a promise
   (define _<-np
     (make-keyword-procedure
-     (λ (kws kw-args to-refr . args)
+     (λ (kws kw-vals to-refr . args)
        (async-channel-put vat-channel
-                          (cmd-send-message (message to-refr #f kws kw-args args)))
+                          (cmd-send-message (message to-refr #f kws kw-vals args)))
        (void))))
 
   (define _call
     (make-keyword-procedure
-     (λ (kws kw-args to-refr . args)
+     (λ (kws kw-vals to-refr . args)
        (forbid-internal-actor-call)
        (define return-ch
          (make-channel))
        (async-channel-put vat-channel
-                          (cmd-call to-refr kws kw-args args return-ch))
+                          (cmd-call to-refr kws kw-vals args return-ch))
        (sync-return-ch return-ch))))
 
   (define (_run proc)
@@ -317,13 +317,13 @@
     (define id
       (procedure-rename
        (make-keyword-procedure
-        (λ (kws kw-args this-method-name . args)
+        (λ (kws kw-vals this-method-name . args)
           (define method
             (case this-method-name
               ['method-name method-handler] ...
               [else (error 'connector-dispatcher-error
                            "Unnown method: ~a" this-method-name)]))
-          (keyword-apply method kws kw-args args)))
+          (keyword-apply method kws kw-vals args)))
        'id)))
 
   (define-vat-dispatcher vat-connector

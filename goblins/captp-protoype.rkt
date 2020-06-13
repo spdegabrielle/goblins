@@ -52,7 +52,7 @@
    ;; Either arguments to the method or to the procedure, depending
    ;; on whether method exists
    args
-   kw-args)
+   kw-vals)
   marshall::op:deliver-only unmarshall::op:deliver-only)
 
 ;; Queue a delivery of verb(args..) to recip, binding answer/rdr to the outcome.
@@ -60,7 +60,7 @@
   (to-desc
    method
    args
-   kw-args
+   kw-vals
    answer-pos
    resolve-me-desc)  ; a resolver, probably an import (though it could be a handoff)
   marshall::op:deliver unmarshall::op:deliver)
@@ -123,10 +123,10 @@
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
-(define (kws-hasheq->kws-lists kw-args)
+(define (kws-hasheq->kws-lists kw-vals)
   (for/fold ([kws '()]
              [kw-vals '()])
-            ([(key val) kw-args])
+            ([(key val) kw-vals])
     (values (cons key kws)
             (cons val kw-vals))))
 
@@ -182,13 +182,13 @@
     (define id
       (procedure-rename
        (make-keyword-procedure
-        (λ (kws kw-args this-method-name . args)
+        (λ (kws kw-vals this-method-name . args)
           (define method
             (case this-method-name
               ['method-name method-handler] ...
               [else (error 'connector-dispatcher-error
                            "Unnown method: ~a" this-method-name)]))
-          (keyword-apply method kws kw-args args)))
+          (keyword-apply method kws kw-vals args)))
        'id)))
 
   (define (_handle-message msg)
@@ -429,22 +429,22 @@
             ;;   Or maybe just generally handle unmarshalling errors :P
             [(op:deliver-only to-desc method
                               args-marshalled
-                              kw-args-marshalled)
+                              kw-vals-marshalled)
              ;; TODO: support distinction between method sends and procedure sends
              (define args
                (import-post-unmarshall! args-marshalled))
-             (define kw-args
-               (import-post-unmarshall! kw-args-marshalled))
+             (define kw-vals
+               (import-post-unmarshall! kw-vals-marshalled))
              (define target (unmarshall-to-desc to-desc))
              (define-values (kws kw-vals)
-               (kws-hasheq->kws-lists kw-args))
+               (kws-hasheq->kws-lists kw-vals))
              (keyword-apply machine-vat-connector
                             kws kw-vals
                             '<-np target
                             args)]
             [(op:deliver to-desc method
                          args-marshalled
-                         kw-args-marshalled
+                         kw-vals-marshalled
                          answer-pos
                          resolve-me-desc)
              (define-values (answer-promise answer-resolver)
@@ -453,11 +453,11 @@
              ;; TODO: support distinction between method sends and procedure sends
              (define args
                (import-post-unmarshall! args-marshalled))
-             (define kw-args
-               (import-post-unmarshall! kw-args-marshalled))
+             (define kw-vals
+               (import-post-unmarshall! kw-vals-marshalled))
              (define target (unmarshall-to-desc to-desc))
              (define-values (kws kw-vals)
-               (kws-hasheq->kws-lists kw-args))
+               (kws-hasheq->kws-lists kw-vals))
              (define sent-promise
                (machine-vat-connector
                 'run
