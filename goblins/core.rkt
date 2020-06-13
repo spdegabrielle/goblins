@@ -581,6 +581,24 @@
 (struct mactor:broken mactor
   (problem))
 
+(define (mactor:unresolved-add-listener mactor new-listener)
+  (match mactor
+    [(mactor:naive resolver-unsealer resolver-tm? listeners
+                   waiting-messages)
+     (mactor:naive resolver-unsealer resolver-tm?
+                   (cons new-listener listeners)
+                   waiting-messages)]
+    [(mactor:question resolver-unsealer resolver-tm? listeners
+                      captp-connector question-finder)
+     (mactor:question resolver-unsealer resolver-tm?
+                      (cons new-listener listeners)
+                      captp-connector question-finder)]
+    [(mactor:closer resolver-unsealer resolver-tm? listeners
+                    point-to history waiting-messages)
+     (mactor:closer resolver-unsealer resolver-tm?
+                    (cons new-listener listeners)
+                    point-to history waiting-messages)]))
+
 ;; Helper for syscaller's fulfill-promise and break-promise methods
 (define (unseal-mactor-resolution mactor sealed-resolution)
   (define resolver-tm?
@@ -901,6 +919,13 @@
   (define (get-vat-connector)
     vat-connector)
 
+  (define (actormap-ref-or-die to-refr)
+    (define mactor
+      (actormap-ref actormap to-refr #f))
+    (unless mactor
+      (error 'no-such-actor "no actor with this id in this vat: ~a" to-refr))
+    to-refr)
+
   ;; call actor's handler
   (define _call
     (make-keyword-procedure
@@ -979,9 +1004,7 @@
     (call/ec
      (lambda (return-early)
        (define orig-mactor
-         (actormap-ref actormap promise-id #f))
-       (unless orig-mactor
-         (error 'no-such-actor "no actor with this id in this vat: ~a" promise-id))
+         (actormap-ref-or-die to-refr))
        (unless (mactor:unresolved? orig-mactor)
          (error 'resolving-resolved
                 "Attempt to resolve resolved actor: ~a" promise-id))
@@ -1107,37 +1130,57 @@
   ;; This is the bulk of what's called and handled by actormap-turn-message.
   ;; (As opposed to actormap-turn*, which only supports calling, this also
   ;; handles any toplevel invocation of an actor, probably via message send.)
-  (define (_handle-message msg)
+  (define (_handle-message msg display-or-log-error)
     (match-define (message to-refr resolve-me kws kw-vals args)
       msg)
     (unless (near-refr? to-refr)
       (error 'not-a-near-refr "Not a near refr: ~a" to-refr))
 
     (define orig-mactor
-      (actormap-ref actormap to-refr #f))
-    (unless orig-mactor
-      (error 'no-such-actor "no actor with this id in this vat: ~a" to-refr))
+      (actormap-ref-or-die to-refr))
+
+    ;; Prevent someone trying to throw this vat into an infinite loop
+    (when (eq? to-refr resolve-me)
+      (error 'same-recipient-and-resolver
+             "Recipient and resolver are the same: ~a" to-refr))
+
+    (define (call-with-resolution proc)
+      (with-handlers ([exn:fail?
+                       (lambda (err)
+                         (when display-or-log-error
+                           (display-or-log-error err #:pre-delivery? #f))
+                         (when resolve-me
+                           (_<-np resolve-me 'break err))
+                         `#(fail ,err))])
+        (define call-result
+          (proc))
+        (when resolve-me
+          (_<-np resolve-me 'fulfill call-result))
+        `#(success ,call-result)))
 
     (match orig-mactor
       ;; If it's callable, we just use the call handler, because
       ;; that's effectively the same code we'd be running anyway.
+      ;; However, we do want to handle the resolution.
       [(or (? mactor:object?)
            (? mactor:encased?))
-       (keyword-apply _call kws kw-vals to-refr args)]
+       (call-with-resolution
+        (λ () (keyword-apply _call kws kw-vals to-refr args)))]
       [(mactor:local-link point-to)
-       (keyword-apply _call kws kw-vals point-to args)]
+       (call-with-resolution
+        (λ () (keyword-apply _call kws kw-vals point-to args)))]
       [(mactor:broken problem)
-       (raise problem)]
+       (_<-np resolve-me 'break problem)
+       `#(fail ,problem)]
       [(mactor:remote-link point-to)
-       ;; Pass along the message
-       ;; Mild optimization: only produce a promise if we have a resolver
-       ;; TODO: This could be more optimal if handle-message itself resolved
-       ;;   resolvers?  That is probably the "more correct thing to do"
-       ;;   anyway
-       (keyword-apply (if resolve-me
-                          _<-
-                          _<-np)
-                      kws kw-args point-to args)]
+       (call-with-resolution
+        (λ ()
+          ;; Pass along the message
+          ;; Mild optimization: only produce a promise if we have a resolver
+          (keyword-apply (if resolve-me
+                             _<-
+                             _<-np)
+                         kws kw-args point-to args)))]
       ;; Messages sent to a promise that is "closer" are a kind of
       ;; intermediate state; we build a queue.
       [(mactor:closer resolver-unsealer resolver-tm?
@@ -1149,52 +1192,60 @@
          ;; If we're pointing at another near promise then we recurse
          ;; to _handle-messages with the next promise...
          [(? local-promise-refr?)
-          (_handle-message (message point-to resolve-me kws kw-vals args))]
+          ;; (We don't use call-with-resolution because the next one will!)
+          (_handle-message (message point-to resolve-me kws kw-vals args)
+                           display-or-log-error)]
          ;; But if it's a remote promise then we queue it in the waiting
          ;; messages because we prefer to have messages "swim as close
          ;; as possible to the machine barrier where possible", with
          ;; the exception of questions/answers which always cross over
          ;; (see mactor:question handling later in this procedure)
          [(? remote-promise-refr?)
-          ;; TODO: This isn't right!  We need to move the resolver logic
-          ;;   into here.
+          ;; Since we're queueing to send the message until it resolves
+          ;; we don't resolve the problem here... hence we don't
+          ;; use call-with-resolution here either.
           (actormap-set! actormap to-refr
                          (mactor:closer resolver-unsealer resolver-tm?
                                         listeners
                                         captp-connector question-finder
                                         point-to
-                                        (cons msg waiting-messages)))])]
+                                        (cons msg waiting-messages)))
+          ;; But we should return that this was deferred
+          '#(deferred #f)])]
       ;; Similar to the above w/ remote promises, except that we really
       ;; just don't know where things go *at all* yet, so no swimming
-      ;; occurs
+      ;; occurs.
       [(mactor:naive resolver-unsealer resolver-tm?
                      listeners waiting-messages)
        (actormap-set! actormap to-refr
                       (mactor:naive resolver-unsealer resolver-tm?
                                     listeners
-                                    (cons msg waiting-messages)))]
+                                    (cons msg waiting-messages)))
+       '#(deferred #f)]
       ;; Questions should forward their messages to the captp thread
       ;; to deal with using the relevant question-finder.
       ;; In a sense, this is a followup question to an existing
       ;; question.
       [(? mactor:question-promise?)
-       (define to-question-finder
-         (mactor:question-promise-question-finder mactor))
-       (define captp-connector
-         (mactor:question-promise-captp-connector mactor))
-       (define followup-question-finder
-         (captp-connector 'new-question-finder))
-       (define-values (followup-question-promise followup-question-resolver)
-         (_spawn-promise-values #:question-finder
-                                followup-question-finder
-                                #:captp-connector
-                                captp-connector))
-       (captp-connector
-        'handle-message
-        (question-message to-question-finder followup-question-resolver
-                          kws kw-vals args
-                          followup-question-finder))
-       followup-question-promise]))
+       (call-with-resolution
+        (λ ()
+          (define to-question-finder
+            (mactor:question-promise-question-finder mactor))
+          (define captp-connector
+            (mactor:question-promise-captp-connector mactor))
+          (define followup-question-finder
+            (captp-connector 'new-question-finder))
+          (define-values (followup-question-promise followup-question-resolver)
+            (_spawn-promise-values #:question-finder
+                                   followup-question-finder
+                                   #:captp-connector
+                                   captp-connector))
+          (captp-connector
+           'handle-message
+           (question-message to-question-finder followup-question-resolver
+                             kws kw-vals args
+                             followup-question-finder))
+          followup-question-promise))]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args
@@ -1290,13 +1341,13 @@
       (handle-resolution on-broken 'break))
 
     (match id-refr
-      [(? local-refr?)
-       (define-values (subscribe-refr mactor)
-         (actormap-symlink-ref actormap id-refr))
+      [(? near-refr?)
+       (define mactor
+         (actormap-ref-or-die to-refr))
 
        (match mactor
          ;; This object is a local promise, so we should handle it.
-         [(mactor:promise listeners r-unsealer r-tm?)
+         [(? mactor:eventual?)
           ;; The purpose of this listener is that the promise
           ;; *hasn't resolved yet*.  Because of that we need to
           ;; queue something to happen *once* it resolves.
@@ -1315,21 +1366,24 @@
             (_spawn ^on-listener '() '() '()))
           ;; Set a new version of the local-promise with this
           ;; object as
-          (define new-listeners
-            (cons on-listener listeners))
           (actormap-set! actormap id-refr
-                         (mactor:promise new-listeners
-                                               r-unsealer r-tm?))]
+                         (mactor:unresolved-add-listener mactor
+                                                         on-listener))]
          [(? mactor:broken? mactor)
           (handle-broken (mactor:broken-problem mactor))]
          [(? mactor:encased? mactor)
           (handle-fulfilled (mactor:encased-val mactor))]
          [(? mactor:object? mactor)
-          (handle-fulfilled subscribe-refr)]
-         ;; This involves invoking a vat-level method of the remote
-         ;; machine, right?
-         #;[(? mactor:remote-promise? mactor)
-            'TODO])]
+          (handle-fulfilled subscribe-refr)])]
+
+      ;; TODO: TODO: TODO: seriously implmeent the following two!!
+
+      ;; At this point it would be a far refr
+      [(? local-refr? far-refr)
+       (error 'gotta-implement-far-refrs-seriously)]
+
+      [(? remote-refr?)
+       (error 'gotta-implement-remote-refrs-seriously)]
 
       ;; TODO: sturdy refr support goes here!
       ;; TODO: Or maybe actually not because we might "require enlivening"
@@ -1472,6 +1526,14 @@
                        to-refr kws kw-args args))
      returned-val)))
 
+(define (simple-display-error err #:pre-delivery? pre-delivery?)
+  (displayln (if pre-delivery?
+                 ";; === Before even being able to handle message: ==="
+                 ";; === While attempting to handle message: ===")
+             (current-error-port))
+  ((error-display-handler) (exn-message err) err))
+
+
 ;; TODO: We might want to return one of the following:
 ;;   (values ('call-success val) ('resolve-success val)
 ;;           actormap to-near to-far)
@@ -1481,46 +1543,27 @@
 ;;           actormap to-near to-far)
 ;; Mix and match the fail/success
 (define (actormap-turn-message actormap msg
-                               #:display-errors? [display-errors? #t])
+                               #:display-or-log-error
+                               [display-or-log-error simple-display-error])
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
   (call-with-fresh-syscaller
    (make-transactormap actormap)
    (lambda (sys get-sys-internals)
-     (define call-result #f)
-     (define result-val (void))
-     (with-handlers ([exn:fail?
-                      (lambda (err)
-                        (when display-errors?
-                          (displayln ";; === While attempting to handle message: ==="
-                                     (current-error-port))
-                          ;; TODO: Display the message here
-                          ((error-display-handler) (exn-message err) err))
-                        (set! call-result
-                              `#(fail ,err)))])
-       (set! result-val
-             (sys 'handle-message msg))
-       (set! call-result
-             `#(success ,result-val)))
+     (define call-result
+       (with-handlers ([exn:fail?
+                        (lambda (err)
+                          ;; TODO: Maybe make clear that this is even more
+                          ;;   fundamental error?  Note that the resolver might
+                          ;;   not even be resolved.  Goofy approach to that
+                          ;;   for now...
+                          (when display-or-log-error
+                            (display-or-log-error err #:pre-delivery? #t))
+                          `#(fail ,err))])
+         (sys 'handle-message display-or-log-error)))
 
-     (define resolve-me
-       (message-resolve-me msg))
      (match (get-sys-internals)
        [(list new-actormap to-near to-far)
-        (when resolve-me
-          (define resolve-message
-            (match call-result
-              [(vector 'success val)
-               (message resolve-me #f '() '() (list 'fulfill val))]
-              [(vector 'fail err)
-               (message resolve-me #f '() '() (list 'break err))]))
-          (define resolve-me-in-same-vat?
-            (eq? (local-refr-vat-connector resolve-me)
-                 (actormap-vat-connector actormap)))
-          (if resolve-me-in-same-vat?
-              (set! to-near (cons resolve-message to-near))
-              (set! to-far (cons resolve-message to-far))))
-        ;; TODO: Isn't result-val redundant?  It's in the call-result...
         (values call-result new-actormap to-near to-far)]))))
 
 ;; The following two are utilities for when you want to check
