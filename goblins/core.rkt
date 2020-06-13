@@ -592,11 +592,6 @@
     (error "Resolution sealed with wrong trademark!"))
   (resolver-unsealer sealed-resolution))
 
-;; Presumes this is a mactor already
-(define (callable-mactor? mactor)
-  (or (mactor:object? mactor)
-      (mactor:encased? mactor)))
-
 (define (near-refr? refr)
   ((current-syscaller) 'near-refr? refr))
 (define (far-refr? refr)
@@ -1108,75 +1103,98 @@
       [#f (error "no actor with this id")]
       [_ (error "can only resolve eventual references")]))
 
+
+  ;; This is the bulk of what's called and handled by actormap-turn-message.
+  ;; (As opposed to actormap-turn*, which only supports calling, this also
+  ;; handles any toplevel invocation of an actor, probably via message send.)
   (define (_handle-message msg)
     (match-define (message to-refr resolve-me kws kw-vals args)
       msg)
     (unless (near-refr? to-refr)
       (error 'not-a-near-refr "Not a near refr: ~a" to-refr))
 
-    (define-values (update-refr mactor)
-      (actormap-symlink-ref actormap to-refr))
+    (define orig-mactor
+      (actormap-ref actormap to-refr #f))
+    (unless orig-mactor
+      (error 'no-such-actor "no actor with this id in this vat: ~a" to-refr))
 
-    (match update-refr
-      [(? local-refr?)
-       (match mactor
-         ;; If it's callable, we just use the call handler, because
-         ;; that's effectively the same code we'd be running anyway.
-         [(? callable-mactor?)
-          (keyword-apply _call kws kw-vals to-refr args)]
-
-         ;; A question is a special kind of promise, so we match for it
-         ;; before the more general promise type below.  Since we want
-         ;; promise pipelining to work correctly we send things here.
-         ;; In a sense, this is a followup question to an existing
-         ;; question.
-         [(? mactor:question-promise?)
-          (define to-question-finder
-            (mactor:question-promise-question-finder mactor))
-          (define captp-connector
-            (mactor:question-promise-captp-connector mactor))
-          (define followup-question-finder
-            (captp-connector 'new-question-finder))
-          (define-values (followup-question-promise followup-question-resolver)
-            (_spawn-promise-values #:question-finder
-                                   followup-question-finder
-                                   #:captp-connector
-                                   captp-connector))
-          (captp-connector
-           'handle-message
-           (question-message to-question-finder followup-question-resolver
-                             kws kw-vals args
-                             followup-question-finder))
-          followup-question-promise]
-
-         ;; If it's a promise, that means we're queuing up something to
-         ;; run *once this promise is resolved*.
-         [(? mactor:promise?)
-          ;; Create new actor that is subscribed to this
-          ;; TODO: Really important!  We need to detect a cycle to prevent
-          ;;   going in loops on accident.
-          ;;   I'm not actually sure how to do that yet...
-          ;; TODO: We've got an unncecessary promise-to-a-promise
-          ;;   indirection via this method, which we could cut out
-          ;;   the middleman of I think?
-          (_on update-refr
-               (let ([promise-pipeline-helper
-                      (lambda (bcom)
-                        (lambda (send-to)
-                          (keyword-apply <- kws kw-vals send-to args)))])
-                 (_spawn promise-pipeline-helper '() '() '()))
-               ;; Wait, what will this do for us?  Wouldn't it
-               ;; just return another void?
-               #:promise? #t)]
-         ;; If it's broken, re-raise the problem.
-         ;; TODO: maybe re-raising isn't the right route?  Though I think
-         ;; it does work technically.  It's the easiest solution...
-         [(mactor:broken problem)
-          (raise problem)])]
-      [(? remote-refr?)
-       (when (eq? to-refr update-refr)
-         (error "Hit a cycle... we're in trouble"))
-       (keyword-apply _<- kws kw-vals update-refr args)]))
+    (match orig-mactor
+      ;; If it's callable, we just use the call handler, because
+      ;; that's effectively the same code we'd be running anyway.
+      [(or (? mactor:object?)
+           (? mactor:encased?))
+       (keyword-apply _call kws kw-vals to-refr args)]
+      [(mactor:local-link point-to)
+       (keyword-apply _call kws kw-vals point-to args)]
+      [(mactor:broken problem)
+       (raise problem)]
+      [(mactor:remote-link point-to)
+       ;; Pass along the message
+       ;; Mild optimization: only produce a promise if we have a resolver
+       ;; TODO: This could be more optimal if handle-message itself resolved
+       ;;   resolvers?  That is probably the "more correct thing to do"
+       ;;   anyway
+       (keyword-apply (if resolve-me
+                          _<-
+                          _<-np)
+                      kws kw-args point-to args)]
+      ;; Messages sent to a promise that is "closer" are a kind of
+      ;; intermediate state; we build a queue.
+      [(mactor:closer resolver-unsealer resolver-tm?
+                      listeners
+                      captp-connector question-finder
+                      point-to
+                      waiting-messages)
+       (match point-to
+         ;; If we're pointing at another near promise then we recurse
+         ;; to _handle-messages with the next promise...
+         [(? local-promise-refr?)
+          (_handle-message (message point-to resolve-me kws kw-vals args))]
+         ;; But if it's a remote promise then we queue it in the waiting
+         ;; messages because we prefer to have messages "swim as close
+         ;; as possible to the machine barrier where possible", with
+         ;; the exception of questions/answers which always cross over
+         ;; (see mactor:question handling later in this procedure)
+         [(? remote-promise-refr?)
+          ;; TODO: This isn't right!  We need to move the resolver logic
+          ;;   into here.
+          (actormap-set! actormap to-refr
+                         (mactor:closer resolver-unsealer resolver-tm?
+                                        listeners
+                                        captp-connector question-finder
+                                        point-to
+                                        (cons msg waiting-messages)))])]
+      ;; Similar to the above w/ remote promises, except that we really
+      ;; just don't know where things go *at all* yet, so no swimming
+      ;; occurs
+      [(mactor:naive resolver-unsealer resolver-tm?
+                     listeners waiting-messages)
+       (actormap-set! actormap to-refr
+                      (mactor:naive resolver-unsealer resolver-tm?
+                                    listeners
+                                    (cons msg waiting-messages)))]
+      ;; Questions should forward their messages to the captp thread
+      ;; to deal with using the relevant question-finder.
+      ;; In a sense, this is a followup question to an existing
+      ;; question.
+      [(? mactor:question-promise?)
+       (define to-question-finder
+         (mactor:question-promise-question-finder mactor))
+       (define captp-connector
+         (mactor:question-promise-captp-connector mactor))
+       (define followup-question-finder
+         (captp-connector 'new-question-finder))
+       (define-values (followup-question-promise followup-question-resolver)
+         (_spawn-promise-values #:question-finder
+                                followup-question-finder
+                                #:captp-connector
+                                captp-connector))
+       (captp-connector
+        'handle-message
+        (question-message to-question-finder followup-question-resolver
+                          kws kw-vals args
+                          followup-question-finder))
+       followup-question-promise]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-args to-refr resolve-me args
@@ -1474,7 +1492,7 @@
      (with-handlers ([exn:fail?
                       (lambda (err)
                         (when display-errors?
-                          (displayln ";; === While attempting to send message: ==="
+                          (displayln ";; === While attempting to handle message: ==="
                                      (current-error-port))
                           ;; TODO: Display the message here
                           ((error-display-handler) (exn-message err) err))
