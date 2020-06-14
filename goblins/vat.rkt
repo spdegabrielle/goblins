@@ -473,4 +473,33 @@
     (test-equal?
      "Cross-vat promise pipelining involving symlink resolution"
      what-i-got
-     "*Vroom vroom!*  You drive your blue Fork Explorist!")))
+     "*Vroom vroom!*  You drive your blue Fork Explorist!"))
+
+  (define (try-remote-on-promise . resolve-args)
+    (define fulfilled-val #f)
+    (define broken-val #f)
+    (define regardless-ran? #f)
+    (match-define (cons a-promise a-resolver)
+      (a-vat 'run spawn-promise-cons))
+    (b-vat 'run
+           (lambda ()
+             (on a-promise
+                 (lambda (val)
+                   (set! fulfilled-val val))
+                 #:catch
+                 (lambda (err)
+                   (set! broken-val err))
+                 #:regardless
+                 (lambda ()
+                   (set! regardless-ran? #t)))))
+    (apply a-vat 'call a-resolver resolve-args)
+    (sleep 0.05)
+    (list fulfilled-val broken-val regardless-ran?))
+  (test-equal?
+   "On subscription w/ fulfillment to promise on another vat"
+   (try-remote-on-promise 'fulfill 'yay)
+   '(yay #f #t))
+  (test-equal?
+   "On subscription w/ breakage to promise on another vat"
+   (try-remote-on-promise 'break 'oh-no)
+   '(#f oh-no #t)))
