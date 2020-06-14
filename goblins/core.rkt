@@ -1094,15 +1094,10 @@
             ;; explicitly using the on-fulfilled/on-broken things
             (define-values (new-resolver-sealer new-resolver-unsealer new-resolver-tm?)
               (make-sealer-triplet 'fulfill-promise))
+            (define new-resolver
+              (_spawn ^resolver '() '() (list promise-id new-resolver-sealer)))
             ;; Now subscribe to the promise...
-            (on resolve-to-val
-                (lambda (val)
-                  (define sys (get-syscaller-or-die))
-                  (sys 'fulfill-promise promise-id (new-resolver-sealer val)))
-                #:catch
-                (lambda (err)
-                  (define sys (get-syscaller-or-die))
-                  (sys 'break-promise promise-id (new-resolver-sealer err))))
+            (_listen resolve-to-val new-resolver)
             ;; Now we become "closer" to this promise
             (mactor:closer new-resolver-unsealer new-resolver-tm?
                            listeners
@@ -1896,6 +1891,24 @@
 ;;; Promises
 ;;; ========
 
+;; I guess the alternatives to responding with false on
+;; attempting to re-resolve are:
+;;  - throw an error
+;;  - just return void regardless
+(define already-resolved
+  (lambda _ #f))
+
+(define (^resolver bcom promise sealer)
+  (match-lambda*
+    [(list 'fulfill val)
+     (define sys (get-syscaller-or-die))
+     (sys 'fulfill-promise promise (sealer val))
+     (bcom already-resolved)]
+    [(list 'break problem)
+     (define sys (get-syscaller-or-die))
+     (sys 'break-promise promise (sealer problem))
+     (bcom already-resolved)]))
+
 (define (_spawn-promise-values #:question-finder
                                [question-finder #f]
                                #:captp-connector
@@ -1913,24 +1926,8 @@
                                 captp-connector
                                 question-finder))
              (mactor:naive unsealer tm? '() '()))))
-  ;; I guess the alternatives to responding with false on
-  ;; attempting to re-resolve are:
-  ;;  - throw an error
-  ;;  - just return void regardless
-  (define already-resolved
-    (lambda _ #f))
-  (define (^resolver bcom)
-    (match-lambda*
-      [(list 'fulfill val)
-       (define sys (get-syscaller-or-die))
-       (sys 'fulfill-promise promise (sealer val))
-       (bcom already-resolved)]
-      [(list 'break problem)
-       (define sys (get-syscaller-or-die))
-       (sys 'break-promise promise (sealer problem))
-       (bcom already-resolved)]))
   (define resolver
-    (spawn ^resolver))
+    (spawn ^resolver promise sealer))
   (values promise resolver))
 
 (module+ for-captp
