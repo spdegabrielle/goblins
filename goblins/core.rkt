@@ -1067,8 +1067,8 @@
                 ;;   breakage?  Presumably... so do it here instead...?
                 (connector 'partition-unsealer-tm-cons)))
 
-            (mactor:remote-link resolve-to-val
-                                new-resolver-unsealer new-resolver-tm?)]
+            (mactor:remote-link new-resolver-unsealer new-resolver-tm?
+                                resolve-to-val)]
            [(or (? local-promise-refr?)
                 (? remote-promise-refr?))
             (define new-history
