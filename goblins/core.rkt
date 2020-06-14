@@ -1046,6 +1046,15 @@
        (define next-mactor-state
          (match resolve-to-val
            [(? local-object-refr?)
+            (when (eq? resolve-to-val promise-id)
+              (return-early
+               ;; We want to break this because it should be explicitly clear
+               ;; to everyone that the promise was broken.
+               (break-promise promise-id
+                              ;; TODO: we need some sort of error type we do
+                              ;;   allow to explicitly be shared, this one is a
+                              ;;   reasonable candidate
+                              'cycle-in-promise-resolution)))
             (mactor:local-link resolve-to-val)]
            [(? remote-object-refr?)
             ;; Since the captp connection is the one that might break this,
