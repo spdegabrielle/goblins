@@ -316,6 +316,8 @@
 
   ;; TODO: Super, super hacky.  It does work for now though...
   (define (_handle-listen-request on-refr listener)
+    ;; TODO: this stops the world since it uses _call which is not ok.
+    ;; Fix this by making a cmd-listen!!
     (_run (λ ()
             (unless (near-refr? on-refr)
               (error 'not-a-near-refr
