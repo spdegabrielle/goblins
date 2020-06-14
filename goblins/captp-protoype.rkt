@@ -416,7 +416,7 @@
           (tear-it-down))
 
         (define (handle-captp-incoming msg)
-          (match (pk 'captp-incoming-msg msg)
+          (match msg
             [(op:bootstrap answer-pos resolve-me-desc)
              (define-values (answer-promise answer-resolver)
                (install-answer! answer-pos resolve-me-desc))
@@ -684,7 +684,7 @@
   ;; Now we want to experiment with using the bootstrap actor like it was a
   ;; normal bootstrap actor... ie, for (proto-)sturdyref lookup across the wire.
   (define ((^greeter bcom my-name) your-name)
-    (pk 'greeter-sez (format "<~a> Hello ~a!" my-name your-name)))
+    (format "<~a> Hello ~a!" my-name your-name))
   (define terrance
     (test1-vat 'spawn ^greeter "Terrance"))
   (define trisha
