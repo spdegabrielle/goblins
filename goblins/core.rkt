@@ -1012,9 +1012,6 @@
        (define resolve-to-val
          (unseal-mactor-resolution orig-mactor sealed-val))
 
-       (define listeners
-         (mactor:unresolved-listeners orig-mactor))
-
        (define orig-waiting-messages
          (match orig-mactor
            [(? mactor:naive?)
@@ -1100,7 +1097,7 @@
             (_listen resolve-to-val new-resolver)
             ;; Now we become "closer" to this promise
             (mactor:closer new-resolver-unsealer new-resolver-tm?
-                           listeners
+                           '()  ; new listeners is empty because we informed them
                            resolve-to-val new-history
                            new-waiting-messages)]
            ;; anything else is an encased value
@@ -1110,10 +1107,9 @@
        (actormap-set! actormap promise-id
                       next-mactor-state)
 
-       ;; Resolve listeners, if appropriate
-       (unless (mactor:unresolved? next-mactor-state)
-         (for ([listener listeners])
-           (<-np listener 'fulfill resolve-to-val))))))
+       ;; Resolve listeners
+       (for ([listener (mactor:unresolved-listeners orig-mactor)])
+         (<-np listener 'fulfill resolve-to-val)))))
 
   ;; TODO: Add support for broken-because-of-network-partition support
   ;;   even for mactor:remote-link
@@ -2167,4 +2163,7 @@
   (test-equal?
    "listen works with a broken promise"
    (try-out-listen 'break 'oh-no)
-   '(#f (broken oh-no))))
+   '(#f (broken oh-no)))
+
+
+  )

@@ -11,6 +11,7 @@
          "vat.rkt"
          "actor-lib/methods.rkt"
          "utils/simple-sealers.rkt"
+         "errors.rkt"
          syrup)
 
 (require pk)
@@ -69,6 +70,10 @@
   (reason)
   marshall::op:abort unmarshall::op:abort)
 
+(define-recordable-struct op:listen
+  (to-desc listener-desc)
+  marshall::op:listen unmarshall::op:listen)
+
 (define-recordable-struct desc:import-object
   (pos)
   marshall::desc:import-object unmarshall::desc:import-object)
@@ -83,6 +88,10 @@
      (desc:import-object-pos import-desc)]
     [(? desc:import-promise?)
      (desc:import-promise-pos import-desc)]))
+
+(define (desc:import? obj)
+  (or (desc:import-object? obj)
+      (desc:import-promise? obj)))
 
 ;; Whether it's an import or export doesn't really matter as much to
 ;; the entity exporting as it does to the entity importing
@@ -103,6 +112,7 @@
         marshall::op:deliver-only
         marshall::op:deliver
         marshall::op:abort
+        marshall::op:listen
         marshall::desc:import-object
         marshall::desc:import-promise
         marshall::desc:export
@@ -113,13 +123,17 @@
         unmarshall::op:deliver-only
         unmarshall::op:deliver
         unmarshall::op:abort
+        unmarshall::op:listen
         unmarshall::desc:import-object
         unmarshall::desc:import-promise
         unmarshall::desc:export
         unmarshall::desc:answer))
 
 ;; Internal commands from the vat connector
-(struct cmd-send-message (msg))
+(struct cmd-send-message (msg)
+  #:transparent)
+(struct cmd-send-listen (to-refr listener-refr)
+  #:transparent)
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
@@ -202,9 +216,14 @@
   (define (_partition-unsealer-tm-cons)
     (cons partition-unseal partition-tm?))
 
+  (define (_listen-request to-refr listen-refr)
+    (async-channel-put internal-ch
+                       (cmd-send-listen to-refr listen-refr)))
+
   (define-captp-dispatcher captp-connector
     [handle-message _handle-message]
     [new-question-finder _new-question-finder]
+    [listen _listen-request]
     [partition-unsealer-tm-cons _partition-unsealer-tm-cons])
 
   (syscaller-free-thread
@@ -305,18 +324,18 @@
      ;; general argument marshall/unmarshall for import/export
 
      ;; TODO: need to handle lists/dotted-lists/vectors
-     (define (export-pre-marshall! obj)
+     (define (outgoing-pre-marshall! obj)
        (match obj
          [(? list?)
-          (map export-pre-marshall! obj)]
+          (map outgoing-pre-marshall! obj)]
          [(? hash?)
           (for/fold ([ht #hash()])
                     ([(key val) obj])
-            (hash-set ht (export-pre-marshall! key)
-                      (export-pre-marshall! val)))]
+            (hash-set ht (outgoing-pre-marshall! key)
+                      (outgoing-pre-marshall! val)))]
          [(? set?)
           (for/set ([x obj])
-            (export-pre-marshall! x))]
+            (outgoing-pre-marshall! x))]
          [(? local-promise?)
           (desc:import-promise (maybe-install-export! obj))]
          [(? local-object?)
@@ -330,24 +349,29 @@
              (desc:export (pos-unseal (remote-refr-sealed-pos obj)))]
             [else
              (error 'handoffs-not-supported-yet)])]
+         ;; TODO: Supply more machine-crossing exception types here
+         [(? exn:fail?)
+          (record* 'exn:fail:mystery)]
          [_ obj]))
 
-     (define (import-post-unmarshall! obj)
+     (define (incoming-post-unmarshall! obj)
        (match obj
          [(? list?)
-          (map import-post-unmarshall! obj)]
+          (map incoming-post-unmarshall! obj)]
          [(? hash?)
           (for/fold ([ht #hash()])
                     ([(key val) obj])
-            (hash-set ht (import-post-unmarshall! key)
-                      (import-post-unmarshall! val)))]
+            (hash-set ht (incoming-post-unmarshall! key)
+                      (incoming-post-unmarshall! val)))]
          [(? set?)
           (for/set ([x obj])
-            (import-post-unmarshall! x))]
+            (incoming-post-unmarshall! x))]
          [(or (? desc:import-promise?) (? desc:import-object?))
           (maybe-install-import! obj)]
          [(desc:export pos)
           (hash-ref exports-pos2val pos)]
+         [(record 'exn:fail:mystery '())
+          (make-mystery-fail)]
          [_ obj]))
 
      (define (unmarshall-to-desc to-desc)
@@ -417,7 +441,7 @@
 
         (define (handle-captp-incoming msg)
           (match msg
-            [(op:bootstrap answer-pos resolve-me-desc)
+            [(op:bootstrap (? integer? answer-pos) resolve-me-desc)
              (define-values (answer-promise answer-resolver)
                (install-answer! answer-pos resolve-me-desc))
 
@@ -432,9 +456,9 @@
                               kw-args-marshalled)
              ;; TODO: support distinction between method sends and procedure sends
              (define args
-               (import-post-unmarshall! args-marshalled))
+               (incoming-post-unmarshall! args-marshalled))
              (define kw-args
-               (import-post-unmarshall! kw-args-marshalled))
+               (incoming-post-unmarshall! kw-args-marshalled))
              (define target (unmarshall-to-desc to-desc))
              (define-values (kws kw-vals)
                (kws-hasheq->kws-lists kw-args))
@@ -452,9 +476,9 @@
 
              ;; TODO: support distinction between method sends and procedure sends
              (define args
-               (import-post-unmarshall! args-marshalled))
+               (incoming-post-unmarshall! args-marshalled))
              (define kw-args
-               (import-post-unmarshall! kw-args-marshalled))
+               (incoming-post-unmarshall! kw-args-marshalled))
              (define target (unmarshall-to-desc to-desc))
              (define-values (kws kw-vals)
                (kws-hasheq->kws-lists kw-args))
@@ -465,12 +489,23 @@
                   (keyword-apply <- kws kw-vals target args))))
              (machine-vat-connector
               'call answer-resolver 'fulfill sent-promise)]
+
+            [(op:listen (? desc:export? to-desc)
+                        (? desc:import? listener-desc))
+             (define to-refr
+               (unmarshall-to-desc to-desc))
+             (define listener
+               (incoming-post-unmarshall! listener-desc))
+             (machine-vat-connector
+              'run
+              (λ ()
+                (listen to-refr listener)
+                (void)))]
             [(op:abort reason)
              'TODO]
             
             [other-message
-             (error 'unknown-message-type
-                    "~a" other-message)]))
+             (error 'invalid-message "~a" other-message)]))
 
         (define (handle-internal cmd)
           (match cmd
@@ -488,17 +523,22 @@
                                #;(desc:import (maybe-install-export! to))
                                #f ;; TODO: support methods
                                ;; TODO: correctly marshall everything here
-                               (export-pre-marshall! args)
-                               (export-pre-marshall!
+                               (outgoing-pre-marshall! args)
+                               (outgoing-pre-marshall!
                                 (kws-lists->kws-hasheq kws kw-vals))
                                answer-pos
                                (marshall-local-refr! resolve-me))
                    (op:deliver-only (marshall-to to)
                                     #f ;; TODO: support methods
-                                    (export-pre-marshall! args)
-                                    (export-pre-marshall!
+                                    (outgoing-pre-marshall! args)
+                                    (outgoing-pre-marshall!
                                      (kws-lists->kws-hasheq kws kw-vals)))))
-             (send-to-remote deliver-msg)]))
+             (send-to-remote deliver-msg)]
+            [(cmd-send-listen (? remote-refr? to-refr) (? local-refr? listener-refr))
+             (define listen-msg
+               (op:listen (marshall-to to-refr)
+                          (outgoing-pre-marshall! listener-refr)))
+             (send-to-remote listen-msg)]))
 
         (define (handle-from-machine-representative msg)
           (match msg
@@ -522,7 +562,7 @@
                                       captp-connector))
              (define bootstrap-msg
                (op:bootstrap (hash-ref questions this-question-finder)
-                             (export-pre-marshall! bootstrap-resolver)))
+                             (outgoing-pre-marshall! bootstrap-resolver)))
              (send-to-remote bootstrap-msg)
              bootstrap-promise)))
         (define bootstrap-promise
@@ -751,11 +791,12 @@
                (lambda (bob)
                  (on (<- bob "Alyssa")
                      (lambda (bob-sez)
-                       (async-channel-put bob-greeter1-sez-ch bob-sez)))))))
+                       (async-channel-put bob-greeter1-sez-ch
+                                          `(fulfilled ,bob-sez))))))))
   (test-equal?
    "Non-pipelined sends to bob work"
    (sync/timeout 0.2 bob-greeter1-sez-ch)
-   "<Bob> Hello Alyssa!")
+   '(fulfilled "<Bob> Hello Alyssa!"))
 
   (define bob-greeter2
     (b-vat 'spawn ^greeter "Bob"))
@@ -769,18 +810,43 @@
            (on (<- (<- a->b-bootstrap-vow 'fetch bob-greeter2-nonce)
                    "Alyssa")
                (lambda (bob-sez)
-                 (async-channel-put bob-greeter2-sez-ch bob-sez)))))
+                 (async-channel-put bob-greeter2-sez-ch
+                                    `(fulfilled ,bob-sez))))))
   (test-equal?
    "Pipelined sends to bob work"
    (sync/timeout 0.2 bob-greeter2-sez-ch)
-   "<Bob> Hello Alyssa!")
+   '(fulfilled "<Bob> Hello Alyssa!"))
 
   (define ((^broken-greeter bcom my-name) your-name)
     (error 'oh-no-i-broke "My name: ~a" my-name)
     (format "<~a> Hello ~a!" my-name your-name))
 
-
-
+  (define broken-bob-greeter
+    (b-vat 'spawn ^broken-greeter "Broken Bob"))
+  (define broken-bob-greeter-nonce
+    (b-vat 'call b-nonce-reg 'register broken-bob-greeter))
+  (define broken-bob-greeter-ch
+    (make-async-channel))
+  (a-vat 'run
+         (lambda ()
+           (on (<- (<- a->b-bootstrap-vow 'fetch broken-bob-greeter-nonce)
+                   "Alyssa")
+               (lambda (bob-sez)
+                 (async-channel-put broken-bob-greeter-ch
+                                    `(fulfilled ,bob-sez)))
+               #:catch
+               (lambda (err)
+                 (async-channel-put broken-bob-greeter-ch
+                                    `(broken ,err))))))
+  
+  (test-true
+   "Breakage correctly propagates across captp"
+   (match (sync/timeout 0.2 broken-bob-greeter-ch)
+     [(list 'broken problem)
+      #t]
+     [something-else
+      (pk 'something-else something-else)
+      #f]))
 
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
