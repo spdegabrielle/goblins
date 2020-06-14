@@ -1243,9 +1243,9 @@
        (call-with-resolution
         (λ ()
           (define to-question-finder
-            (mactor:question-question-finder mactor))
+            (mactor:question-question-finder orig-mactor))
           (define captp-connector
-            (mactor:question-captp-connector mactor))
+            (mactor:question-captp-connector orig-mactor))
           (define followup-question-finder
             (captp-connector 'new-question-finder))
           (define-values (followup-question-promise followup-question-resolver)
