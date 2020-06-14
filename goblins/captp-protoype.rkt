@@ -737,44 +737,47 @@
                          (vector 'get-bootstrap-promise return-ch))
       (channel-get return-ch)))
 
-  ;; Now let's spawn alice in vat A
-  (define alice1
-    (a-vat 'spawn ^greeter "Alice"))
+  ;; Now let's spawn bob in vat A
+  (define bob1
+    (b-vat 'spawn ^greeter "Bob"))
   ;; And get a nonce from A's registry
-  (define alice1-nonce
-    (a-vat 'call a-nonce-reg 'register alice1))
-  (define alice1-sez-ch
+  (define bob1-nonce
+    (b-vat 'call b-nonce-reg 'register bob1))
+  (define bob1-sez-ch
     (make-async-channel))
-  (b-vat 'run
+  (a-vat 'run
          (lambda ()
-           (on (<- b->a-bootstrap-vow 'fetch alice1-nonce)
-               (lambda (alice)
-                 (on (<- alice "Bobarillo")
-                     (lambda (alice-sez)
-                       (async-channel-put alice1-sez-ch alice-sez)))))))
+           (on (<- a->b-bootstrap-vow 'fetch bob1-nonce)
+               (lambda (bob)
+                 (on (<- bob "Alyssa")
+                     (lambda (bob-sez)
+                       (async-channel-put bob1-sez-ch bob-sez)))))))
   (test-equal?
-   "Non-pipelined sends to alice work"
-   (sync/timeout 0.2 alice1-sez-ch)
-   "<Alice> Hello Bobarillo!")
+   "Non-pipelined sends to bob work"
+   (sync/timeout 0.2 bob1-sez-ch)
+   "<Bob> Hello Alyssa!")
 
-  (define alice2
-    (a-vat 'spawn ^greeter "Alice"))
+  (define bob2
+    (b-vat 'spawn ^greeter "Bob"))
   ;; And get a nonce from A's registry
-  (define alice2-nonce
-    (a-vat 'call a-nonce-reg 'register alice2))
-  (define alice2-sez-ch
+  (define bob2-nonce
+    (b-vat 'call b-nonce-reg 'register bob2))
+  (define bob2-sez-ch
     (make-async-channel))
-  (b-vat 'run
+  (a-vat 'run
          (lambda ()
-           (on (<- (<- b->a-bootstrap-vow 'fetch alice2-nonce)
-                   "Bobarillo")
-               (lambda (alice-sez)
-                 (async-channel-put alice2-sez-ch alice-sez)))))
+           (on (<- (<- a->b-bootstrap-vow 'fetch bob2-nonce)
+                   "Alyssa")
+               (lambda (bob-sez)
+                 (async-channel-put bob2-sez-ch bob-sez)))))
   (test-equal?
-   "Pipelined sends to alice work"
-   (sync/timeout 0.2 alice2-sez-ch)
-   "<Alice> Hello Bobarillo!")
+   "Pipelined sends to bob work"
+   (sync/timeout 0.2 bob2-sez-ch)
+   "<Bob> Hello Alyssa!")
 
+  (define ((^broken-greeter bcom my-name) your-name)
+    (error 'oh-no-i-broke "My name: ~a" my-name)
+    (format "<~a> Hello ~a!" my-name your-name))
 
 
 
@@ -782,14 +785,14 @@
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
   ;;   (pk 'bawwwwk args))
-  ;; (define parrot (a-vat 'spawn ^parrot))
+  ;; (define parrot (b-vat 'spawn ^parrot))
 
   ;; ;; TODO: This apparently will need to register itself with the base
   ;; ;;   ^machine...
   ;; (define machine-representative->machine-thread-ch
   ;;   (make-machinetp-thread b->a-ip a->b-op
-  ;;                          a-vat
-  ;;                          alice))
+  ;;                          b-vat
+  ;;                          bob))
 
   ;; (syrup-write (op:deliver-only 0 #f '("George") #hasheq())
   ;;              b->a-op
