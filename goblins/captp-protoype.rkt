@@ -738,41 +738,41 @@
       (channel-get return-ch)))
 
   ;; Now let's spawn bob in vat A
-  (define bob1
+  (define bob-greeter1
     (b-vat 'spawn ^greeter "Bob"))
   ;; And get a nonce from A's registry
-  (define bob1-nonce
-    (b-vat 'call b-nonce-reg 'register bob1))
-  (define bob1-sez-ch
+  (define bob-greeter1-nonce
+    (b-vat 'call b-nonce-reg 'register bob-greeter1))
+  (define bob-greeter1-sez-ch
     (make-async-channel))
   (a-vat 'run
          (lambda ()
-           (on (<- a->b-bootstrap-vow 'fetch bob1-nonce)
+           (on (<- a->b-bootstrap-vow 'fetch bob-greeter1-nonce)
                (lambda (bob)
                  (on (<- bob "Alyssa")
                      (lambda (bob-sez)
-                       (async-channel-put bob1-sez-ch bob-sez)))))))
+                       (async-channel-put bob-greeter1-sez-ch bob-sez)))))))
   (test-equal?
    "Non-pipelined sends to bob work"
-   (sync/timeout 0.2 bob1-sez-ch)
+   (sync/timeout 0.2 bob-greeter1-sez-ch)
    "<Bob> Hello Alyssa!")
 
-  (define bob2
+  (define bob-greeter2
     (b-vat 'spawn ^greeter "Bob"))
   ;; And get a nonce from A's registry
-  (define bob2-nonce
-    (b-vat 'call b-nonce-reg 'register bob2))
-  (define bob2-sez-ch
+  (define bob-greeter2-nonce
+    (b-vat 'call b-nonce-reg 'register bob-greeter2))
+  (define bob-greeter2-sez-ch
     (make-async-channel))
   (a-vat 'run
          (lambda ()
-           (on (<- (<- a->b-bootstrap-vow 'fetch bob2-nonce)
+           (on (<- (<- a->b-bootstrap-vow 'fetch bob-greeter2-nonce)
                    "Alyssa")
                (lambda (bob-sez)
-                 (async-channel-put bob2-sez-ch bob-sez)))))
+                 (async-channel-put bob-greeter2-sez-ch bob-sez)))))
   (test-equal?
    "Pipelined sends to bob work"
-   (sync/timeout 0.2 bob2-sez-ch)
+   (sync/timeout 0.2 bob-greeter2-sez-ch)
    "<Bob> Hello Alyssa!")
 
   (define ((^broken-greeter bcom my-name) your-name)
