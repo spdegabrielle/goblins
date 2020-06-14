@@ -82,7 +82,7 @@
 
          define-spawned
 
-         on listen
+         on
          <-np <-
 
          spawn-proc spawn-const
@@ -93,10 +93,14 @@
 (module+ debug
   (provide whactormap-wht))
 
+(module+ listen
+  (provide listen))
+
 ;; meh...
 (module+ for-vats
   (provide local-refr-vat-connector)
-  (provide remote-refr-captp-connector))
+  (provide remote-refr-captp-connector)
+  (provide listen))
 
 ;;; Imports
 ;;; =======
@@ -1931,7 +1935,8 @@
            make-remote-object-refr
            make-remote-promise-refr
            remote-refr-captp-connector
-           remote-refr-sealed-pos))
+           remote-refr-sealed-pos
+           listen))
 
 (define (spawn-promise-values)
   (_spawn-promise-values))
