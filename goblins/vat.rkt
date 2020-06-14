@@ -315,14 +315,16 @@
     (force private-key))
 
   ;; TODO: Super, super hacky.  It does work for now though...
-  (define (_handle-listen-request on-refr listener)
+  (define (_handle-listen-request on-refr listener
+                                  #:wants-partial? [wants-partial? #f])
     ;; TODO: this stops the world since it uses _call which is not ok.
     ;; Fix this by making a cmd-listen!!
     (_run (λ ()
             (unless (near-refr? on-refr)
               (error 'not-a-near-refr
                      "Listen got called with a non-near refr: ~a" on-refr))
-            (listen on-refr listener))))
+            (listen on-refr listener
+                    #:wants-partial? wants-partial?))))
 
   (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
     (define id

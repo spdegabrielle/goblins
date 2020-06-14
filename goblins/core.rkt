@@ -585,22 +585,26 @@
 (struct mactor:broken mactor
   (problem))
 
-(define (mactor:unresolved-add-listener mactor new-listener)
+(struct listener-info (resolve-me wants-partial?))
+
+(define (mactor:unresolved-add-listener mactor new-listener wants-partial?)
+  (define new-listener-info
+    (listener-info new-listener wants-partial?))
   (match mactor
     [(mactor:naive resolver-unsealer resolver-tm? listeners
                    waiting-messages)
      (mactor:naive resolver-unsealer resolver-tm?
-                   (cons new-listener listeners)
+                   (cons new-listener-info listeners)
                    waiting-messages)]
     [(mactor:question resolver-unsealer resolver-tm? listeners
                       captp-connector question-finder)
      (mactor:question resolver-unsealer resolver-tm?
-                      (cons new-listener listeners)
+                      (cons new-listener-info listeners)
                       captp-connector question-finder)]
     [(mactor:closer resolver-unsealer resolver-tm? listeners
                     point-to history waiting-messages)
      (mactor:closer resolver-unsealer resolver-tm?
-                    (cons new-listener listeners)
+                    (cons new-listener-info listeners)
                     point-to history waiting-messages)]))
 
 ;; Helper for syscaller's fulfill-promise and break-promise methods
@@ -1016,9 +1020,6 @@
        (define resolve-to-val
          (unseal-mactor-resolution orig-mactor sealed-val))
 
-       (define listeners
-         (mactor:unresolved-listeners orig-mactor))
-
        (define orig-waiting-messages
          (match orig-mactor
            [(? mactor:naive?)
@@ -1046,6 +1047,9 @@
              ;; the queue!
              (begin (forward-messages)
                     '())))
+
+       (define orig-listeners
+         (mactor:unresolved-listeners orig-mactor))
 
        (define next-mactor-state
          (match resolve-to-val
@@ -1101,10 +1105,23 @@
             (define new-resolver
               (_spawn ^resolver '() '() (list promise-id new-resolver-sealer)))
             ;; Now subscribe to the promise...
-            (_listen resolve-to-val new-resolver)
+            (_listen resolve-to-val new-resolver #:wants-partial? #t)
+            ;; Now we want to both inform any listeners that are interested
+            ;; in partial information and scrub them out of the current
+            ;; listeners list.
+            (define new-listeners
+              (for/fold ([new-listeners '()]
+                         #:result (reverse new-listeners))
+                        ([listener-info orig-listeners])
+                (if (listener-info-wants-partial? listener-info)
+                    ;; resolve but drop out
+                    (begin (_<-np (listener-info-resolve-me listener-info)
+                                  'fulfill resolve-to-val)
+                           new-listeners)
+                    (cons listener-info new-listeners))))
             ;; Now we become "closer" to this promise
             (mactor:closer new-resolver-unsealer new-resolver-tm?
-                           listeners
+                           new-listeners
                            resolve-to-val new-history
                            new-waiting-messages)]
            ;; anything else is an encased value
@@ -1114,10 +1131,11 @@
        (actormap-set! actormap promise-id
                       next-mactor-state)
 
-       ;; Resolve listeners, if appropriate
+       ;; Resolve listeners, if appropriate (ie, if not mactor:closer)
        (unless (mactor:unresolved? next-mactor-state)
-         (for ([listener listeners])
-           (<-np listener 'fulfill resolve-to-val))))))
+         (for ([listener-info orig-listeners])
+           (<-np (listener-info-resolve-me listener-info)
+                 'fulfill resolve-to-val))))))
 
   ;; TODO: Add support for broken-because-of-network-partition support
   ;;   even for mactor:remote-link
@@ -1132,8 +1150,9 @@
        (actormap-set! actormap promise-id
                       (mactor:broken problem))
        ;; Inform all listeners of the resolution
-       (for ([listener (in-list (mactor:unresolved-listeners unresolved-mactor))])
-         (<-np listener 'break problem))]
+       (for ([listener-info (in-list (mactor:unresolved-listeners unresolved-mactor))])
+         (<-np (listener-info-resolve-me listener-info)
+               'break problem))]
       [(? mactor:remote-link?)
        (error "TODO: Implement breaking on captp disconnect!")]
       [#f (error "no actor with this id")]
@@ -1313,7 +1332,8 @@
                          #:answer-this-question question-finder)
           promise]))))
 
-  (define (_listen on-refr listener)
+  (define (_listen on-refr listener
+                   #:wants-partial? [wants-partial? #f])
     (match on-refr
       [(? near-refr?)
        (define mactor
@@ -1321,14 +1341,14 @@
        (match mactor
          [(? mactor:local-link?)
           (_listen (mactor:local-link-point-to mactor)
-                   listener)]
+                   listener #:wants-partial? wants-partial?)]
          ;; This object is a local promise, so we should handle it.
          [(? mactor:eventual?)
           ;; Set a new version of the local-promise with this
           ;; object as a listener
           (actormap-set! actormap on-refr
-                         (mactor:unresolved-add-listener mactor
-                                                         listener))]
+                         (mactor:unresolved-add-listener mactor listener
+                                                         wants-partial?))]
          ;; In the following cases we can resolve the listener immediately...
          [(? mactor:broken? mactor)
           (_<-np listener 'break (mactor:broken-problem mactor))]
@@ -1485,9 +1505,10 @@
        #:promise? promise?))
 
 ;; Listen to a promise, where listener
-(define (listen to-refr listener)
+(define (listen to-refr listener #:wants-partial? [wants-partial? #f])
   (define sys (get-syscaller-or-die))
-  (sys 'listen to-refr listener))
+  (sys 'listen to-refr listener
+       #:wants-partial? wants-partial?))
 
 
 ;;; actormap turning and utils

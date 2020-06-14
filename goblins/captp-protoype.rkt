@@ -71,7 +71,7 @@
   marshall::op:abort unmarshall::op:abort)
 
 (define-recordable-struct op:listen
-  (to-desc listener-desc)
+  (to-desc listener-desc wants-partial?)
   marshall::op:listen unmarshall::op:listen)
 
 (define-recordable-struct desc:import-object
@@ -132,7 +132,7 @@
 ;; Internal commands from the vat connector
 (struct cmd-send-message (msg)
   #:transparent)
-(struct cmd-send-listen (to-refr listener-refr)
+(struct cmd-send-listen (to-refr listener-refr wants-partial?)
   #:transparent)
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
@@ -216,9 +216,11 @@
   (define (_partition-unsealer-tm-cons)
     (cons partition-unseal partition-tm?))
 
-  (define (_listen-request to-refr listen-refr)
+  (define (_listen-request to-refr listen-refr
+                           #:wants-partial? [wants-partial? #f])
     (async-channel-put internal-ch
-                       (cmd-send-listen to-refr listen-refr)))
+                       (cmd-send-listen to-refr listen-refr
+                                        wants-partial?)))
 
   (define-captp-dispatcher captp-connector
     [handle-message _handle-message]
@@ -491,7 +493,8 @@
               'call answer-resolver 'fulfill sent-promise)]
 
             [(op:listen (? desc:export? to-desc)
-                        (? desc:import? listener-desc))
+                        (? desc:import? listener-desc)
+                        (? boolean? wants-partial?))
              (define to-refr
                (unmarshall-to-desc to-desc))
              (define listener
@@ -499,7 +502,8 @@
              (machine-vat-connector
               'run
               (λ ()
-                (listen to-refr listener)
+                (listen to-refr listener
+                        #:wants-partial? wants-partial?)
                 (void)))]
             [(op:abort reason)
              'TODO]
@@ -534,10 +538,12 @@
                                     (outgoing-pre-marshall!
                                      (kws-lists->kws-hasheq kws kw-vals)))))
              (send-to-remote deliver-msg)]
-            [(cmd-send-listen (? remote-refr? to-refr) (? local-refr? listener-refr))
+            [(cmd-send-listen (? remote-refr? to-refr) (? local-refr? listener-refr)
+                              (? boolean? wants-partial?))
              (define listen-msg
                (op:listen (marshall-to to-refr)
-                          (outgoing-pre-marshall! listener-refr)))
+                          (outgoing-pre-marshall! listener-refr)
+                          wants-partial?))
              (send-to-remote listen-msg)]))
 
         (define (handle-from-machine-representative msg)
