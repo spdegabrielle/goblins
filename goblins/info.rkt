@@ -1,7 +1,7 @@
 #lang info
 
 (define deps '("base" "crypto"))
-(define build-deps '("rackunit-lib" "scribble-lib" "sandbox-lib"))
+(define build-deps '("rackunit-lib" "scribble-lib" "sandbox-lib" "syrup"))
 (define pkg-desc
   "A transactional, distributed actor model environment")
 (define version "0.6")
