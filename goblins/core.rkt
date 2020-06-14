@@ -82,7 +82,7 @@
 
          define-spawned
 
-         on
+         on listen
          <-np <-
 
          spawn-proc spawn-const
@@ -1315,7 +1315,7 @@
           promise]))))
 
   ;; internal-only... skip a step
-  (define (_listen-mactor on-refr mactor listener)
+  (define (_eventual-add-listener on-refr mactor listener)
     ;; Set a new version of the local-promise with this
     ;; object as a listener
     (actormap-set! actormap on-refr
@@ -1323,7 +1323,22 @@
                                                    listener)))
 
   (define (_listen on-refr listener)
-    (_listen-mactor on-refr (actormap-ref-or-die on-refr) listener))
+    (define mactor
+      (actormap-ref-or-die on-refr))
+    (match mactor
+      [(? mactor:local-link?)
+       (_listen (mactor:local-link-point-to mactor)
+                listener)]
+      ;; This object is a local promise, so we should handle it.
+      [(? mactor:eventual?)
+       (_eventual-add-listener on-refr mactor listener)]
+      ;; In the following cases we can resolve the listener immediately...
+      [(? mactor:broken? mactor)
+       (_<-np listener 'break (mactor:broken-problem mactor))]
+      [(? mactor:encased? mactor)
+       (_<-np listener 'fulfill (mactor:encased-val mactor))]
+      [(? mactor:object? mactor)
+       (_<-np listener 'fulfill on-refr)]))
 
   ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
@@ -1386,6 +1401,14 @@
        (define mactor
          (actormap-ref-or-die on-refr))
 
+       ;; I guess we could pass off to _listen, but this provides us
+       ;; with a bit of optimization... we don't need to round-trip
+       ;; to the listener.
+
+       ;; TODO: I guess we could avoid a lot of duplication here if we
+       ;;   tagged listeners with what results they are interested in.
+       ;;   Heck, we could even cut out the intermediate ^on-listener
+       ;;   probably.
        (match mactor
          [(? mactor:local-link?)
           (_on (mactor:local-link-point-to mactor)
@@ -1395,15 +1418,13 @@
                #:promise? promise?)]
          ;; This object is a local promise, so we should handle it.
          [(? mactor:eventual?)
-          (_listen-mactor on-refr mactor (spawn-listener))]
+          (_eventual-add-listener on-refr mactor (spawn-listener))]
          [(? mactor:broken? mactor)
           (handle-broken (mactor:broken-problem mactor))]
          [(? mactor:encased? mactor)
           (handle-fulfilled (mactor:encased-val mactor))]
          [(? mactor:object? mactor)
           (handle-fulfilled on-refr)])]
-
-      ;; TODO: TODO: TODO: seriously implmeent the following two!!
 
       ;; At this point it would be a far refr
       [(? local-refr? far-refr)
@@ -1507,6 +1528,11 @@
        #:catch (maybe-actorize on-broken 'on-broken)
        #:regardless (maybe-actorize on-regardless 'on-regardless)
        #:promise? promise?))
+
+;; Listen to a promise, where listener
+(define (listen to-refr listener)
+  (define sys (get-syscaller-or-die))
+  (sys 'listen to-refr listener))
 
 
 ;;; actormap turning and utils
@@ -2160,4 +2186,32 @@
      "got: 42")
     (test-true
      "#:regardless also runs in case of non-promise value passed to `on`"
-     regardless-also-ran?)))
+     regardless-also-ran?))
+
+  ;; verify listen works
+  (define (try-out-listen . resolve-args)
+    (let ([resolved-val #f]
+          [resolved-err #f])
+      (actormap-full-run!
+       am
+       (lambda ()
+         (match-define (cons some-promise some-resolver)
+           (actormap-run! am spawn-promise-cons))
+         (listen some-promise
+                 (spawn
+                  (lambda (bcom)
+                    (match-lambda*
+                      [(list 'fulfill val)
+                       (set! resolved-val `(fulfilled ,val))]
+                      [(list 'break err)
+                       (set! resolved-err `(broken ,err))]))))
+         (apply $ some-resolver resolve-args)))
+      (list resolved-val resolved-err)))
+  (test-equal?
+   "listen works with a fulfilled promise"
+   (try-out-listen 'fulfill 'yay)
+   '((fulfilled yay) #f))
+  (test-equal?
+   "listen works with a broken promise"
+   (try-out-listen 'break 'oh-no)
+   '(#f (broken oh-no))))
