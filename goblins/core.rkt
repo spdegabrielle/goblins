@@ -2171,4 +2171,40 @@
    '(#f (broken oh-no)))
 
 
+  (define (try-promise-to-promise . resolve-args)
+    (let ([result #f]
+          [regardless-ran? #f])
+      (actormap-full-run!
+       am
+       (lambda ()
+         (define-values (listen-to-promise listen-to-resolver)
+           (spawn-promise-values))
+         (define-values (middle-promise middle-resolver)
+           (spawn-promise-values))
+         (define-values (gets-the-answer-promise gets-the-answer-resolver)
+           (spawn-promise-values))
+         (on listen-to-promise
+             (lambda (val)
+               (set! result `(got-val ,val)))
+             #:catch
+             (lambda (err)
+               (set! result `(got-err ,err)))
+             #:regardless
+             (lambda ()
+               (set! regardless-ran? #t)))
+         (<-np listen-to-resolver 'fulfill middle-promise)
+         (<-np middle-resolver 'fulfill gets-the-answer-promise)
+         (apply <-np gets-the-answer-resolver resolve-args)))
+      (list result regardless-ran?)))
+
+  (test-equal?
+   "Promise fulfilled to promise itself gets fulfillment"
+   (try-promise-to-promise 'fulfill 'yay)
+   '((got-val yay) #t))
+
+  (test-equal?
+   "Promise fulfilled to promise has broken promise contagion"
+   (try-promise-to-promise 'break 'yikes)
+   '((got-err yikes) #t))
+
   )
