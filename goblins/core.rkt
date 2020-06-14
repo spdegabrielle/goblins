@@ -1114,7 +1114,7 @@
                          #:result (reverse new-listeners))
                         ([listener-info orig-listeners])
                 (if (listener-info-wants-partial? listener-info)
-                    ;; resolve but drop out
+                    ;; resolve and drop out of listeners
                     (begin (_<-np (listener-info-resolve-me listener-info)
                                   'fulfill resolve-to-val)
                            new-listeners)
