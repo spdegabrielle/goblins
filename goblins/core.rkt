@@ -1095,14 +1095,14 @@
             (define-values (new-resolver-sealer new-resolver-unsealer new-resolver-tm?)
               (make-sealer-triplet 'fulfill-promise))
             ;; Now subscribe to the promise...
-            (_on resolve-to-val
-                 (lambda (val)
-                   (define sys (get-syscaller-or-die))
-                   (sys 'fulfill-promise promise-id (new-resolver-sealer val)))
-                 #:catch
-                 (lambda (err)
-                   (define sys (get-syscaller-or-die))
-                   (sys 'break-promise promise-id (new-resolver-sealer err))))
+            (on resolve-to-val
+                (lambda (val)
+                  (define sys (get-syscaller-or-die))
+                  (sys 'fulfill-promise promise-id (new-resolver-sealer val)))
+                #:catch
+                (lambda (err)
+                  (define sys (get-syscaller-or-die))
+                  (sys 'break-promise promise-id (new-resolver-sealer err))))
             ;; Now we become "closer" to this promise
             (mactor:closer new-resolver-unsealer new-resolver-tm?
                            listeners
