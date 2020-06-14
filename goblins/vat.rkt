@@ -204,7 +204,8 @@
                     (actormap-turn-message actormap msg
                                            ;; TODO: Come on, we need to do
                                            ;; proper logging
-                                           #:display-errors? #t)))
+                                           ;; #:display-errors? #t
+                                           )))
                 (transactormap-merge! transactormap)
                 (schedule-local-messages to-near)
                 (schedule-remote-messages to-far)
@@ -313,6 +314,14 @@
   (define (_get-vat-private-key)
     (force private-key))
 
+  ;; TODO: Super, super hacky.  It does work for now though...
+  (define (_handle-listen-request on-refr listener)
+    (_run (λ ()
+            (unless (near-refr? on-refr)
+              (error 'not-a-near-refr
+                     "Listen got called with a non-near refr: ~a" on-refr))
+            (listen on-refr listener))))
+
   (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
     (define id
       (procedure-rename
@@ -328,6 +337,7 @@
 
   (define-vat-dispatcher vat-connector
     [handle-message _handle-message]
+    [listen _handle-listen-request]
     [vat-id _get-vat-id])
 
   (define-vat-dispatcher vat-dispatcher

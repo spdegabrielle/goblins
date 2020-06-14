@@ -1314,31 +1314,41 @@
                          #:answer-this-question question-finder)
           promise]))))
 
-  ;; internal-only... skip a step
-  (define (_eventual-add-listener on-refr mactor listener)
-    ;; Set a new version of the local-promise with this
-    ;; object as a listener
-    (actormap-set! actormap on-refr
-                   (mactor:unresolved-add-listener mactor
-                                                   listener)))
-
   (define (_listen on-refr listener)
-    (define mactor
-      (actormap-ref-or-die on-refr))
-    (match mactor
-      [(? mactor:local-link?)
-       (_listen (mactor:local-link-point-to mactor)
-                listener)]
-      ;; This object is a local promise, so we should handle it.
-      [(? mactor:eventual?)
-       (_eventual-add-listener on-refr mactor listener)]
-      ;; In the following cases we can resolve the listener immediately...
-      [(? mactor:broken? mactor)
-       (_<-np listener 'break (mactor:broken-problem mactor))]
-      [(? mactor:encased? mactor)
-       (_<-np listener 'fulfill (mactor:encased-val mactor))]
-      [(? mactor:object? mactor)
-       (_<-np listener 'fulfill on-refr)]))
+    (match on-refr
+      [(? near-refr?)
+       (define mactor
+         (actormap-ref-or-die on-refr))
+       (match mactor
+         [(? mactor:local-link?)
+          (_listen (mactor:local-link-point-to mactor)
+                   listener)]
+         ;; This object is a local promise, so we should handle it.
+         [(? mactor:eventual?)
+          ;; Set a new version of the local-promise with this
+          ;; object as a listener
+          (actormap-set! actormap on-refr
+                         (mactor:unresolved-add-listener mactor
+                                                         listener))]
+         ;; In the following cases we can resolve the listener immediately...
+         [(? mactor:broken? mactor)
+          (_<-np listener 'break (mactor:broken-problem mactor))]
+         [(? mactor:encased? mactor)
+          (_<-np listener 'fulfill (mactor:encased-val mactor))]
+         [(? mactor:object? mactor)
+          (_<-np listener 'fulfill on-refr)])]
+
+      ;; At this point it would be a far refr
+      [(? local-refr? far-refr)
+       (define vat-connector
+         (local-refr-vat-connector far-refr))
+       (vat-connector 'listen far-refr listener)]
+
+      [(? remote-refr? remote-refr)
+       (define captp-connector
+         (remote-refr-captp-connector remote-refr))
+       (captp-connector 'listen remote-refr listener)]
+      [val (<-np listener 'fulfill val)]))
 
   ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
@@ -1360,6 +1370,9 @@
              ;; We can't use _send-message directly, because this may
              ;; be in a separate syscaller at the time it's resolved.
              (define syscaller (get-syscaller-or-die))
+             ;; But anyway, we want to resolve the return-p-resolver with
+             ;; whatever the on-resolution is, which is why we do this goofier
+             ;; roundabout
              (syscaller 'send-message
                         '() '() on-resolution
                         ;; Which may be #f!
@@ -1390,68 +1403,11 @@
         [(list 'break problem)
          (handle-broken problem)
          (void)]))
-    (define (spawn-listener)
-      ;; using _spawn here saves a very minor round
-      ;; trip which we can't do in the on-fulfilled
-      ;; ones because they'll be in a new syscaller
+    (define listener
       (_spawn ^on-listener '() '() '()))
-
-    (match on-refr
-      [(? near-refr?)
-       (define mactor
-         (actormap-ref-or-die on-refr))
-
-       ;; I guess we could pass off to _listen, but this provides us
-       ;; with a bit of optimization... we don't need to round-trip
-       ;; to the listener.
-
-       ;; TODO: I guess we could avoid a lot of duplication here if we
-       ;;   tagged listeners with what results they are interested in.
-       ;;   Heck, we could even cut out the intermediate ^on-listener
-       ;;   probably.
-       (match mactor
-         [(? mactor:local-link?)
-          (_on (mactor:local-link-point-to mactor)
-               on-fulfilled
-               #:catch on-broken
-               #:regardless on-regardless
-               #:promise? promise?)]
-         ;; This object is a local promise, so we should handle it.
-         [(? mactor:eventual?)
-          (_eventual-add-listener on-refr mactor (spawn-listener))]
-         [(? mactor:broken? mactor)
-          (handle-broken (mactor:broken-problem mactor))]
-         [(? mactor:encased? mactor)
-          (handle-fulfilled (mactor:encased-val mactor))]
-         [(? mactor:object? mactor)
-          (handle-fulfilled on-refr)])]
-
-      ;; At this point it would be a far refr
-      [(? local-refr? far-refr)
-       (define vat-connector
-         (local-refr-vat-connector far-refr))
-       (vat-connector 'listen far-refr (spawn-listener))]
-
-      [(? remote-refr? remote-refr)
-       (define captp-connector
-         (remote-refr-captp-connector remote-refr))
-       (captp-connector 'listen remote-refr (spawn-listener))]
-
-      ;; TODO: sturdy refr support goes here!
-      ;; TODO: Or maybe actually not because we might "require enlivening"
-      ;;   of sturdyrefs?
-      #;[(? sturdy-refr?)
-       (error "Sturdy refrs not supported yet :(")]
-
-      ;; Anything else?  Well, it's just some value then, we can
-      ;; immediately consider that the fulfillment (similar to if it
-      ;; were encased).
-      [val
-       (handle-fulfilled val)])
-
-    ;; Unless an error was thrown, we now should return the promise
-    ;; we made.
-    (or return-promise (void)))
+    (_listen on-refr listener)
+    (when promise?
+      return-promise))
 
   (define (get-internals)
     (list actormap to-near to-far))
