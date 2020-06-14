@@ -738,28 +738,46 @@
       (channel-get return-ch)))
 
   ;; Now let's spawn alice in vat A
-  (define alice
+  (define alice1
     (a-vat 'spawn ^greeter "Alice"))
   ;; And get a nonce from A's registry
-  (define alice-nonce
-    (a-vat 'call a-nonce-reg 'register alice))
-
-
+  (define alice1-nonce
+    (a-vat 'call a-nonce-reg 'register alice1))
+  (define alice1-sez-ch
+    (make-async-channel))
   (b-vat 'run
          (lambda ()
-           (on (<- b->a-bootstrap-vow 'fetch alice-nonce)
+           (on (<- b->a-bootstrap-vow 'fetch alice1-nonce)
                (lambda (alice)
-                 (pk 'got-alice alice)
                  (on (<- alice "Bobarillo")
                      (lambda (alice-sez)
-                       (pk 'alice-sez alice-sez)))))))
+                       (async-channel-put alice1-sez-ch alice-sez)))))))
+  (test-equal?
+   "Non-pipelined sends to alice work"
+   (sync/timeout 0.2 alice1-sez-ch)
+   "<Alice> Hello Bobarillo!")
 
+  (define alice2
+    (a-vat 'spawn ^greeter "Alice"))
+  ;; And get a nonce from A's registry
+  (define alice2-nonce
+    (a-vat 'call a-nonce-reg 'register alice2))
+  (define alice2-sez-ch
+    (make-async-channel))
   (b-vat 'run
          (lambda ()
-           (on (<- (<- b->a-bootstrap-vow 'fetch alice-nonce)
+           (on (<- (<- b->a-bootstrap-vow 'fetch alice2-nonce)
                    "Bobarillo")
                (lambda (alice-sez)
-                 (pk 'alice-sez alice-sez)))))
+                 (async-channel-put alice2-sez-ch alice-sez)))))
+  (test-equal?
+   "Pipelined sends to alice work"
+   (sync/timeout 0.2 alice2-sez-ch)
+   "<Alice> Hello Bobarillo!")
+
+
+
+
 
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
