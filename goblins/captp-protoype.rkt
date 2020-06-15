@@ -412,12 +412,7 @@
        (machine-vat-connector
         'run
         (lambda ()
-          (on answer-promise
-              (lambda (val)
-                (<-np resolve-me 'fulfill val))
-              #:catch
-              (lambda (err)
-                (<-np resolve-me 'break err)))))
+          (listen answer-promise resolve-me)))
        (values answer-promise answer-resolver))
 
      (define (send-to-remote msg)
