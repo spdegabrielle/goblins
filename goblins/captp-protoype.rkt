@@ -165,6 +165,8 @@
 ;; TODO: This is really mixing up both captp and vattp into one thing.
 ;;   Kind of a mess... we should separate them.
 ;;   The biggest challenge is how to handle the (un)marshalling correctly.
+;; TODO: Couldn't this just be an actor that's drip-fed messages
+;;   pulled off the wire, running in its own vat?
 (define (make-captp-thread captp-outgoing-ch from-machine-representative-ch
                            machine-vat-connector
                            bootstrap-refr)
@@ -681,8 +683,23 @@
   (define test1-vat
     (make-vat))
 
+  (define (spawn-extended-registry-locator-pair)
+    (match-define (cons registry locator)
+      (spawn-nonce-registry-locator-pair))
+    (define (^extended-locator bcom)
+      (methods
+       #:extends locator
+       [(respond-to name)
+        (channel-put test1-bootstrap-response-ch
+                     `(hello ,name))]
+       [(break-me)
+        (error 'ahhh-i-am-broken)]))
+    (define extended-locator
+      (spawn ^extended-locator))
+    (cons registry extended-locator))
+
   (match-define (cons test1-registry test1-locator)
-    (test1-vat 'run spawn-nonce-registry-locator-pair))
+    (test1-vat 'run spawn-extended-registry-locator-pair))
 
   ;; We'll use this to see if the bootstrap object ever gets our message
   (define test1-bootstrap-response-ch
@@ -696,7 +713,9 @@
                   #:extends test1-locator
                   [(respond-to name)
                    (channel-put test1-bootstrap-response-ch
-                                `(hello ,name))]))))
+                                `(hello ,name))]
+                  [(break-me)
+                   (error 'ahhh-i-am-broken)]))))
 
   (define repl-mach->test1-thread-ch
     (make-machinetp-thread repl->test1-ip test1->repl-op
@@ -757,9 +776,9 @@
     (make-pipe))
 
   (match-define (cons a-nonce-reg a-nonce-loc)
-    (a-vat 'run spawn-nonce-registry-locator-pair))
+    (a-vat 'run spawn-extended-registry-locator-pair))
   (match-define (cons b-nonce-reg b-nonce-loc)
-    (b-vat 'run spawn-nonce-registry-locator-pair))
+    (b-vat 'run spawn-extended-registry-locator-pair))
 
   (define a-machinetp-ch
     (make-machinetp-thread b->a-ip a->b-op
@@ -850,9 +869,34 @@
    (match (sync/timeout 0.2 broken-bob-greeter-ch)
      [(list 'broken problem)
       #t]
+     [#f #f]
      [something-else
       (pk 'something-else something-else)
       #f]))
+
+  ;; For that matter, here's a simpler test
+  (define a->b-bootstrap-break-me-ch
+    (make-async-channel))
+  (a-vat 'run
+         (lambda ()
+           (on (<- a->b-bootstrap-vow 'break-me)
+               (lambda (val)
+                 (async-channel-put a->b-bootstrap-break-me-ch
+                                    `(fulfilled val)))
+               #:catch
+               (lambda (err)
+                 (async-channel-put a->b-bootstrap-break-me-ch
+                                    `(broken err))))))
+  (test-true
+   "Breakage correctly propagates across captp, simple example"
+   (match (sync/timeout 0.2 a->b-bootstrap-break-me-ch)
+     [(list 'broken problem)
+      #t]
+     [#f #f]
+     [something-else
+      (pk 'something-else something-else)
+      #f]))
+
 
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
