@@ -721,14 +721,18 @@
    (op:bootstrap 0 (desc:import-object 0)))
 
   ;; Now we should bootstrap it such that it allocates an answer for us
-  (syrup-write (op:bootstrap 0 (desc:import-object 0))
-               repl->test1-op
-               #:marshallers marshallers)
+  (let ()
+    (syrup-write (op:bootstrap 0 (desc:import-object 0))
+                 repl->test1-op
+                 #:marshallers marshallers)
+    (void))
 
   ;; Now we should be able to submit a test message
-  (syrup-write (op:deliver-only (desc:answer 0) #f '(respond-to REPL-friend) #hasheq())
-               repl->test1-op
-               #:marshallers marshallers)
+  (let ()
+    (syrup-write (op:deliver-only (desc:answer 0) #f '(respond-to REPL-friend) #hasheq())
+                 repl->test1-op
+                 #:marshallers marshallers)
+    (void))
 
   (test-equal?
    "bootstrap actor is able to get messages from us"
