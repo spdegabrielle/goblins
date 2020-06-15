@@ -890,8 +890,7 @@
 (define (fresh-syscaller actormap)
   (define vat-connector
     (actormap-vat-connector actormap))
-  (define to-near '())
-  (define to-far '())
+  (define new-msgs '())
 
   (define closed? #f)
 
@@ -1290,16 +1289,8 @@
     ;; TODO: This is really a matter of dispatching on mactors
     ;;   mostly now
     (match to-refr
-      [(? local-refr?)
-       (define in-same-vat?
-         (eq? (local-refr-vat-connector to-refr)
-              vat-connector))
-       (if in-same-vat?
-           (set! to-near (cons new-message to-near))
-           (set! to-far (cons new-message to-far)))]
-      
-      [(? remote-refr?)
-       (set! to-far (cons new-message to-far))]
+      [(? live-refr?)
+       (set! new-msgs (cons new-message new-msgs))]
       [_ (error 'vat-send-message
                 "Don't know how to send a message to: ~a" to-refr)]))
 
@@ -1429,7 +1420,7 @@
       return-promise))
 
   (define (get-internals)
-    (list actormap to-near to-far))
+    (list actormap new-msgs))
 
   (define (close-up!)
     (set! closed? #t))
@@ -1522,7 +1513,7 @@
      (define result-val
        (keyword-apply sys kws kw-vals 'call to-refr args))
      (apply values result-val
-            (get-sys-internals)))))  ; actormap to-near to-far
+            (get-sys-internals)))))  ; actormap new-msgs
 
 (define actormap-turn
   (make-keyword-procedure
@@ -1535,7 +1526,7 @@
 (define actormap-poke!
   (make-keyword-procedure
    (lambda (kws kw-vals actormap to-refr . args)
-     (define-values (returned-val transactormap _tl _tr)
+     (define-values (returned-val transactormap _nm)
        (actormap-turn* (make-transactormap actormap)
                        to-refr kws kw-vals args))
      (transactormap-merge! transactormap)
@@ -1544,7 +1535,7 @@
 (define actormap-reckless-poke!
   (make-keyword-procedure
    (lambda (kws kw-vals actormap to-refr . args)
-     (define-values (returned-val transactormap _tl _tr)
+     (define-values (returned-val transactormap _nm)
        (actormap-turn* actormap to-refr kws kw-vals args))
      returned-val)))
 
@@ -1554,7 +1545,7 @@
 (define actormap-peek
   (make-keyword-procedure
    (lambda (kws kw-vals actormap to-refr . args)
-     (define-values (returned-val _am _tl _tr)
+     (define-values (returned-val _am _nm)
        (actormap-turn* (make-transactormap actormap)
                        to-refr kws kw-vals args))
      returned-val)))
@@ -1574,11 +1565,11 @@
 
 ;; TODO: We might want to return one of the following:
 ;;   (values ('call-success val) ('resolve-success val)
-;;           actormap to-near to-far)
+;;           actormap new-msgs)
 ;;   (values ('call-fail problem) ('resolve-fail problem)
-;;           actormap to-near to-far)
+;;           actormap new-msgs)
 ;;   (values ('call-success val) #f  ; there was nothing to resolve
-;;           actormap to-near to-far)
+;;           actormap new-msgs)
 ;; Mix and match the fail/success
 (define (actormap-turn-message actormap msg
                                #:display-or-log-error
@@ -1601,25 +1592,25 @@
          (sys 'handle-message msg display-or-log-error)))
 
      (match (get-sys-internals)
-       [(list new-actormap to-near to-far)
-        (values call-result new-actormap to-near to-far)]))))
+       [(list new-actormap new-msgs)
+        (values call-result new-actormap new-msgs)]))))
 
 ;; The following two are utilities for when you want to check
 ;; or bootstrap something within an actormap
 
 ;; non-committal version of actormap-run
 (define (actormap-run actormap thunk)
-  (define-values (returned-val _am _tl _tr)
+  (define-values (returned-val _am _nm)
     (actormap-run* (make-transactormap actormap) thunk))
   returned-val)
 
-;; like actormap-run but also returns the new actormap, to-near, to-far
+;; like actormap-run but also returns the new actormap, new-msgs
 (define (actormap-run* actormap thunk)
   (define-values (actor-refr new-actormap)
     (actormap-spawn (make-transactormap actormap) (lambda (bcom) thunk)))
-  (define-values (returned-val new-actormap2 to-near to-far)
+  (define-values (returned-val new-actormap2 new-msgs)
     (actormap-turn* (make-transactormap new-actormap) actor-refr '() '() '()))
-  (values returned-val new-actormap2 to-near to-far))
+  (values returned-val new-actormap2 new-msgs))
 
 ;; committal version
 ;; Run, and also commit the results of, the code in the thunk
@@ -1638,7 +1629,7 @@
 ;; TODO: Note this pretty much throws out remote messages, for better or
 ;; almost certainly for worse.
 ;; (-> actormap? (treeof message?)
-;;     (values actormap (treeof message?) (treeof message?)))
+;;     (values actormap (treeof message?)))
 (define (actormap-churn actormap messages
                         #:display-errors?
                         [display-errors? #t]
@@ -1654,23 +1645,21 @@
       [else (cons a d)]))
   (match messages
     [(? message? message)
-     (define-values (call-result new-am to-near to-far)
+     (define-values (call-result new-am new-msgs)
        (actormap-turn-message actormap messages
                               #:display-or-log-error display-or-log-error))
-     (values new-am to-near to-far)]
+     (values new-am new-msgs)]
     ['()
      (values actormap '() '())]
     [(? pair? message-list)
      (for/fold ([actormap actormap]
-                [to-near '()]
-                [to-far '()])
+                [new-msgs '()])
                ([msg (in-list (reverse messages))])
-       (define-values (new-actormap new-to-near new-to-far)
+       (define-values (new-actormap new-new-msgs)
          (actormap-churn actormap msg
                          #:display-or-log-error display-or-log-error))
        (values new-actormap
-               (cons-if-non-empty new-to-near to-near)
-               (cons-if-non-empty new-to-far to-far)))]))
+               (cons-if-non-empty new-new-msgs new-msgs)))]))
 
 ;; Start up an actormap and run until no more messages are left.
 ;; Not really used in combination with hives; this is mainly
@@ -1685,18 +1674,18 @@
                              (if display-errors?
                                  simple-display-error
                                  no-op)])
-  (define-values (_val new-am to-near to-far)
+  (define-values (_val new-am new-msgs)
     (actormap-run* actormap thunk))
   (transactormap-merge! new-am)
-  (let lp ([messages to-near])
-    (define-values (new-am to-near to-far)
+  (let lp ([messages new-msgs])
+    (define-values (new-am new-msgs)
       (actormap-churn actormap messages
                       #:display-or-log-error display-or-log-error))
     (when (transactormap? new-am)
       (transactormap-merge! new-am))
-    (if (null? to-near)
+    (if (null? new-msgs)
         (void)
-        (lp to-near)))
+        (lp new-msgs)))
   _val)
 
 
@@ -1798,23 +1787,23 @@
   ;; can actors update themselves?
   (define ctr-refr
     (actormap-spawn! am counter 1))
-  (define-values (turned-val1 am+ctr1 _to-near _to-far)
+  (define-values (turned-val1 am+ctr1 _new-msgs)
     (actormap-turn am ctr-refr))
   (check-eqv? turned-val1 1)
-  (define-values (turned-val2 am+ctr2 _to-near2 _to-far2)
+  (define-values (turned-val2 am+ctr2 _new-msgs2)
     (actormap-turn am+ctr1 ctr-refr))
   (check-eqv? turned-val2 2)
 
   ;; transaction shouldn't be applied yet
   (define-values (turned-val1-again
                   am+ctr1-again
-                  _to-near-again _to-far-again)
+                  _new-msgs-again)
     (actormap-turn am ctr-refr))
   (check-eqv? turned-val1-again 1)
 
   ;; but now it should be
   (transactormap-merge! am+ctr2)
-  (define-values (turned-val3 am+ctr3 _to-near3 _to-far3)
+  (define-values (turned-val3 am+ctr3 _new-msgs3)
     ;; observe that we're turning using the "original"
     ;; actormap though!  It should have committed.
     (actormap-turn am ctr-refr))

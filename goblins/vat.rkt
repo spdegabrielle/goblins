@@ -167,39 +167,37 @@
                             (display (exn->string err)
                                      (current-error-port))
                             (set! running? #f))])
-           (define schedule-local-messages
-             (match-lambda
-               ['() (void)]
-               [(cons msg rest)
-                ;; Mildly more efficiently do this in reverse order
-                (schedule-local-messages rest)
-                (async-channel-put vat-channel (cmd-handle-message msg))]))
+           ;; @@: We used to have a more efficient(?) recursive function that
+           ;;   never did a reverse, but now I'm writing "for clarity"
+           (define (schedule-messages msgs)
+             (for ([msg (in-list (reverse msgs))])
+               (define to-refr
+                 (match msg
+                   [(? message?)
+                    (message-to msg)]
+                   [(? listen-request?)
+                    (listen-request-to msg)]))
 
-           (define schedule-remote-messages
-             (match-lambda
-               ['() (void)]
-               [(cons msg rest)
-                (schedule-remote-messages rest)
-                (define to-actor
-                  (message-to msg))
-                (define connector
-                  (match to-actor
-                    [(? local-refr?)
-                     (local-refr-vat-connector to-actor)]
-                    [(? remote-refr?)
-                     (remote-refr-captp-connector to-actor)]))
-                ;; forward to that vat/captp connector!
-                (connector 'handle-message msg)
-                (void)]))
+               (match to-refr
+                 [(? local-refr?)
+                  (define to-vat-connector
+                    (local-refr-vat-connector to-refr))
+                  (define this-vat?
+                    (eq? to-vat-connector vat-connector))
+                  (if this-vat?
+                      (async-channel-put vat-channel (cmd-handle-message msg))
+                      (to-vat-connector 'handle-message msg))]
+                 [(? remote-refr?)
+                  (define captp-connector
+                    (remote-refr-captp-connector to-refr))
+                  (captp-connector 'handle-message msg)])))
 
            (let lp ()
              (match (async-channel-get vat-channel)
                ;; This is the actual thing this loop spends the most
                ;; time on, so it needs to go first
                [(cmd-handle-message msg)
-                (define-values (call-result
-                                transactormap
-                                to-near to-far)
+                (define-values (call-result transactormap new-messages)
                   (parameterize ([being-called-by-vat-actor #t])
                     (actormap-turn-message actormap msg
                                            ;; TODO: Come on, we need to do
@@ -207,8 +205,7 @@
                                            ;; #:display-errors? #t
                                            )))
                 (transactormap-merge! transactormap)
-                (schedule-local-messages to-near)
-                (schedule-remote-messages to-far)
+                (schedule-messages new-messages)
                 (lp)]
                [(cmd-external-spawn kws kw-vals constructor args return-ch)
                 (with-handlers ([any/c
@@ -228,13 +225,12 @@
                                  (lambda (err)
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
-                  (define-values (returned-val transactormap to-near to-far)
+                  (define-values (returned-val transactormap new-messages)
                     (parameterize ([being-called-by-vat-actor #t])
                       (keyword-apply actormap-turn kws kw-vals
                                      actormap to-refr args)))
                   (transactormap-merge! transactormap)
-                  (schedule-local-messages to-near)
-                  (schedule-remote-messages to-far)
+                  (schedule-messages new-messages)
                   (channel-put return-ch (vector 'success returned-val)))
                 (lp)]
                [(cmd-halt)
