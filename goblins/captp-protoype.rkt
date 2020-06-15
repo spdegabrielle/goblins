@@ -417,11 +417,7 @@
                 (<-np resolve-me 'fulfill val))
               #:catch
               (lambda (err)
-                (match err
-                  (<-np resolve-me 'break
-                        ;; TODO: boy, we really need a way to translate
-                        ;;   exceptions across the vat boundary, huh?
-                        'remote-promise-breakage-TODO))))))
+                (<-np resolve-me 'break err)))))
        (values answer-promise answer-resolver))
 
      (define (send-to-remote msg)
@@ -869,9 +865,7 @@
    (match (sync/timeout 0.2 broken-bob-greeter-ch)
      [(list 'broken problem)
       #t]
-     [#f #f]
      [something-else
-      (pk 'something-else something-else)
       #f]))
 
   ;; For that matter, here's a simpler test
@@ -892,9 +886,7 @@
    (match (sync/timeout 0.2 a->b-bootstrap-break-me-ch)
      [(list 'broken problem)
       #t]
-     [#f #f]
      [something-else
-      (pk 'something-else something-else)
       #f]))
 
 
