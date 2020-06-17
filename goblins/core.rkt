@@ -912,11 +912,13 @@
            ['<- _<-]
            ['send-message _send-message]
            ['handle-message _handle-message]
+           ['handle-listen _handle-listen]
+           ['send-listen _send-listen]
            ['on _on]
-           ['listen _listen]
            ['vat-connector get-vat-connector]
            ['near-refr? near-refr?]
-           [else (error "invalid syscaller method")]))
+           [else (error 'invalid-syscaller-method
+                        "~a" method-id)]))
        (keyword-apply method kws kw-vals args))))
 
   (define (near-refr? obj)
@@ -1104,7 +1106,7 @@
             (define new-resolver
               (_spawn ^resolver '() '() (list promise-id new-resolver-sealer)))
             ;; Now subscribe to the promise...
-            (_listen resolve-to-val new-resolver #:wants-partial? #t)
+            (_send-listen resolve-to-val new-resolver #t)
             ;; Now we want to both inform any listeners that are interested
             ;; in partial information and scrub them out of the current
             ;; listeners list.
@@ -1179,7 +1181,7 @@
       (with-handlers ([exn:fail?
                        (lambda (err)
                          (when display-or-log-error
-                           (display-or-log-error err #:pre-delivery? #f))
+                           (display-or-log-error err))
                          (when resolve-me
                            (_<-np resolve-me 'break err))
                          `#(fail ,err))])
@@ -1280,19 +1282,15 @@
   ;; helper to the below two methods
   (define (_send-message kws kw-vals to-refr resolve-me args
                          #:answer-this-question [answer-this-question #f])
+    (unless (live-refr? to-refr)
+      (error 'send-message
+             "Don't know how to send a message to: ~a" to-refr))
     (define new-message
       (if answer-this-question
           (question-message to-refr resolve-me kws kw-vals args
                             answer-this-question)
           (message to-refr resolve-me kws kw-vals args)))
-
-    ;; TODO: This is really a matter of dispatching on mactors
-    ;;   mostly now
-    (match to-refr
-      [(? live-refr?)
-       (set! new-msgs (cons new-message new-msgs))]
-      [_ (error 'vat-send-message
-                "Don't know how to send a message to: ~a" to-refr)]))
+    (set! new-msgs (cons new-message new-msgs)))
 
   (define _<-np
     (make-keyword-procedure
@@ -1323,42 +1321,42 @@
                          #:answer-this-question question-finder)
           promise]))))
 
-  (define (_listen on-refr listener
-                   #:wants-partial? [wants-partial? #f])
-    (match on-refr
-      [(? near-refr?)
-       (define mactor
-         (actormap-ref-or-die on-refr))
-       (match mactor
-         [(? mactor:local-link?)
-          (_listen (mactor:local-link-point-to mactor)
-                   listener #:wants-partial? wants-partial?)]
-         ;; This object is a local promise, so we should handle it.
-         [(? mactor:eventual?)
-          ;; Set a new version of the local-promise with this
-          ;; object as a listener
-          (actormap-set! actormap on-refr
-                         (mactor:unresolved-add-listener mactor listener
-                                                         wants-partial?))]
-         ;; In the following cases we can resolve the listener immediately...
-         [(? mactor:broken? mactor)
-          (_<-np listener 'break (mactor:broken-problem mactor))]
-         [(? mactor:encased? mactor)
-          (_<-np listener 'fulfill (mactor:encased-val mactor))]
-         [(? mactor:object? mactor)
-          (_<-np listener 'fulfill on-refr)])]
-
-      ;; At this point it would be a far refr
-      [(? local-refr? far-refr)
-       (define vat-connector
-         (local-refr-vat-connector far-refr))
-       (vat-connector 'listen far-refr listener)]
-
-      [(? remote-refr? remote-refr)
-       (define captp-connector
-         (remote-refr-captp-connector remote-refr))
-       (captp-connector 'listen remote-refr listener)]
+  (define (_send-listen to-refr listener [wants-partial? #f])
+    (match to-refr
+      [(? live-refr?)
+       (define listen-req
+         (listen-request to-refr listener wants-partial?))
+       (set! new-msgs (cons listen-req new-msgs))]
       [val (<-np listener 'fulfill val)]))
+
+  (define (_handle-listen to-refr listener wants-partial? display-or-log-error)
+    (with-handlers ([exn:fail?
+                     (lambda (err)
+                       (when display-or-log-error
+                         (display-or-log-error err while-handling-listen-header))
+                       `#(fail ,err))])
+      (define mactor
+        (actormap-ref-or-die to-refr))
+      (match mactor
+        [(? mactor:local-link?)
+         (_handle-listen (mactor:local-link-point-to mactor)
+                         listener wants-partial? display-or-log-error)]
+        ;; This object is a local promise, so we should handle it.
+        [(? mactor:eventual?)
+         ;; Set a new version of the local-promise with this
+         ;; object as a listener
+         (actormap-set! actormap to-refr
+                        (mactor:unresolved-add-listener mactor listener
+                                                        wants-partial?))]
+        ;; In the following cases we can resolve the listener immediately...
+        [(? mactor:broken? mactor)
+         (_<-np listener 'break (mactor:broken-problem mactor))]
+        [(? mactor:encased? mactor)
+         (_<-np listener 'fulfill (mactor:encased-val mactor))]
+        [(? mactor:object? mactor)
+         (_<-np listener 'fulfill to-refr)])
+      ;; return with same semantics that _handle-message does
+      `#(success ,(void))))
 
   ;; At THIS stage, on-fulfilled, on-broken, on-regardless should
   ;; be actors or #f.  That's not the case in the user-facing
@@ -1415,7 +1413,7 @@
          (void)]))
     (define listener
       (_spawn ^on-listener '() '() '()))
-    (_listen on-refr listener)
+    (_send-listen on-refr listener)
     (when promise?
       return-promise))
 
@@ -1498,8 +1496,7 @@
 ;; Listen to a promise, where listener
 (define (listen to-refr listener #:wants-partial? [wants-partial? #f])
   (define sys (get-syscaller-or-die))
-  (sys 'listen to-refr listener
-       #:wants-partial? wants-partial?))
+  (sys 'send-listen to-refr listener wants-partial?))
 
 
 ;;; actormap turning and utils
@@ -1550,12 +1547,15 @@
                        to-refr kws kw-vals args))
      returned-val)))
 
-(define (simple-display-error err
-                              #:pre-delivery?
-                              [pre-delivery? #f])
-  (displayln (if pre-delivery?
-                 ";; === Before even being able to handle message: ==="
-                 ";; === While attempting to handle message: ===")
+(define while-handling-header
+  "While attempting to handle message")
+(define before-even-able-to-handle-header
+  "Before even being able to handle message")
+(define while-handling-listen-header
+  "While handling listen request")
+
+(define (simple-display-error err [header while-handling-header])
+  (displayln (format ";; === ~a: ===" header)
              (current-error-port))
   ((error-display-handler) (exn-message err) err))
 
@@ -1587,9 +1587,14 @@
                           ;;   not even be resolved.  Goofy approach to that
                           ;;   for now...
                           (when display-or-log-error
-                            (display-or-log-error err #:pre-delivery? #t))
+                            (display-or-log-error
+                             err before-even-able-to-handle-header))
                           `#(fail ,err))])
-         (sys 'handle-message msg display-or-log-error)))
+         (match msg
+           [(? message?)
+            (sys 'handle-message msg display-or-log-error)]
+           [(listen-request to listener wants-partial?)
+            (sys 'handle-listen to listener wants-partial? display-or-log-error)])))
 
      (match (get-sys-internals)
        [(list new-actormap new-msgs)
@@ -1644,7 +1649,7 @@
       [(null? d) a]
       [else (cons a d)]))
   (match messages
-    [(? message? message)
+    [(or (? message? message) (? listen-request? message))
      (define-values (call-result new-am new-msgs)
        (actormap-turn-message actormap messages
                               #:display-or-log-error display-or-log-error))

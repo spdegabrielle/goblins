@@ -208,8 +208,14 @@
        'id)))
 
   (define (_handle-message msg)
-    (async-channel-put internal-ch
-                       (cmd-send-message msg))
+    (match msg
+      [(? message?)
+       (async-channel-put internal-ch
+                          (cmd-send-message msg))]
+      [(listen-request to-refr listener wants-partial?)
+       (async-channel-put internal-ch
+                          (cmd-send-listen to-refr listener
+                                           wants-partial?))])
     (void))
 
   (define (_new-question-finder)
