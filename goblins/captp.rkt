@@ -70,6 +70,9 @@
   (reason)
   marshall::op:abort unmarshall::op:abort)
 
+;; It's unclear whether or not op: listen is really needed at all...
+;; So far there's no clear indication that it is, and we might be
+;; able to remove this.
 (define-recordable-struct op:listen
   (to-desc listener-desc wants-partial?)
   marshall::op:listen unmarshall::op:listen)
