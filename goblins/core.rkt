@@ -1200,8 +1200,14 @@
        (call-with-resolution
         (λ () (keyword-apply _call kws kw-vals to-refr args)))]
       [(mactor:local-link point-to)
-       (call-with-resolution
-        (λ () (keyword-apply _call kws kw-vals point-to args)))]
+       (cond
+         [(near-refr? point-to)
+          (call-with-resolution
+           (λ () (keyword-apply _call kws kw-vals point-to args)))]
+         ;; it's not near so we need to pass this along
+         [else
+          (_send-message kws kw-vals point-to resolve-me args)
+          `#(success ,(void))])]
       [(mactor:broken problem)
        (_<-np resolve-me 'break problem)
        `#(fail ,problem)]
