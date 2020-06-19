@@ -961,6 +961,8 @@
     ;; kinda confusing I know
     (a-vat 'call a-nonce-reg 'register fork-motors))
 
+  (define car-drive-result-ch
+    (make-async-channel))
   (b-vat 'run
          (lambda ()
            (define car-factory-vow
@@ -970,7 +972,19 @@
            (define drive-noise-vow
              (<- car-vow))
            (on drive-noise-vow
-               displayln)))
+               (lambda (noise)
+                 (async-channel-put car-drive-result-ch
+                                    `(fulfilled ,noise)))
+               #:catch
+               (lambda (err)
+                 (async-channel-put car-drive-result-ch
+                                    `(broken ,err))))))
+  ;; TODO: But we also want to check that the messages sent are what we
+  ;;   thought what they should be from a protocol-message perspective...
+  (test-equal?
+   "Promise pipelining works across vats"
+   (sync/timeout 0.5 car-drive-result-ch)
+   '(fulfilled "*Vroom vroom!*  You drive your blue Fork Explorist!"))
 
 
   ;; ;; WIP WIP WIP WIP WIP
