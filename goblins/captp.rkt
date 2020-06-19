@@ -898,6 +898,50 @@
       #f]))
 
 
+  ;; Now for testing three vats across two machines.
+  ;; This one, functionally, is actually running through a-vat's
+  ;; machinetp system
+  (define c-vat
+    (make-vat))
+
+  (define meeter-bob-response-ch
+    (make-async-channel))
+
+  (define introducer-alice
+    (a-vat 'spawn
+           (lambda (bcom)
+             (lambda (intro-bob intro-carol)
+               (<-np intro-bob 'meet intro-carol)))))
+  (define meeter-bob
+    (b-vat 'spawn
+           (lambda (bcom)
+             (methods
+              [(meet new-friend)
+               (on (<- new-friend 'hi-new-friend)
+                   (lambda (heard-back)
+                     (async-channel-put meeter-bob-response-ch
+                                        `(heard-back ,heard-back))))]))))
+  (define chatty-carol
+    (c-vat 'spawn
+           (lambda (bcom)
+             (methods
+              [(hi-new-friend)
+               'hello-back]))))
+  (define meeter-bob-nonce
+    (b-vat 'call b-nonce-reg 'register meeter-bob))
+
+  (a-vat 'run
+         (lambda ()
+           (<-np introducer-alice
+                 (<- a->b-bootstrap-vow 'fetch meeter-bob-nonce)
+                 chatty-carol)))
+
+  (test-equal?
+   "A and B on one machine, C on another, with introductions"
+   (sync/timeout 0.5 meeter-bob-response-ch)
+   '(heard-back hello-back))
+
+
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
   ;;   (pk 'bawwwwk args))
