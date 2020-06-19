@@ -362,6 +362,8 @@
              (desc:export (pos-unseal (remote-refr-sealed-pos obj)))]
             [else
              (error 'handoffs-not-supported-yet)])]
+         [(? void?)
+          (record* 'void)]
          ;; TODO: Supply more machine-crossing exception types here
          [(? exn:fail?)
           (record* 'exn:fail:mystery)]
@@ -385,6 +387,8 @@
           (hash-ref exports-pos2val pos)]
          [(record 'exn:fail:mystery '())
           (make-mystery-fail)]
+         [(record 'void '())
+          (void)]
          [_ obj]))
 
      (define (unmarshall-to-desc to-desc)
