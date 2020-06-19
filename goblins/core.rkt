@@ -1574,7 +1574,7 @@
 (define ((make-simple-display-error msg) err [header while-handling-header])
   (displayln (format ";; === ~a: ===" header)
              (current-error-port))
-  (displayln (format ";;   ~s" msg))
+  (displayln (format ";;  ~s" msg))
   ((error-display-handler) (exn-message err) err))
 
 (define (make-no-op msg)
