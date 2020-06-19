@@ -945,6 +945,33 @@
    (sync/timeout 0.5 meeter-bob-response-ch)
    '(heard-back hello-back))
 
+  ;; Simple promise pipelining test: the car factory
+  (define (^car-factory bcom company-name)
+    (define ((^car bcom model color))
+      (format "*Vroom vroom!*  You drive your ~a ~a ~a!"
+              color company-name model))
+    (define (make-car model color)
+      (spawn ^car model color))
+    make-car)
+
+  (define fork-motors
+    (c-vat 'spawn ^car-factory "Fork"))
+  (define fork-motors-nonce
+    ;; in a-vat because that's where the nonce registry is for machine 1...
+    ;; kinda confusing I know
+    (a-vat 'call a-nonce-reg 'register fork-motors))
+
+  (b-vat 'run
+         (lambda ()
+           (define car-factory-vow
+             (<- b->a-bootstrap-vow 'fetch fork-motors-nonce))
+           (define car-vow
+             (<- car-factory-vow "Explorist" "blue"))
+           (define drive-noise-vow
+             (<- car-vow))
+           (on drive-noise-vow
+               displayln)))
+
 
   ;; ;; WIP WIP WIP WIP WIP
   ;; (define ((^parrot bcom) . args)
