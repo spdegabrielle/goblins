@@ -1571,12 +1571,13 @@
 (define while-handling-listen-header
   "While handling listen request")
 
-(define (simple-display-error err [header while-handling-header])
+(define ((make-simple-display-error msg) err [header while-handling-header])
   (displayln (format ";; === ~a: ===" header)
              (current-error-port))
+  (displayln (format ";;   ~s" msg))
   ((error-display-handler) (exn-message err) err))
 
-(define no-op
+(define (make-no-op msg)
   (make-keyword-procedure
    (lambda _ (void))))
 
@@ -1589,8 +1590,10 @@
 ;;           actormap new-msgs)
 ;; Mix and match the fail/success
 (define (actormap-turn-message actormap msg
-                               #:display-or-log-error
-                               [display-or-log-error simple-display-error])
+                               #:make-display-or-log-error
+                               [make-display-or-log-error make-simple-display-error])
+  (define display-or-log-error
+    (make-display-or-log-error msg))
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
   (call-with-fresh-syscaller
@@ -1655,11 +1658,11 @@
 (define (actormap-churn actormap messages
                         #:display-errors?
                         [display-errors? #t]
-                        #:display-or-log-error
-                        [display-or-log-error
+                        #:make-display-or-log-error
+                        [make-display-or-log-error
                          (if display-errors?
-                             simple-display-error
-                             no-op)])
+                             make-simple-display-error
+                             make-no-op)])
   (define (cons-if-non-empty a d)
     (cond
       [(null? a) d]
@@ -1669,7 +1672,7 @@
     [(or (? message? message) (? listen-request? message))
      (define-values (call-result new-am new-msgs)
        (actormap-turn-message actormap messages
-                              #:display-or-log-error display-or-log-error))
+                              #:make-display-or-log-error make-display-or-log-error))
      (values new-am new-msgs)]
     ['()
      (values actormap '() '())]
@@ -1679,7 +1682,7 @@
                ([msg (in-list (reverse messages))])
        (define-values (new-actormap new-new-msgs)
          (actormap-churn actormap msg
-                         #:display-or-log-error display-or-log-error))
+                         #:make-display-or-log-error make-display-or-log-error))
        (values new-actormap
                (cons-if-non-empty new-new-msgs new-msgs)))]))
 
@@ -1691,18 +1694,18 @@
 (define (actormap-full-run! actormap thunk
                             #:display-errors?
                             [display-errors? #t]
-                            #:display-or-log-error
-                            [display-or-log-error
+                            #:make-display-or-log-error
+                            [make-display-or-log-error
                              (if display-errors?
-                                 simple-display-error
-                                 no-op)])
+                                 make-simple-display-error
+                                 make-no-op)])
   (define-values (_val new-am new-msgs)
     (actormap-run* actormap thunk))
   (transactormap-merge! new-am)
   (let lp ([messages new-msgs])
     (define-values (new-am new-msgs)
       (actormap-churn actormap messages
-                      #:display-or-log-error display-or-log-error))
+                      #:make-display-or-log-error make-display-or-log-error))
     (when (transactormap? new-am)
       (transactormap-merge! new-am))
     (if (null? new-msgs)
