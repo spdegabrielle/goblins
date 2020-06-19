@@ -1256,8 +1256,6 @@
        '#(deferred #f)]
       ;; Questions should forward their messages to the captp thread
       ;; to deal with using the relevant question-finder.
-      ;; In a sense, this is a followup question to an existing
-      ;; question.
       [(? mactor:question?)
        (call-with-resolution
         (λ ()
@@ -1265,19 +1263,32 @@
             (mactor:question-question-finder orig-mactor))
           (define captp-connector
             (mactor:question-captp-connector orig-mactor))
-          (define followup-question-finder
-            (captp-connector 'new-question-finder))
-          (define-values (followup-question-promise followup-question-resolver)
-            (_spawn-promise-values #:question-finder
-                                   followup-question-finder
-                                   #:captp-connector
-                                   captp-connector))
-          (captp-connector
-           'handle-message
-           (question-message to-question-finder followup-question-resolver
-                             kws kw-vals args
-                             followup-question-finder))
-          followup-question-promise))]))
+          (cond
+            ;; If we're being asked to resolve something, this is a
+            ;; "followup question"
+            [resolve-me
+             (define followup-question-finder
+               (captp-connector 'new-question-finder))
+             (define-values (followup-question-promise followup-question-resolver)
+               (_spawn-promise-values #:question-finder
+                                      followup-question-finder
+                                      #:captp-connector
+                                      captp-connector))
+             (captp-connector
+              'handle-message
+              (question-message to-question-finder followup-question-resolver
+                                kws kw-vals args
+                                followup-question-finder))
+             followup-question-promise]
+            ;; Otherwise, we can just send it without any question and return
+            ;; void
+            [else
+             (captp-connector
+              'handle-message
+              (question-message to-question-finder #f
+                                kws kw-vals args
+                                #f))
+             (void)])))]))
 
   ;; helper to the below two methods
   (define (_send-message kws kw-vals to-refr resolve-me args
