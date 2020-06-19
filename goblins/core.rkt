@@ -1346,12 +1346,18 @@
                        (when display-or-log-error
                          (display-or-log-error err while-handling-listen-header))
                        `#(fail ,err))])
+      (unless (near-refr? to-refr)
+        (error 'not-a-near-refr "Not a near refr: ~a" to-refr))
       (define mactor
         (actormap-ref-or-die to-refr))
       (match mactor
         [(? mactor:local-link?)
-         (_handle-listen (mactor:local-link-point-to mactor)
-                         listener wants-partial? display-or-log-error)]
+         (define point-to
+           (mactor:local-link-point-to mactor))
+         (if (near-refr? point-to)
+             (_handle-listen (mactor:local-link-point-to mactor)
+                             listener wants-partial? display-or-log-error)
+             (_send-listen point-to listener wants-partial?))]
         ;; This object is a local promise, so we should handle it.
         [(? mactor:eventual?)
          ;; Set a new version of the local-promise with this
