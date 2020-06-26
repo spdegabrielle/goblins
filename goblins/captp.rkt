@@ -1,5 +1,9 @@
 #lang racket/base
 
+(provide make-captp-thread
+         make-machinetp-thread
+         spawn-nonce-registry-locator-pair)
+
 (require racket/async-channel
          racket/match
          racket/random
