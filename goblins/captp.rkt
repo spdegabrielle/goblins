@@ -205,7 +205,7 @@
     (define id
       (procedure-rename
        (make-keyword-procedure
-        (λ (kws kw-vals this-method-name . args)
+        (lambda (kws kw-vals this-method-name . args)
           (define method
             (case this-method-name
               ['method-name method-handler] ...
@@ -454,7 +454,7 @@
         (define (handle-captp-incoming msg)
           (match msg
             [(op:bootstrap (? integer? answer-pos) resolve-me-desc)
-             (define-values (answer-promise answer-resolver)
+             (define-values (_answer-promise answer-resolver)
                (install-answer! answer-pos resolve-me-desc))
 
              ;; And since we're bootstrapping, we resolve it immediately
@@ -483,7 +483,7 @@
                          kw-args-marshalled
                          answer-pos
                          resolve-me-desc)
-             (define-values (answer-promise answer-resolver)
+             (define-values (_answer-promise answer-resolver)
                (install-answer! answer-pos resolve-me-desc))
 
              ;; TODO: support distinction between method sends and procedure sends
@@ -511,7 +511,7 @@
                (incoming-post-unmarshall! listener-desc))
              (machine-vat-connector
               'run
-              (λ ()
+              (lambda ()
                 (listen to-refr listener
                         #:wants-partial? wants-partial?)
                 (void)))]

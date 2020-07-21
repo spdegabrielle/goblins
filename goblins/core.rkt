@@ -969,7 +969,7 @@
           (define-values (new-handler return-val)
             (let ([returned
                    (call-with-continuation-barrier
-                    (λ ()
+                    (lambda ()
                       (keyword-apply actor-handler kws kw-vals
                                      args)))])
               (if (become? returned)
@@ -1198,12 +1198,12 @@
       [(or (? mactor:object?)
            (? mactor:encased?))
        (call-with-resolution
-        (λ () (keyword-apply _call kws kw-vals to-refr args)))]
+        (lambda () (keyword-apply _call kws kw-vals to-refr args)))]
       [(mactor:local-link point-to)
        (cond
          [(near-refr? point-to)
           (call-with-resolution
-           (λ () (keyword-apply _call kws kw-vals point-to args)))]
+           (lambda () (keyword-apply _call kws kw-vals point-to args)))]
          ;; it's not near so we need to pass this along
          [else
           (_send-message kws kw-vals point-to resolve-me args)
@@ -1214,7 +1214,7 @@
       [(? mactor:remote-link?)
        (define point-to (mactor:remote-link-point-to orig-mactor))
        (call-with-resolution
-        (λ ()
+        (lambda ()
           ;; Pass along the message
           ;; Mild optimization: only produce a promise if we have a resolver
           (keyword-apply (if resolve-me
@@ -1264,7 +1264,7 @@
       ;; to deal with using the relevant question-finder.
       [(? mactor:question?)
        (call-with-resolution
-        (λ ()
+        (lambda ()
           (define to-question-finder
             (mactor:question-question-finder orig-mactor))
           (define captp-connector
