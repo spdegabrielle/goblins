@@ -2,15 +2,19 @@
 
 (provide make-sealer-triplet)
 
-;; From http://erights.org/elib/capability/ode/ode-capabilities.html
+(require racket/match)
+
+;; This approach inspired by W7's use of "records as sealers"
+;; see w7-fun.scm in the W7 (by Jonathan Rees) repo
 
 ; Create a new sealer / unsealer pair and sealed? predicate
 ; sealer-name is optional and just for debugging help
 (define (make-sealer-triplet [sealer-name #f])
   (define struct-name
-    (if sealer-name
-        (string->symbol (string-append "sealed-by-" (symbol->string sealer-name)))
-        'sealed))
+    (match sealer-name
+      [#f 'sealed]
+      [(or (? string?) (? symbol?))
+       (string->symbol (format "sealed-by-~a" sealer-name))]))
   (define-values (struct:seal seal sealed? seal-ref seal-set!)
     (make-struct-type struct-name #f 1 0))
   (define unseal
