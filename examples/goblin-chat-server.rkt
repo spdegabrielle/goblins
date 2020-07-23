@@ -14,12 +14,11 @@
   (define comms-vat
     (make-vat))
 
-  (define machinetp-ch
+  (define _machinetp-ch
     (make-machinetp-thread ip op
                            comms-vat
                            bootstrap-actor))
-
-  'TODO-maybe-or-its-fine-dunno)
+  (void))
 
 (define (^chatroom bcom chatroom-name)
   (define-cell participants-by-name
