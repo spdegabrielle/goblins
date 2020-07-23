@@ -18,8 +18,6 @@
          "errors.rkt"
          syrup)
 
-(require pk)
-
 ;;; Messages
 
 ;; A helper... we're going to have a bunch of structs that have a way
