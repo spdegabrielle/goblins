@@ -629,6 +629,9 @@
        (define msg
          (async-channel-get captp-outgoing-ch))
        (syrup-write msg network-out-port #:marshallers marshallers)
+       ;; TODO: *should* we be flushing output each time we've written out
+       ;; a message?  It seems like "yes" but I'm a bit unsure
+       (flush-output network-out-port)
        (lp))))
   from-machine-representative-ch)
 
