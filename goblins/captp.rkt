@@ -79,6 +79,14 @@
   (to-desc listener-desc wants-partial?)
   marshall::op:listen unmarshall::op:listen)
 
+(define-recordable-struct op:gc-export
+  (export-pos wire-delta)
+  marshall::op:gc-export unmarshall::op:gc-export)
+
+(define-recordable-struct op:gc-answer
+  (answer-pos)
+  marshall::op:gc-answer unmarshall::op:gc-answer)
+
 (define-recordable-struct desc:import-object
   (pos)
   marshall::desc:import-object unmarshall::desc:import-object)
@@ -118,6 +126,8 @@
         marshall::op:deliver
         marshall::op:abort
         marshall::op:listen
+        marshall::op:gc-export
+        marshall::op:gc-answer
         marshall::desc:import-object
         marshall::desc:import-promise
         marshall::desc:export
@@ -129,6 +139,8 @@
         unmarshall::op:deliver
         unmarshall::op:abort
         unmarshall::op:listen
+        unmarshall::op:gc-export
+        unmarshall::op:gc-answer
         unmarshall::desc:import-object
         unmarshall::desc:import-promise
         unmarshall::desc:export
@@ -138,6 +150,8 @@
 (struct cmd-send-message (msg)
   #:transparent)
 (struct cmd-send-listen (to-refr listener-refr wants-partial?)
+  #:transparent)
+(struct cmd-send-gc-answer (answer-pos)
   #:transparent)
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
@@ -255,12 +269,35 @@
      ;;   reference... I think this also needs to go in both directions to work
      ;;   from a GC perspective
      (define imports (make-hasheqv))               ; imports:        chosen by peer
-     (define questions (make-hasheqv))             ; questions:      chosen by us
+     (define questions (make-weak-hasheqv))        ; questions:      chosen by us
      (define answers (make-hasheqv))               ; answers:        chosen by peer
 
      ;; TODO: This should really be some kind of box that the other side
      ;;   can query, right?
      (define running? #t)
+
+     ;; Now make the will executor and boot its corresponding thread
+     ;; for cooperative GC.
+     (define refr-will-executor
+       (make-will-executor))
+     (thread
+      (lambda ()
+        (let lp ()
+          (will-execute refr-will-executor)
+          (lp))))
+
+     #;(define (make-import-will-handler import-id)
+       (send-to-remote )
+       'TODO)
+     (define (make-question-will-handler question-pos)
+       (lambda _
+         ;; There's (I think?) a possible race condition here if we were to
+         ;; use send-to-remote from right here, so we have the main thread
+         ;; send it via the internal-ch
+         (async-channel-put internal-ch (cmd-send-gc-answer question-pos))))
+     (define (install-question-will-handler! question-finder question-pos)
+       (will-register refr-will-executor question-finder
+                      (make-question-will-handler question-pos)))
 
      ;; Possibly install an export for this local refr, and return
      ;; this export id
@@ -331,6 +368,7 @@
            (let ([question-pos next-question-pos])
              ;; install our question at this question id
              (hash-set! questions question-finder question-pos)
+             (install-question-will-handler! question-finder question-pos)
              ;; increment the next-question id
              (set! next-question-pos (add1 next-question-pos))
              ;; and return the question-pos we set up
@@ -515,7 +553,9 @@
                 (void)))]
             [(op:abort reason)
              'TODO]
-            
+            [(op:gc-answer answer-pos)
+             (hash-remove! answers answer-pos)]
+
             [other-message
              (error 'invalid-message "~a" other-message)]))
 
@@ -552,7 +592,9 @@
                (op:listen (marshall-to to-refr)
                           (outgoing-pre-marshall! listener-refr)
                           wants-partial?))
-             (send-to-remote listen-msg)]))
+             (send-to-remote listen-msg)]
+            [(cmd-send-gc-answer (? integer? answer-pos))
+             (send-to-remote (op:gc-answer answer-pos))]))
 
         (define (handle-from-machine-representative msg)
           (match msg
