@@ -153,6 +153,8 @@
   #:transparent)
 (struct cmd-send-gc-answer (answer-pos)
   #:transparent)
+(struct cmd-send-gc-export (export-pos)
+  #:transparent)
 
 ;; utility for splitting up keyword argument hashtable in a way usable by
 ;; keyword-apply
@@ -261,10 +263,8 @@
      (define next-question-pos 0)
      ;; (define next-promise-pos 0)
 
-     ;; TODO: We need to wrap this in a structure that keeps track of when it
-     ;;   can GC
-     (define exports-val2pos (make-weak-hasheq))  ; exports[val]:   chosen by us
-     (define exports-pos2val (make-hasheqv))      ; exports[pos]:  chosen by us
+     (define exports-val2pos (make-hasheq))  ; exports[val]:   chosen by us
+     (define exports-pos2val (make-hasheqv))      ; exports[pos]:   chosen by us
      ;; TODO: This doesn't make sense if the value isn't wrapped in a weak
      ;;   reference... I think this also needs to go in both directions to work
      ;;   from a GC perspective
@@ -276,19 +276,67 @@
      ;;   can query, right?
      (define running? #t)
 
+     ;; These are imports that we've processed when we already had allocated
+     ;; a reference.  We batch send GC messages about these as appropriate.
+     ;; Note that we say "spare" because there's one more count that's
+     ;; associated with the reference itself.
+     ;; Mapping of slot position -> count
+     (define spare-import-counts
+       (make-hasheqv))
+     ;; The inverse: tracking how many export numbers we've given so we can
+     ;; know when it hits 0 and is ok to remove
+     (define export-counts
+       (make-hasheqv))
+
+     (define (increment-spare-imports-count! import-pos)
+       (hash-set! spare-import-counts import-pos
+                  (add1 (hash-ref spare-import-counts import-pos 0))))
+     ;; Go through all the "spare imports" and reset them
+     (define (handle-spare-imports!)
+       (for ([(import-pos count) (in-hash spare-import-counts)])
+         ;; Send a gc-export message for this many
+         (send-to-remote (op:gc-export import-pos count))
+         ;; Reset these
+         (hash-remove! spare-import-counts import-pos)))
+     (define (decrement-exports-count-maybe-remove! export-pos delta)
+       (-> integer? integer? any/c)
+       (match (hash-ref export-counts export-pos #f)
+         [(and (? integer?) (? positive? cur-count))
+          (match (- cur-count delta)
+            ;; time to remove
+            [0
+             (hash-remove! export-counts export-pos)
+             ;; Remove this export from both
+             (let ([val (hash-ref exports-pos2val export-pos)])
+               (hash-remove! exports-val2pos val)
+               (hash-remove! exports-pos2val export-pos))]
+            ;; decremented but still positive
+            [(and (? integer?) (? positive? new-count))
+             (hash-set! export-counts export-pos new-count)]
+            [neg-count
+             (error 'exports-gc-error
+                    "Tried decrementing export-pos ~a by ~a but that's negative: ~a"
+                    neg-count)])]
+         [other-val
+          (error 'exports-gc-error
+                 "Tried to decrement the exports count for position ~a but its value was ~a"
+                 export-pos other-val)]))
+
      ;; Now make the will executor and boot its corresponding thread
      ;; for cooperative GC.
      (define refr-will-executor
        (make-will-executor))
+
+     ;; TODO: Should we move this out from a thread and put it in the
+     ;;   main loop and run it after every loop with will-try-execute?
+     ;;   That could reduce the chance of some race conditions, though
+     ;;   I'm not sure it's strictly necessary.
      (thread
       (lambda ()
         (let lp ()
           (will-execute refr-will-executor)
           (lp))))
 
-     #;(define (make-import-will-handler import-id)
-       (send-to-remote )
-       'TODO)
      (define (make-question-will-handler question-pos)
        (lambda _
          ;; There's (I think?) a possible race condition here if we were to
@@ -299,6 +347,14 @@
        (will-register refr-will-executor question-finder
                       (make-question-will-handler question-pos)))
 
+     (define (make-import-will-handler import-pos)
+       (lambda _
+         (hash-remove! imports import-pos)
+         (async-channel-put internal-ch (cmd-send-gc-export import-pos))))
+     (define (install-import-will-handler! question-finder import-pos)
+       (will-register refr-will-executor question-finder
+                      (make-import-will-handler import-pos)))
+
      ;; Possibly install an export for this local refr, and return
      ;; this export id
      ;; TODO: we maybe need to differentiate between local-live-refr and
@@ -308,7 +364,18 @@
        (cond
          ;; Already have it, no need to increment next-export-pos
          [(hash-has-key? exports-val2pos refr)
-          (hash-ref exports-val2pos refr)]
+          (define export-pos
+            (hash-ref exports-val2pos refr))
+          ;; However, we do need to increment our export count
+          (match (hash-ref export-counts export-pos #f)
+            ;; Uh, we screwed up our bookkeeping at some point
+            [#f
+             (error 'no-export-count-wtf
+                    "No export count for ~a" export-pos)]
+            [cur-count
+             (hash-set! export-counts export-pos (add1 cur-count))])
+          ;; now finally return the export position
+          export-pos]
          ;; Nope, let's export this
          [else
           ;; TODO: This doesn't do handoffs for remote refrs yet!!
@@ -321,6 +388,13 @@
                      refr)
           (hash-set! exports-val2pos refr
                      export-pos)
+          ;; (sanity check:) make sure there's no export count currently
+          (when (hash-has-key? export-counts export-pos)
+            (error 'shouldnt-be-export-count-wtf
+                   "Adding a new export but there was already an export count for pos: ~a"
+                   export-pos))
+          ;; and set the export count to 1
+          (hash-set! export-counts export-pos 1)
           export-pos]))
 
      (define/contract (marshall-local-refr! local-refr)
@@ -337,28 +411,37 @@
      (define (maybe-install-import! import-desc)
        (define import-pos
          (desc:import-pos import-desc))
+       (define (install-new-import!)
+         ;; construct the new reference...
+         (define new-refr
+           (match import-desc
+             [(? desc:import-object?)
+              (make-remote-object-refr captp-connector
+                                       (pos-seal import-pos))]
+             [(? desc:import-promise?)
+              (make-remote-promise-refr captp-connector
+                                        (pos-seal import-pos))]))
+         ;; Install it...
+         (hash-set! imports import-pos (make-weak-box new-refr))
+         ;; set up the will handler...
+         (install-import-will-handler! new-refr import-pos)
+         ;; and return it.
+         new-refr)
        (cond
          [(hash-has-key? imports import-pos)
           ;; Oh, we've already got that.  Reference and return it.
-          (hash-ref imports import-pos)]
+          (match (weak-box-value (hash-ref imports import-pos))
+            ;; Possible race condition: Apparently it was GC'ed
+            ;; mid-operation so now we need to add it back
+            ;; @@: *sweating profusely* but is this all the possible
+            ;;     race conditions???
+            [#f (install-new-import!)]
+            ;; looks like we got the refr, return as-is
+            [refr
+             (increment-spare-imports-count! import-pos)
+             refr])]
          [else
-          ;; construct the new reference...
-          (define new-refr
-            (match import-desc
-              [(? desc:import-object?)
-               (make-remote-object-refr captp-connector
-                                        (pos-seal import-pos))]
-              [(? desc:import-promise?)
-               (make-remote-promise-refr captp-connector
-                                         (pos-seal import-pos))]))
-          ;; TODO: weak boxing goes here
-          ;; install it...
-          (hash-set! imports import-pos new-refr)
-          ;; and return it.
-          new-refr]))
-
-     (define (remote-refr->imported-pos to)
-       (pos-unseal (remote-refr-sealed-pos to)))
+          (install-new-import!)]))
 
      (define (question-finder->question-pos! question-finder)
        (if (hash-has-key? questions question-finder)
@@ -551,10 +634,12 @@
                 (listen to-refr listener
                         #:wants-partial? wants-partial?)
                 (void)))]
-            [(op:abort reason)
-             'TODO]
             [(op:gc-answer answer-pos)
              (hash-remove! answers answer-pos)]
+            [(op:gc-export (? integer? export-pos) (? integer? wire-delta))
+             (decrement-exports-count-maybe-remove! export-pos wire-delta)]
+            [(op:abort reason)
+             'TODO]
 
             [other-message
              (error 'invalid-message "~a" other-message)]))
@@ -594,7 +679,9 @@
                           wants-partial?))
              (send-to-remote listen-msg)]
             [(cmd-send-gc-answer (? integer? answer-pos))
-             (send-to-remote (op:gc-answer answer-pos))]))
+             (send-to-remote (op:gc-answer answer-pos))]
+            [(cmd-send-gc-export (? integer? export-pos))
+             (send-to-remote (op:gc-export export-pos 1))]))
 
         (define (handle-from-machine-representative msg)
           (match msg
@@ -633,6 +720,11 @@
                                         handle-internal)
                             (handle-evt from-machine-representative-ch
                                         handle-from-machine-representative)))
+          (handle-spare-imports!)
+          ;; TODO: Maybe actually add the will executor step right here
+          ;;   It'll be a little less performant but if we end up hitting weird
+          ;;   race conditions it could eliminate them?
+          ;;   But I guess see whether or not we ever hit them.
           (lp))))))
   captp-incoming-ch)
 
@@ -1049,6 +1141,38 @@
   ;; (syrup-write (op:deliver-only 0 #f '("George") #hasheq())
   ;;              b->a-op
   ;;              #:marshallers marshallers)
+
+
+  (define ((^args-counter bcom) . args)
+    (length args))
+  (define a-args-counter
+    (a-vat 'spawn ^args-counter))
+  (define shares-a-args-counter
+    (a-vat 'spawn
+           (lambda (bcom)
+             (lambda ()
+               a-args-counter))))
+  (define shares-a-args-counter-nonce
+    (a-vat 'call a-nonce-reg 'register shares-a-args-counter))
+  ;; vow on b specifically
+  (define shares-a-args-counter-vow
+    (b-vat 'run
+           (lambda ()
+             (<- b->a-bootstrap-vow 'fetch shares-a-args-counter-nonce))))
+
+  (collect-garbage)
+
+  ;; check that incremental gc is working
+  #;(b-vat 'run
+         (lambda ()
+           (on (<- shares-a-args-counter-vow)
+               (lambda (a-args-counter)
+                 (<- a-args-counter
+                     bob-greeter2 bob-greeter2 bob-greeter2
+                     bob-greeter2 bob-greeter2 bob-greeter2
+                     bob-greeter2 bob-greeter2 bob-greeter2)))))
+  #;(collect-garbage)
+  ;; ... damn we actually need to test the messages sent at some point
 
 
   )
