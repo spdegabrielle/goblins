@@ -1365,7 +1365,7 @@
                              listener wants-partial? display-or-log-error)
              (_send-listen point-to listener wants-partial?))]
         ;; This object is a local promise, so we should handle it.
-        [(? mactor:eventual?)
+        [(? mactor:unresolved?)
          ;; Set a new version of the local-promise with this
          ;; object as a listener
          (actormap-set! actormap to-refr
@@ -1377,7 +1377,10 @@
         [(? mactor:encased? mactor)
          (_<-np listener 'fulfill (mactor:encased-val mactor))]
         [(? mactor:object? mactor)
-         (_<-np listener 'fulfill to-refr)])
+         (_<-np listener 'fulfill to-refr)]
+        ;; For remote links, we resolve directly to that reference
+        [(? mactor:remote-link? mactor)
+         (_<-np listener 'fulfill (mactor:remote-link-point-to mactor))])
       ;; return with same semantics that _handle-message does
       `#(success ,(void))))
 
