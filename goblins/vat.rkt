@@ -163,6 +163,31 @@
       ;; That would have never completed!
       (error "Called a blocking vat method from the vat's own actor")))
 
+  ;; @@: We used to have a more efficient(?) recursive function that
+  ;;   never did a reverse, but now I'm writing "for clarity"
+  (define (schedule-messages msgs)
+    (for ([msg (in-list (reverse msgs))])
+      (define to-refr
+        (match msg
+          [(? message?)
+           (message-to msg)]
+          [(? listen-request?)
+           (listen-request-to msg)]))
+
+      (match to-refr
+        [(? local-refr?)
+         (define to-vat-connector
+           (local-refr-vat-connector to-refr))
+         (define this-vat?
+           (eq? to-vat-connector vat-connector))
+         (if this-vat?
+             (async-channel-put vat-channel (cmd-handle-message msg))
+             (to-vat-connector 'handle-message msg))]
+        [(? remote-refr?)
+         (define captp-connector
+           (remote-refr-captp-connector to-refr))
+         (captp-connector 'handle-message msg)])))
+
   ;; The main loop
   ;; =============
   (define (main-loop)
@@ -177,31 +202,6 @@
                             (display (exn->string err)
                                      (current-error-port))
                             (set! running? #f))])
-           ;; @@: We used to have a more efficient(?) recursive function that
-           ;;   never did a reverse, but now I'm writing "for clarity"
-           (define (schedule-messages msgs)
-             (for ([msg (in-list (reverse msgs))])
-               (define to-refr
-                 (match msg
-                   [(? message?)
-                    (message-to msg)]
-                   [(? listen-request?)
-                    (listen-request-to msg)]))
-
-               (match to-refr
-                 [(? local-refr?)
-                  (define to-vat-connector
-                    (local-refr-vat-connector to-refr))
-                  (define this-vat?
-                    (eq? to-vat-connector vat-connector))
-                  (if this-vat?
-                      (async-channel-put vat-channel (cmd-handle-message msg))
-                      (to-vat-connector 'handle-message msg))]
-                 [(? remote-refr?)
-                  (define captp-connector
-                    (remote-refr-captp-connector to-refr))
-                  (captp-connector 'handle-message msg)])))
-
            (let lp ()
              (match (async-channel-get vat-channel)
                ;; This is the actual thing this loop spends the most
@@ -222,9 +222,10 @@
                                  (lambda (err)
                                    (channel-put return-ch
                                                 (vector 'fail err)))])
-                  (define refr
-                    (keyword-apply actormap-spawn! kws kw-vals actormap constructor args))
-                  (channel-put return-ch (vector 'success refr)))
+                  (parameterize ([being-called-by-vat-actor #t])
+                    (define refr
+                      (keyword-apply actormap-spawn! kws kw-vals actormap constructor args))
+                    (channel-put return-ch (vector 'success refr))))
                 (lp)]
                [(cmd-send-message msg)
                 (async-channel-put vat-channel
@@ -264,8 +265,8 @@
       [(vector 'fail err)
        (raise err)]))
 
-  ;; "Public" methods
-  ;; ================
+  ;; "vat dispatcher" and "vat connector" methods
+  ;; ============================================
   (define (is-running?)
     running?)
 
@@ -301,7 +302,7 @@
        (sync-return-ch return-ch))))
 
   (define (_run proc)
-    (define ((^_run bcom))
+    (define ((^_run _bcom))
       (proc))
     (_call (_spawn ^_run)))
 
