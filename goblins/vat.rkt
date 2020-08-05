@@ -11,8 +11,9 @@
          racket/contract
          [only-in racket/promise delay delay/sync force]
 
-         crypto
-         crypto/private/common/base256)
+         ;; crypto
+         ;; crypto/private/common/base256
+         )
 
 ;;;                .=======================.
 ;;;                |Internal Vat Schematics|
@@ -76,10 +77,10 @@
 (struct cmd-handle-message (msg))
 (struct cmd-halt ())
 
-(define eddsa-impl
+#;(define eddsa-impl
   (delay/sync (get-pk 'eddsa (crypto-factories))))
 
-(define (make-eddsa-private-key)
+#;(define (make-eddsa-private-key)
   (generate-private-key (force eddsa-impl) '((curve ed25519))))
 
 ;; But what does the machine *do*?
@@ -120,17 +121,26 @@
 
 ;; TODO: Maybe restore #:actormap?
 ;;   But what to do about the vat-connector in that case?
-(define (make-vat #:private-key
-                  ;; TODO: rename to #:sign/decrypt-key ?
-                  [private-key (delay (make-eddsa-private-key))])
-  (define public-key
-    (delay
-      (pk-key->public-only-key (force private-key))))
-  (define public-key-as-bytes
-    (delay
-      (match (pk-key->datum (force public-key) 'rkt-public)
-        [(list 'eddsa public ed25519 public-key-bytes)
-         public-key-bytes])))
+
+;; TODO: We need to figure out what the vat's keypair is actually used for.
+;;   A reasonable thing would be that it's used to verify a sturdyref
+;;   belongs to this vat.  However that itself might be easy to MITM...
+;;   It might be that we've done this wrong in the sense that vat keys
+;;   really ought to be controlled by the machine itself...
+;;   not really sure.
+(define (make-vat
+         ;; #:private-key
+         ;; ;; TODO: rename to #:sign-key ?
+         ;; [private-key (delay (make-eddsa-private-key))]
+         )
+  ;; (define public-key
+  ;;   (delay
+  ;;     (pk-key->public-only-key (force private-key))))
+  ;; (define public-key-as-bytes
+  ;;   (delay
+  ;;     (match (pk-key->datum (force public-key) 'rkt-public)
+  ;;       [(list 'eddsa public ed25519 public-key-bytes)
+  ;;        public-key-bytes])))
 
   ;; Weak hashes don't seem to "relinquish" its memory, unfortunately.
   ;; Every now and then we stop and copy over the registry
@@ -303,11 +313,11 @@
   (define (_halt)
     (async-channel-put vat-channel (cmd-halt)))
 
-  (define (_get-vat-id)
+  #;(define (_get-vat-id)
     (force public-key-as-bytes))
 
   ;; be careful!
-  (define (_get-vat-private-key)
+  #;(define (_get-vat-private-key)
     (force private-key))
 
   (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
@@ -325,14 +335,14 @@
 
   (define-vat-dispatcher vat-connector
     [handle-message _handle-message]
-    [vat-id _get-vat-id])
+    #;[vat-id _get-vat-id])
 
   (define-vat-dispatcher vat-dispatcher
     [spawn _spawn]
     [<-np _<-np]
     [call _call]
-    [vat-id _get-vat-id]
-    [vat-private-key _get-vat-private-key]
+    #;[vat-id _get-vat-id]
+    #;[vat-private-key _get-vat-private-key]
     [halt _halt]
     [is-running? is-running?]
     [run _run])
@@ -343,7 +353,7 @@
   ;; boot the main loop
   (main-loop)
 
-  (register-vat-with-current-machine public-key vat-dispatcher)
+  #;(register-vat-with-current-machine public-key vat-dispatcher)
 
   ;; return the dispatcher
   vat-dispatcher)
