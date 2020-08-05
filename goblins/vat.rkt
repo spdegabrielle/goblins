@@ -5,6 +5,7 @@
 (require "core.rkt"
          (submod "core.rkt" for-vats)
          "message.rkt"
+         "utils/simple-dispatcher.rkt"
          racket/async-channel
          racket/match
          racket/exn
@@ -117,7 +118,6 @@
         [(list 'eddsa public ed25519 public-key-bytes)
          public-key-bytes])))
   )
-
 
 ;; TODO: Maybe restore #:actormap?
 ;;   But what to do about the vat-connector in that case?
@@ -320,24 +320,11 @@
   #;(define (_get-vat-private-key)
     (force private-key))
 
-  (define-syntax-rule (define-vat-dispatcher id [method-name method-handler] ...)
-    (define id
-      (procedure-rename
-       (make-keyword-procedure
-        (λ (kws kw-vals this-method-name . args)
-          (define method
-            (case this-method-name
-              ['method-name method-handler] ...
-              [else (error 'connector-dispatcher-error
-                           "Unnown method: ~a" this-method-name)]))
-          (keyword-apply method kws kw-vals args)))
-       'id)))
-
-  (define-vat-dispatcher vat-connector
+  (define-simple-dispatcher vat-connector
     [handle-message _handle-message]
     #;[vat-id _get-vat-id])
 
-  (define-vat-dispatcher vat-dispatcher
+  (define-simple-dispatcher vat-dispatcher
     [spawn _spawn]
     [<-np _<-np]
     [call _call]
